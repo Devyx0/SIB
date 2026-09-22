@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# OAuth credentials — never commit
+credentials.json
+token.json
+
+# Secrets
+.env
+
+# Scratch / dry-run output
+work/

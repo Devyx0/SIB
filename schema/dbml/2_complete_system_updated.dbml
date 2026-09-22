@@ -1,0 +1,919 @@
+// ============================================================
+// SIB Maintenance & Operations Platform — COMPLETE SYSTEM (v2)
+// Updated against the live SIB_Database_Map_-_v4 findings.
+// Every change below is annotated with WHY it changed and the
+// evidence that justified it — see the review conversation for
+// full detail. Paste into dbdiagram.io.
+// ============================================================
+
+//////////////////// ENUMS ////////////////////
+
+enum urgency_tier {
+  AJD
+  ajd
+  none
+}
+
+enum complexity_tier {
+  C1
+  C2
+  C3
+  C4
+}
+
+enum congestion_level {
+  N1
+  N2
+  N3
+  N4
+  N5
+}
+
+enum report_status {
+  CANNOT_WAIT
+  SUPERVISOR_DISCRETION
+  CAN_WAIT_SHORT_TERM
+  CAN_WAIT
+  NOT_APPLICABLE
+}
+
+enum delegable_status {
+  YES
+  NO
+  CONDITIONAL
+}
+
+enum time_estimate_bucket {
+  UNDER_30_MIN
+  MIN30_TO_1H
+  H1_TO_2H
+  H2_TO_4H
+  HALF_DAY_PLUS
+  TBD_ON_SITE
+}
+
+enum ticket_format {
+  SECTION_COORDOS
+  NOTE_DE_TRIAGE
+  SECTION_TERRAIN
+}
+
+enum vendor_scope {
+  portfolio_wide
+  building_specific
+}
+
+enum shift_type {
+  ouverture
+  fermeture
+  terrain
+  off
+  vacances
+  garde_urgence
+}
+
+enum move_reason {
+  lease_end
+  lease_assignment
+  eviction
+}
+
+enum key_method {
+  remise_directe
+  boite_a_cle
+  bureau
+}
+
+enum intercom_status {
+  to_do
+  done
+  call_placed
+}
+
+enum move_type {
+  depart
+  arrivee
+}
+
+enum time_slot {
+  slot_8_11
+  slot_11_14
+  slot_14_17
+  slot_17_20
+}
+
+enum loan_status {
+  RETIRE
+  ACHAT
+}
+
+enum task_item_type {
+  jeter
+  menage
+  peinture
+  plancher
+  comptoir
+  armoires
+  ajout_electros
+}
+
+enum payment_type {
+  coin
+  card
+  both
+}
+
+enum pay_rule_type {
+  overage
+  percentage
+  rental
+}
+
+enum camera_platform {
+  hik_connect
+  cloud_generic
+  ubox
+  blink
+}
+
+enum access_status_enum {
+  Oui_Paradox
+  Oui_Akuvox
+  Non
+  Installation_prevue
+}
+
+// NEW — tenancy_record.capacite. Source: live map, Tenant deep-view —
+// "what capacity they were in — named on the lease, an added occupant,
+// or someone who took it over".
+enum tenancy_capacity {
+  named_on_lease
+  added_occupant
+  took_over
+}
+
+// NEW — entrance.access_method. Source: live map, Building deep-view —
+// "how it opens — key, fob, keypad or intercom release".
+enum entrance_access_method {
+  key
+  fob
+  keypad
+  intercom_release
+}
+
+// NEW — equipment.equipment_type. Source: live map, Building deep-view —
+// "furnaces, boilers, central heat pumps, elevators and freight elevators,
+// the pool, barbecues and terraces".
+// heating — heating circuit from Boilers source (split ingestion from "Chauffage" column block)
+// dhw     — domestic hot water circuit from Boilers source (split ingestion from "ECD" = Eau Chaude Domestique column block)
+enum equipment_type {
+  furnace
+  boiler
+  heat_pump
+  elevator
+  freight_elevator
+  pool
+  barbecue
+  terrace
+  heating  // heating circuit; used when splitting one Boilers source row into 2 equipment rows
+  dhw      // domestic hot water circuit; paired with heating for split-row ingestion
+  other
+}
+
+// NEW — service_contract.category. Source: live map, Building/Vendor
+// deep-views — "snow, lawn, pool, pest, fire, elevators, telecom".
+// waste — added for Container Rental contracts; does not fit any of the original 7 categories.
+enum service_contract_category {
+  snow
+  lawn
+  pool
+  pest
+  fire
+  elevator
+  telecom
+  waste    // Container Rental — confirmed does not fit the original 7 categories
+}
+
+// NEW — cleaning_task_checklist.format_type. Source: Ménage source files showed
+// four distinct formats in practice: fully structured rows (element/freq/hours/total),
+// rotating day schedules, single freetext lines, and unstructured freetext blocks.
+enum checklist_format_type {
+  structured   // element / frequency_per_week / hours_per_visit / total all populated
+  day_rotation // tasks listed as Day 1 / Day 2 rotation patterns
+  single_line  // one-line task description, no structured columns applicable
+  freetext     // multi-line unstructured block; use raw_content column
+}
+
+// NEW — service_visit.visit_type. Source: live map, Building deep-view —
+// "the annual fire inspection, monthly elevator service, seasonal boiler
+// shutdown and restart".
+enum service_visit_type {
+  fire_inspection
+  elevator_service
+  boiler_shutdown
+  boiler_restart
+  other
+}
+
+//////////////////// STATIC / REFERENCE TABLES ////////////////////
+
+Table project {
+  project_id integer [primary key]
+  nom_unique_projet varchar
+  adresse_quickbooks varchar
+}
+
+Table sector {
+  sector_id integer [primary key]
+  territoire varchar // broader geographic region (e.g. "QUÉBEC-EST"); distinct from secteur/color_code (File 3 CONTACTS concept) — do NOT merge, relationship TBD
+  secteur varchar
+  color_code varchar
+}
+
+Table building {
+  building_id integer [primary key]
+  project_id integer [ref: > project.project_id]
+  sector_id integer [ref: > sector.sector_id]
+  adresse varchar
+  ville varchar
+  code_postal varchar
+  annee_construction varchar
+  nb_etages varchar
+  nb_logements varchar
+  ascenseur boolean
+  piscine boolean
+  sauna boolean
+  gym boolean
+  chauffage varchar
+  systeme_incendie varchar
+  boite_a_cle_ext varchar // NOTE: kept for backward compat; new key-box detail
+                          // lives on building_key_box, which will eventually
+                          // hang off entrance rather than building directly.
+  boite_a_cle_int varchar
+  raw_fiche_technique json
+  // NEW — Source: Fire Protection master table RÉF. tab. A002–A112 style code used
+  // as a 4th building-identifier system in fire-protection records. Nullable.
+  legacy_code varchar
+}
+
+// NEW — Source: live map, Building deep-view: "Each front door: civic
+// number, street, postal code, and how it opens... A building on a corner
+// legitimately has two entrances, on two streets, sometimes with two
+// postal codes, and the intercom and key box now hang off the right door."
+// No source file exists yet. Until real per-entrance data is captured,
+// ingestion should create exactly one synthetic entrance per building
+// (copying building.adresse/ville/code_postal) so building_intercom and
+// building_key_box always have somewhere valid to point.
+Table entrance {
+  entrance_id integer [primary key]
+  building_id integer [ref: > building.building_id]
+  civic_number varchar
+  street varchar
+  postal_code varchar
+  access_method entrance_access_method
+  notes text
+}
+
+Table building_document {
+  document_id integer [primary key]
+  building_id integer [ref: > building.building_id]
+  category varchar // elevator_contract / fire_protection / paint_spec / install_guide / plumbing_reference / other
+  drive_file_id varchar
+  title varchar
+  url varchar
+}
+
+Table vendor_contact {
+  vendor_id integer [primary key]
+  trade varchar
+  nom varchar
+  telephone varchar
+  notes text
+}
+
+Table building_vendor {
+  building_id integer [ref: > building.building_id]
+  vendor_id integer [ref: > vendor_contact.vendor_id]
+  vendor_account_number varchar // confirmed NOT strictly 1:1, one account can cover multiple buildings
+  notes text
+}
+
+Table vendor_category_exclusivity {
+  exclusivity_id integer [primary key]
+  vendor_id integer [ref: > vendor_contact.vendor_id]
+  category_label varchar
+  scope vendor_scope
+  rule_code varchar // A0-A5
+}
+
+// NEW — Source: live map, Building & Vendor deep-views — "snow removal,
+// lawn care, pool, pest control, fire protection, elevator service and
+// telecom... one contract can cover several buildings." No source file
+// exists yet (only unstructured year-by-year contract folders).
+Table service_contract {
+  contract_id integer [primary key]
+  vendor_id integer [ref: > vendor_contact.vendor_id]
+  category service_contract_category
+  term_start date
+  term_end date
+  cost decimal
+  renews boolean
+  notes text
+}
+
+// NEW — junction, since one contract can legitimately cover several
+// buildings (explicit in the live map, both for laundry-style and
+// generic service contracts).
+Table service_contract_building {
+  contract_id integer [ref: > service_contract.contract_id]
+  building_id integer [ref: > building.building_id]
+}
+
+// NEW — Source: live map, Building & Vendor deep-views — "every due-and-
+// done service event: the annual fire inspection, monthly elevator
+// service, seasonal boiler shutdown and restart — due date, what was
+// actually done, the result, any deficiencies, when the next one falls."
+// No source file exists yet: "Protection incendie folder exists but is
+// empty" of STRUCTURED data — the folder itself holds ~106 real
+// per-building subfolders of unstructured inspection PDFs, confirmed
+// during our own Drive review, but nothing has been extracted into rows.
+Table service_visit {
+  visit_id integer [primary key]
+  building_id integer [ref: > building.building_id]
+  vendor_id integer [ref: > vendor_contact.vendor_id, note: 'nullable']
+  equipment_id integer [ref: > equipment.equipment_id, note: 'nullable']
+  visit_type service_visit_type
+  due_date date
+  completed_date date
+  result varchar
+  deficiencies text
+  next_due_date date
+}
+
+// NEW — Source: "0 - Master Tableau Protection Incendie.xlsx" — confirmed real
+// and fully populated. Captures STATIC per-building fire-system configuration
+// (what is installed and what its current status is). Distinct from service_visit
+// which tracks inspection EVENTS. Three vendor FKs (sprinkler, co2, current_fire)
+// are nullable because not every building has all subsystems contracted separately.
+Table building_fire_system {
+  fire_system_id integer [primary key]
+  building_id integer [ref: > building.building_id]
+  panel_brand_model varchar
+  panel_control_status varchar
+  emergency_panel_status varchar
+  smoke_detector_status varchar
+  sprinkler_status varchar
+  sprinkler_vendor_id integer [ref: > vendor_contact.vendor_id, note: 'nullable']
+  hose_status varchar
+  pressurization_pump_status varchar
+  co2_status varchar
+  co2_vendor_id integer [ref: > vendor_contact.vendor_id, note: 'nullable']
+  dossier_link varchar
+  current_fire_vendor_id integer [ref: > vendor_contact.vendor_id, note: 'nullable']
+  notes text
+}
+
+// NEW — Source: live map, Building/Vendor deep-views — "Extermination
+// tracked as a case that stays open across visits: pest type, which
+// exterminator, when it was first reported, whether it is still under
+// warranty and when that warranty expires." No source file exists yet
+// (Extermination folder near-empty, no tracking).
+Table pest_control_case {
+  case_id integer [primary key]
+  building_id integer [ref: > building.building_id]
+  vendor_id integer [ref: > vendor_contact.vendor_id, note: 'nullable']
+  pest_type varchar
+  first_reported_date date
+  warranty_active boolean
+  warranty_expiry_date date
+  notes text
+}
+
+Table emergency_access_code {
+  access_code_id integer [primary key]
+  building_id integer [ref: > building.building_id, note: 'nullable - some codes are zone-level not building-level']
+  zone_name varchar
+  code_type varchar
+  code_value varchar
+}
+
+Table building_paint_spec {
+  paint_spec_id integer [primary key]
+  building_id integer [ref: > building.building_id]
+  zone varchar
+  surface_label varchar
+  product_interior varchar
+  product_exterior varchar
+  manufacturer varchar // Sherwin William / Benjamin Moore
+  // Real source confirmed via live map: "0 - Charte des couleurs de
+  // peinture SIB" — a distinct file from the empty PEINTURE folder and
+  // from the permission-blocked "Charte des couleurs SIB.xlsx" found
+  // earlier in this project. Not yet pulled/ingested.
+}
+
+Table building_camera_system {
+  camera_system_id integer [primary key]
+  building_id integer [ref: > building.building_id]
+  installed access_status_enum
+  accessible_remote varchar
+  functional varchar
+  platform camera_platform
+  ip_domain varchar
+  port varchar
+  username varchar
+  password varchar [note: 'SENSITIVE - encrypt at rest']
+}
+
+// CHANGED — now references entrance, not building, directly. Source:
+// live map, Building deep-view — "the intercom and key box now hang off
+// the right door." Until entrance data exists, ingestion creates one
+// synthetic entrance per building (see entrance table note above) so
+// this FK is never left dangling.
+Table building_intercom {
+  intercom_id integer [primary key]
+  entrance_id integer [ref: > entrance.entrance_id]
+  brand varchar // Mircom / Akuvox
+  dyndns_address varchar
+  panel_model varchar
+  is_master_building boolean
+  keyless_code_general varchar
+  keyless_code_maintenance varchar
+  keyless_code_tenant varchar
+}
+
+Table building_access_control {
+  access_control_id integer [primary key]
+  building_id integer [ref: > building.building_id]
+  brand varchar // Paradox / Akuvox
+  panel_type varchar
+  connection_option varchar
+  panel_serial_or_ip varchar
+  ip_module_password varchar [note: 'SENSITIVE']
+  system_login varchar [note: 'SENSITIVE']
+  system_password varchar [note: 'SENSITIVE']
+}
+
+// CHANGED — now references entrance, not building, directly. Same
+// rationale/evidence as building_intercom above.
+Table building_key_box {
+  box_id integer [primary key]
+  entrance_id integer [ref: > entrance.entrance_id]
+  box_number_onsite varchar
+  code varchar
+  location_description text
+  keyless_intercom_code varchar
+  last_validated_date date
+  last_validated_by varchar
+}
+
+Table pool_access_code {
+  pool_code_id integer [primary key]
+  building_id integer [ref: > building.building_id]
+  code_value varchar
+  notes text
+}
+
+// NEW — Source: live map, Building/Unit deep-views — "furnaces, boilers,
+// central heat pumps, elevators and freight elevators, the pool,
+// barbecues and terraces — make, model, install year, seasonal shutdown
+// and restart dates, and who maintains it." Also exists at unit level
+// ("the unit's own heat pump... kept per apartment, not per lease") —
+// modeled here as one table with both FKs nullable rather than two
+// separate tables, since the live map describes identical fields for
+// both cases; confirm this consolidation against real data once a
+// source exists (currently: no source file for either level).
+Table equipment {
+  equipment_id integer [primary key]
+  building_id integer [ref: > building.building_id, note: 'nullable - set when this is building-level equipment']
+  unit_id integer [ref: > unit.unit_id, note: 'nullable - set when this is unit-level equipment, e.g. an apartment''s own heat pump']
+  equipment_type equipment_type
+  make varchar
+  model varchar
+  install_year integer
+  seasonal_shutdown_date date
+  seasonal_restart_date date
+  maintained_by_vendor_id integer [ref: > vendor_contact.vendor_id, note: 'nullable']
+  notes text
+  // Expanded from "00. Follow-Ups - Boilers and Furnaces.xlsx". Source has parallel
+  // column blocks for heating circuit and domestic-hot-water circuit — ingestion MUST
+  // split each source row into 2 equipment rows (equipment_type = 'heating' or 'dhw'),
+  // one per circuit. The 18 fields below map to those parallel blocks.
+  criticality varchar
+  assigned_vendor_id integer [ref: > vendor_contact.vendor_id, note: 'nullable'] // "Entrepreneur attitré"
+  maintenance_frequency varchar
+  last_maintenance_date date
+  next_maintenance_date date
+  maintenance_status varchar
+  maintenance_note text
+  urgency varchar
+  action_priority varchar
+  device_condition varchar
+  replacement_priority varchar
+  service_area varchar          // "desserte" — geographic/zone coverage served by this equipment
+  component varchar             // "composante" — sub-component or circuit identifier within the unit
+  quantity integer
+  power varchar                 // "puissance" — kept varchar; units vary (kW, BTU, HP, etc.)
+  efficiency varchar
+  power_source varchar          // "alimentation" — electrical circuit, gas line, etc.
+  energy_supplier varchar
+}
+
+Table unit {
+  unit_id integer [primary key, note: 'natural key = Numéro unique d\'unité']
+  building_id integer [ref: > building.building_id]
+  rue varchar
+  numero_appartement varchar
+  grandeur varchar
+}
+
+Table lease {
+  lease_id integer [primary key]
+  unit_id integer [ref: > unit.unit_id]
+  mois date
+  debut_bail date
+  fin_bail date
+  date_fin_confirmee date
+  date_limite_preavis date
+  statut varchar
+  langue_bail varchar
+  droit_animaux boolean
+  depot decimal
+  loyer_de_base decimal
+  loyer_total decimal
+  mode_paiement_habituel varchar
+  somme_due_restante decimal
+  disponibilite_tableau_location varchar
+  notes_collecte text
+}
+
+// CHANGED — this is now the single, canonical person record for the
+// whole system, not just "current tenant on a lease." lease_id has been
+// REMOVED (see tenancy_record below). Source: live map, Tenant deep-view
+// — "A person the company deals with, kept once... Never linked directly
+// [to a lease]... a roommate change, a lease assignment or a separation
+// where one person stays is a new tenancy record — not a second copy of
+// the person." Every place a name/phone/email used to be typed
+// redundantly elsewhere in this schema (guarantor, maintenance_request
+// caller, unit_turnover incoming/outgoing, tenant_equipment_loan,
+// elevator_reservation — 7 locations total, confirmed during review) now
+// references this table by FK instead.
+Table tenant {
+  tenant_id integer [primary key]
+  nom_complet varchar
+  telephone varchar
+  courriel varchar
+  telephone_international varchar
+  ville varchar
+  code_postal varchar
+  informations_pour_make text
+}
+
+// NEW — junction between tenant and lease, replacing tenant.lease_id.
+// Source: live map, Tenant/Lease deep-views — "who was on the lease and
+// between which dates — one row per person per stretch of time, with the
+// reason it changed." No source file exists yet: "Occupancy history —
+// conceptual only, needs a new collection process." Until a real
+// collection process exists, this can be backfilled approximately from
+// Master Rent Roll snapshots (one tenancy_record per tenant per lease,
+// capacity = named_on_lease, start/end = lease dates) as a stopgap.
+Table tenancy_record {
+  tenancy_id integer [primary key]
+  lease_id integer [ref: > lease.lease_id]
+  tenant_id integer [ref: > tenant.tenant_id]
+  capacite tenancy_capacity
+  start_date date
+  end_date date
+  reason_for_change text
+}
+
+// CHANGED — nom/telephone/courriel REMOVED, replaced by tenant_id FK.
+// Source: live map, Tenant deep-view — "Guarantors point at a person the
+// same way [as tenants do]." A guarantor is now a role a person plays on
+// a specific lease, not a separately-typed name. NOTE: this specific
+// field-level change is inferred from map wording rather than a directly
+// quoted field list — confirm before treating as final.
+Table guarantor {
+  guarantor_id integer [primary key]
+  lease_id integer [ref: > lease.lease_id]
+  tenant_id integer [ref: > tenant.tenant_id]
+  notes text
+}
+
+Table parking_assignment {
+  parking_id integer [primary key]
+  lease_id integer [ref: > lease.lease_id]
+  mode varchar // bail/annexe/contrat
+  location_type varchar // exterieur/interieur/couvert/garage
+  count integer
+  cost decimal
+}
+
+Table storage_assignment {
+  storage_id integer [primary key]
+  lease_id integer [ref: > lease.lease_id]
+  mode varchar
+  count integer
+  cost decimal
+}
+
+Table unit_appliance {
+  unit_appliance_id integer [primary key]
+  lease_id integer [ref: > lease.lease_id]
+  item varchar
+  included boolean
+  responsibility varchar
+}
+
+Table employee {
+  employee_id integer [primary key]
+  nom_employe varchar
+  telephone varchar
+  courriel varchar
+  temps_hebdo_ete decimal
+  temps_hebdo_hiver decimal
+  outils_fournis boolean
+  disponibilites text
+  sector_id integer [ref: > sector.sector_id]
+  role varchar
+}
+
+Table cleaning_task_checklist {
+  checklist_id integer [primary key]
+  building_id integer [ref: > building.building_id]
+  format varchar // LEGACY — being superseded by format_type enum below; retained for backward compat
+  element varchar
+  frequency_per_week decimal
+  hours_per_visit decimal
+  season varchar
+  total decimal
+  freetext_content text // LEGACY — see raw_content below for the replacement
+  // NEW — typed format classification; see checklist_format_type enum above
+  format_type checklist_format_type
+  // NEW — fallback content for day_rotation/single_line/freetext rows that do not
+  // cleanly populate element/frequency_per_week/hours_per_visit/total columns
+  raw_content text
+}
+
+Table building_employee_assignment {
+  building_id integer [ref: > building.building_id]
+  employee_id integer [ref: > employee.employee_id]
+  weekly_hours_summer decimal
+  weekly_hours_winter decimal
+  access_notes text
+}
+
+Table laundry_contract {
+  uln varchar [primary key]
+  building_id integer [ref: > building.building_id, note: 'own address format (7th naming system) - confirmed still unreconciled per live map']
+  payment_type payment_type
+  contract_expiry date
+  suite_count integer
+  suite_to_set_ratio integer
+  washer_count integer
+  dryer_count integer
+  wash_rate decimal
+  dry_rate decimal
+  loads_per_suite_pmpd decimal
+  collections_pmpd decimal
+  pay_rule_type pay_rule_type
+  pay_rule_pct decimal
+  min_commission decimal
+  monthly_rental_fee decimal [note: 'only populated when pay_rule_type = rental']
+  revenue_month decimal
+  commission_month decimal
+  commission_pct_month decimal
+  revenue_per_set_month decimal
+  commission_per_set_month decimal
+  revenue_per_suite_month decimal
+  commission_per_suite_month decimal
+}
+
+// CHANGED — tenant_name/phone/email REMOVED, replaced by tenant_id FK.
+// Source: live map, Tenant deep-view — "Equipment on loan... points at
+// the person the equipment was lent to."
+Table tenant_equipment_loan {
+  loan_id integer [primary key]
+  unit_id integer [ref: > unit.unit_id]
+  tenant_id integer [ref: > tenant.tenant_id]
+  equipment_type varchar
+  quantity integer
+  status loan_status
+  loan_start_date date
+  expected_end_date date
+  has_contract boolean
+  notes text
+  payment_status varchar
+  payment_date date
+  payment_amount decimal
+}
+
+Table vacant_unit_task {
+  task_id integer [primary key]
+  unit_id integer [ref: > unit.unit_id]
+  priority integer
+  access_status varchar
+  listing_status varchar
+  promised_lease_date date
+  lease_start_date date
+  future_tenant_name varchar
+  future_tenant_contact varchar
+  notes_free text
+  internal_notes text
+}
+
+Table vacant_unit_task_item {
+  item_id integer [primary key]
+  task_id integer [ref: > vacant_unit_task.task_id]
+  task_type task_item_type
+  status varchar
+  notes text
+}
+
+Table unit_turnover {
+  turnover_id integer [primary key]
+  unit_id integer [ref: > unit.unit_id]
+  move_reason move_reason
+  lease_end_date date
+  move_out_confirmed_date date
+  assignment_desired_date date
+  move_out_time time
+  move_out_email_sent_date date
+  key_return_method varchar
+  lease_start_date date
+  move_in_confirmed_date date
+  move_in_time time
+  move_in_email_sent_date date
+  key_pickup_method varchar
+  intercom_status intercom_status
+  cleaning_status varchar
+  parking_remote_status varchar
+  internet_transfer_current boolean
+  internet_transfer_new boolean
+  parking_stall_current varchar
+  parking_stall_new varchar
+  furnished_status_current varchar
+  furnished_status_new varchar
+  // CHANGED — incoming/outgoing tenant name/phone/email REMOVED, replaced
+  // by FKs. Source: live map, Tenant deep-view — "Names the person moving
+  // in and the person moving out, each pointing at their own record
+  // rather than being retyped."
+  incoming_tenant_id integer [ref: > tenant.tenant_id]
+  outgoing_tenant_id integer [ref: > tenant.tenant_id]
+  pre_departure_inspection_notes text
+  general_notes text
+  room_count varchar
+  mattress_size varchar
+  source_turnover_id integer [ref: > maintenance_request.request_id, note: 'optional - links informal intake column to real ticket']
+}
+
+Table unit_turnover_furniture_item {
+  furniture_item_id integer [primary key]
+  turnover_id integer [ref: > unit_turnover.turnover_id]
+  appliance_type varchar // internet/cuisiniere/refrigerateur/lave-vaisselle/laveuse/secheuse
+  included_current boolean
+  included_new boolean
+}
+
+Table unit_turnover_settlement {
+  settlement_id integer [primary key]
+  turnover_id integer [ref: > unit_turnover.turnover_id]
+  deposit_amount_owed decimal
+  deposit_received boolean
+  deposit_refund_status varchar
+  amount_owed_by_tenant decimal
+  tal_dossier_open boolean
+  edl_received boolean
+  edl_satisfactory boolean
+  notes text
+}
+
+// CHANGED — tenant_name/phone/email REMOVED, replaced by tenant_id FK.
+// Source: live map, Tenant deep-view — "Elevator booking points at the
+// person the move slot was reserved for."
+Table elevator_reservation {
+  reservation_id integer [primary key]
+  building_id integer [ref: > building.building_id]
+  elevator_label varchar
+  date date
+  unit_id integer [ref: > unit.unit_id]
+  move_type move_type
+  time_slot time_slot
+  tenant_id integer [ref: > tenant.tenant_id]
+  confirmed boolean
+}
+
+//////////////////// DYNAMIC / CALENDAR-SOURCED TABLES ////////////////////
+
+Table maintenance_request {
+  request_id integer [primary key]
+  building_id integer [ref: > building.building_id]
+  unit_id integer [ref: > unit.unit_id]
+  // NEW — live map: "Most tickets link to a project through a matched
+  // name, independently of the unit or building. A few buildings are not
+  // matched yet, so a small number of tickets will show no project until
+  // that is cleaned up." Kept nullable; project_label_raw preserves the
+  // original unmatched text.
+  project_id integer [ref: > project.project_id, note: 'nullable - matched by name, some rows unmatched']
+  source_calendar varchar // MAIN - Calls / MAIN - Calls ST Majordome Québec
+  ticket_format ticket_format
+  category varchar
+  urgency_tier urgency_tier
+  // CHANGED — was a raw copied colour string only. Live map: "Now points
+  // at the zone itself rather than carrying a copy of its colour. The
+  // colour is kept beside it for rows not yet matched." territory_color
+  // kept as the legacy/unmatched fallback.
+  sector_id integer [ref: > sector.sector_id, note: 'nullable - for rows not yet matched, fall back to territory_color']
+  territory_color varchar [note: 'legacy fallback for unmatched rows only']
+  // NEW — live map, ticket field list: "Equipment concerned, when it is
+  // about a heat pump, boiler or elevator."
+  equipment_id integer [ref: > equipment.equipment_id, note: 'nullable - only set when the ticket concerns a specific piece of equipment']
+  banked_queue_date date
+  triage_summary text
+  delegable_status delegable_status
+  delegable_notes text
+  report_status report_status
+  report_notes text
+  duplicate_of_request_id integer [ref: > maintenance_request.request_id]
+  synergy_request_ids text // array, stored as delimited text or jsonb
+  synergy_reason text
+  unit_label varchar
+  project_label varchar [note: 'legacy fallback for unmatched rows only']
+  time_estimate_bucket time_estimate_bucket
+  time_estimate_raw varchar
+  complexity_tier complexity_tier
+  // CHANGED — was a raw string only. Live map: "Now a real link on the
+  // ticket when a job is outsourced, with the typed-in name kept beside
+  // it for rows not yet matched." subcontractor_name kept as fallback.
+  vendor_id integer [ref: > vendor_contact.vendor_id, note: 'nullable - set when the job is outsourced']
+  subcontractor_name varchar [note: 'legacy fallback for unmatched rows only']
+  proposed_assignee varchar [note: 'structurally always empty per Guide rule 37 - confirmed 2026-09']
+  tenant_agreement_notes text
+  other_notes text
+  congestion_level congestion_level
+  // CHANGED — caller_name/phone REMAIN as the raw fallback, but a real
+  // FK is added. Live map: "Points at whoever called it in — often the
+  // tenant, sometimes a neighbour, a family member or a staff member —
+  // with the typed-in name kept beside it."
+  caller_tenant_id integer [ref: > tenant.tenant_id, note: 'nullable - set when the caller is matched to a known person']
+  caller_name varchar [note: 'legacy fallback for unmatched/non-tenant callers']
+  caller_phone varchar [note: 'legacy fallback for unmatched/non-tenant callers']
+  dispatched boolean
+  work_performed text
+  tenant_present boolean
+  follow_up_expected boolean
+}
+
+Table maintenance_followup_entry {
+  followup_id integer [primary key]
+  request_id integer [ref: > maintenance_request.request_id]
+  entry_text text
+  entry_date date
+  entered_by_initials varchar
+}
+
+Table maintenance_attachment {
+  attachment_id integer [primary key]
+  request_id integer [ref: > maintenance_request.request_id]
+  drive_file_id varchar
+  file_type varchar // photo / video
+}
+
+Table staff_shift {
+  shift_id integer [primary key]
+  employee_id integer [ref: > employee.employee_id]
+  shift_type shift_type
+  start_date date
+  end_date date
+}
+
+Table on_call_schedule {
+  on_call_id integer [primary key]
+  employee_id integer [ref: > employee.employee_id]
+  start_date date
+  end_date date
+  swap_notes text
+}
+
+Table waste_collection_schedule {
+  schedule_id integer [primary key]
+  building_id integer [ref: > building.building_id]
+  collection_days varchar
+  instructions_text text
+  embedded_access_code varchar [note: 'confirmed rare - 1 of 12 buildings sampled had a code']
+}
+
+// SOURCE CORRECTED — live map states this comes from "Coordinator's
+// Guide — recurring-task rules, not a spreadsheet," NOT from the
+// Service Call Log (IA) calendar-recurrence file as we'd originally
+// assumed while exploring the Maintenance drive. That file's actual
+// mapping is still an open question — see review notes; it may turn out
+// to be a source for service_visit instead, which currently has no
+// source at all.
+Table recurring_task_pattern {
+  pattern_id integer [primary key]
+  building_id integer [ref: > building.building_id]
+  assigned_employee_id integer [ref: > employee.employee_id]
+  task_type varchar
+  recurrence_rule varchar
+  standing_instructions text
+}
