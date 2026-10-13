@@ -8,33 +8,34 @@
 
 //////////////////// ENUMS ////////////////////
 
+// DBML does not support type-level comments for enums; per-value notes are used instead.
 enum urgency_tier {
-  AJD
-  ajd
-  none
+  AJD [note: "aujourd'hui — urgent, handle today (guide rule 28). Uppercase form in source data."]
+  ajd [note: "data-quality artefact from source ingestion; normalised to AJD by triage service"]
+  none [note: "legacy ingestion artefact; output contract uses JSON null for non-urgent, not this value"]
 }
 
 enum complexity_tier {
-  C1
-  C2
-  C3
-  C4
+  C1 [note: "N'importe qui — no tool or skill required; natural pool for delegation to tenant. Guide §7a."]
+  C2 [note: "Ouvrier — standard toolbox, limited training sufficient. Label changed from 'de base' on 2026-07-12 (former label judged pejorative). Guide §7a."]
+  C3 [note: "Ouvrier expérimenté / spécialité — diagnosis required, building system knowledge, real experience needed. Guide §7a."]
+  C4 [note: "Sous-traitant / expertise externe — Newtech, Fortin, roofing, elevator, enamelling, extermination, anything requiring a quote. Guide §7a."]
 }
 
 enum congestion_level {
-  N1
-  N2
-  N3
-  N4
-  N5
+  N1 [note: "Au-dessus de nos affaires — fast response, minimal delegation. Guide §7b."]
+  N2 [note: "Niveau courant — normal pace. Guide §7b."]
+  N3 [note: "En retard — negotiate deferred scheduling for non-urgent calls; actively offer delegation. Guide §7b."]
+  N4 [note: "Très en retard — maximum deferral; paid delegation accepted readily. Guide §7b."]
+  N5 [note: "Critique — everything that can wait waits; delegation and subcontracting without hesitation. Guide §7b."]
 }
 
 enum report_status {
-  CANNOT_WAIT
-  SUPERVISOR_DISCRETION
-  CAN_WAIT_SHORT_TERM
-  CAN_WAIT
-  NOT_APPLICABLE
+  CANNOT_WAIT       [note: "inform supervisor immediately (guide §9 RAPPORT SUPERVISEUR)"]
+  SUPERVISOR_DISCRETION [note: "inform supervisor; timing at their discretion"]
+  CAN_WAIT_SHORT_TERM   [note: "flag for next supervisor touchpoint"]
+  CAN_WAIT              [note: "no near-term supervisor action required"]
+  NOT_APPLICABLE        [note: "report obligation does not apply to this call type"]
 }
 
 enum delegable_status {
@@ -44,19 +45,14 @@ enum delegable_status {
 }
 
 enum time_estimate_bucket {
-  UNDER_30_MIN
-  MIN30_TO_1H
-  H1_TO_2H
-  H2_TO_4H
-  HALF_DAY_PLUS
-  TBD_ON_SITE
+  UNDER_30_MIN  [note: "guide: <30 min"]
+  MIN30_TO_1H   [note: "guide: 30 min–1h"]
+  H1_TO_2H      [note: "guide: 1h–2h"]
+  H2_TO_4H      [note: "no direct guide equivalent — guide jumps from 1h–2h to demi-journée; retained as intermediate bucket"]
+  HALF_DAY_PLUS [note: "guide: demi-journée ou journée+"]
+  TBD_ON_SITE   [note: "guide: soumission requise (quote required before estimating) — enum name is misleading"]
 }
 
-enum ticket_format {
-  SECTION_COORDOS
-  NOTE_DE_TRIAGE
-  SECTION_TERRAIN
-}
 
 enum vendor_scope {
   portfolio_wide
@@ -139,6 +135,7 @@ enum camera_platform {
 enum access_status_enum {
   Oui_Paradox
   Oui_Akuvox
+  Oui
   Non
   Installation_prevue
 }
@@ -191,7 +188,9 @@ enum service_contract_category {
   fire
   elevator
   telecom
-  waste    // Container Rental — confirmed does not fit the original 7 categories
+  waste          // Container Rental — confirmed does not fit the original 7 categories
+  snow_parking   // Stationnement déneigement (parking lot snow removal)
+  snow_pedestrian // Piétonnier déneigement (pedestrian path snow removal)
 }
 
 // NEW — cleaning_task_checklist.format_type. Source: Ménage source files showed
@@ -215,18 +214,49 @@ enum service_visit_type {
   other
 }
 
+enum employment_type {
+  staff
+  contractor_company
+  unknown
+}
+
+enum source_confidence {
+  documented
+  inferred_from_calendar
+}
+
+// NEW (2026-10-09) — Triage schema additions (SoW Milestone 1, Step 1)
+// DBML does not support type-level comments for enums; per-value notes used instead.
+// Auto-retry loop must include ONLY triage_pending and triage_failed.
+// triage_clarify is explicitly excluded — human input required, not a transient error.
+enum request_status {
+  intake_received  [note: 'Request landed; waiting for next triage run']
+  triage_pending   [note: 'Acquired by triage service (triage_started_at set); other workers skip. Rows stuck > 10 min = abandoned lock']
+  triage_clarify   [note: 'BLOCKED — ambiguous unit or unresolvable address. Coordinator must resolve. NEVER auto-retry.']
+  triage_proposal  [note: 'Model output ready, passed validation; coordinator review pending before dispatch board visibility']
+  triage_failed    [note: 'All retries exhausted (API error or repeated gate rejection). Auto-retry permitted after manual reset.']
+  triaged          [note: 'Coordinator accepted proposal; on the dispatch board. assigned_employee_id null = unassigned; set = assigned. No separate status for sub-states.']
+  en_route         [note: 'Worker confirmed and heading to site; triggers tenant SMS']
+  closed           [note: 'Work complete. All rows before 2026-10-09 carry this as a backfill sentinel — does not mean work was verified.']
+}
+
 //////////////////// STATIC / REFERENCE TABLES ////////////////////
 
 Table project {
   project_id integer [primary key]
   nom_unique_projet varchar
   adresse_quickbooks varchar
+  // NEW (2026-10-06) — Table Fondamentale Phase 1
+  accounting_project_number varchar   // TF: col 3 "Numero comptable de Projet" (e.g. "162")
+  // NEW (2026-10-07) — Table Fondamentale finance cluster (grain confirmed project-level)
+  purchase_price   numeric   // TF: col 14 "Prix d'achat"; NULL for Marais (no source) and Chamonix (N/A in TF)
+  acquisition_date date      // TF: col 15 "Date d'acquisition"; NULL for Marais only
+  quickbooks_class varchar   // TF: col 5  "Nom de Classe pour Quickbooks"; NULL for Chamonix+Marais
 }
 
 Table sector {
   sector_id integer [primary key]
-  territoire varchar // broader geographic region (e.g. "QUÉBEC-EST"); distinct from secteur/color_code (File 3 CONTACTS concept) — do NOT merge, relationship TBD
-  secteur varchar
+  territoire varchar // broader geographic region (e.g. "QUÉBEC-EST")
   color_code varchar
 }
 
@@ -251,9 +281,38 @@ Table building {
                           // hang off entrance rather than building directly.
   boite_a_cle_int varchar
   raw_fiche_technique json
-  // NEW — Source: Fire Protection master table RÉF. tab. A002–A112 style code used
-  // as a 4th building-identifier system in fire-protection records. Nullable.
+  // Source: Fire Protection RÉF. tab. NOT unique — 31 A-codes span 2+ buildings
+  // (fire-protection uses project-level grain; our table is building-level).
+  // Nullable: 4 buildings have no A-code (2 terrain parcels + Corail + Marais).
   legacy_code varchar
+
+  // NEW (2026-09-26) — Source: Table Fondamentale (ingest_building.py Phase 1 write).
+  // These columns carry the TF+FT attribute data approved for ingestion.
+  // All nullable — TF has partial coverage (~94-96% on most columns).
+  sib_territory varchar           // TF: sib_territory — SIB geographic territory label (e.g. "QUÉBEC-EST")
+  furnished varchar               // TF: furnished — furnishing status ("Fully Furnished", "Unfurnished", etc.)
+  building_structure varchar      // TF: building_structure — construction type ("Wood Frame", "Concrete", etc.)
+  nb_elevateurs integer           // TF: num_elevators — elevator count (integer; paired with ascenseur bool)
+  num_service_elevators integer   // TF: num_service_elevators — freight/service elevator count
+  internet varchar                // TF: internet — connectivity type ("Yes (Wi-Fi only)", "No", etc.)
+  terrasse_commune boolean        // TF: common_terrace
+  num_bbqs integer                // TF: num_bbqs — BBQ unit count on common terrace
+  coworking_space boolean         // TF: coworking_space
+  reception_loft boolean          // TF: reception_loft
+  chauffage_details text          // TF: heating_details — free-text heating description
+  chauffe_eau varchar             // TF: hot_water_mode — domestic hot water source
+  individual_heat_pumps boolean   // TF: individual_heat_pumps — per-unit heat pumps present
+  heat_pump_details text          // TF: heat_pump_details — free-text heat pump description
+
+  // NEW (2026-10-06) — Table Fondamentale Phase 1 (live sheet)
+  nb_units_total integer          // TF col 7: total rentable units
+  nb_units_residential integer    // TF col 8: residential units only
+  actif_inactif varchar           // TF col 13: "Actif" or "Inactif"
+  municipality varchar            // TF col 16: city/municipality name
+  property_type varchar           // TF col 17: e.g. "Multilogement", "Duplex ou triplex"
+  dogs_allowed boolean            // TF col 52: "Droit aux chiens" (Oui→true, Non→false)
+  web_building_name varchar       // TF col 54: short display name for website
+  web_slug varchar                // TF col 55: URL slug for website
 }
 
 // NEW — Source: live map, Building deep-view: "Each front door: civic
@@ -370,6 +429,8 @@ Table building_fire_system {
   co2_vendor_id integer [ref: > vendor_contact.vendor_id, note: 'nullable']
   dossier_link varchar
   current_fire_vendor_id integer [ref: > vendor_contact.vendor_id, note: 'nullable']
+  corrective_actions_date date
+  piezzo_status varchar
   notes text
 }
 
@@ -466,9 +527,17 @@ Table building_key_box {
   last_validated_by varchar
 }
 
+Table building_telecom {
+  building_id integer [primary key, ref: > building.building_id]
+  internet_provider text           // ISP + account combined; format too inconsistent to split
+  internet_broadcast_provider text // broadcast/cable provider + account
+  tech_support_provider text       // IT/tech support vendor + contact
+  telephone_provider text          // telephone provider + account (often multi-line for complexes)
+}
+
 Table pool_access_code {
   pool_code_id integer [primary key]
-  building_id integer [ref: > building.building_id]
+  building_id integer [ref: > building.building_id, null]  // nullable: codes may be complex-wide (OSEN pool codes have no per-building assignment)
   code_value varchar
   notes text
 }
@@ -626,6 +695,7 @@ Table unit_appliance {
 
 Table employee {
   employee_id integer [primary key]
+  initials varchar [unique, note: '2-5 char code used in calendar ticket titles']
   nom_employe varchar
   telephone varchar
   courriel varchar
@@ -633,8 +703,13 @@ Table employee {
   temps_hebdo_hiver decimal
   outils_fournis boolean
   disponibilites text
-  sector_id integer [ref: > sector.sector_id]
+  sector_id integer [ref: > sector.sector_id, note: 'nullable; multi-sector employees captured in notes']
   role varchar
+  employment_type employment_type [not null, default: 'unknown']
+  is_active boolean [not null, default: true]
+  auth_user_id uuid [note: 'nullable FK to auth.users; null until login provisioned']
+  source_confidence source_confidence
+  notes text
 }
 
 Table cleaning_task_checklist {
@@ -757,13 +832,17 @@ Table unit_turnover {
   // by FKs. Source: live map, Tenant deep-view — "Names the person moving
   // in and the person moving out, each pointing at their own record
   // rather than being retyped."
-  incoming_tenant_id integer [ref: > tenant.tenant_id]
-  outgoing_tenant_id integer [ref: > tenant.tenant_id]
+  incoming_tenant_id integer [ref: > tenant.tenant_id, note: 'nullable — set when tenant resolved by name match']
+  outgoing_tenant_id integer [ref: > tenant.tenant_id, note: 'nullable — set when tenant resolved by name match']
   pre_departure_inspection_notes text
   general_notes text
   room_count varchar
   mattress_size varchar
   source_turnover_id integer [ref: > maintenance_request.request_id, note: 'optional - links informal intake column to real ticket']
+  incoming_tenant_name_raw varchar [note: 'raw name for later FK-resolution pass']
+  outgoing_tenant_name_raw varchar [note: 'raw name for later FK-resolution pass']
+  outgoing_fin_bail date [note: 'nullable — backfilled from rent roll archive where a matching snapshot exists']
+  outgoing_loyer numeric [note: 'nullable — backfilled from rent roll archive where a matching snapshot exists']
 }
 
 Table unit_turnover_furniture_item {
@@ -815,15 +894,8 @@ Table maintenance_request {
   // original unmatched text.
   project_id integer [ref: > project.project_id, note: 'nullable - matched by name, some rows unmatched']
   source_calendar varchar // MAIN - Calls / MAIN - Calls ST Majordome Québec
-  ticket_format ticket_format
-  category varchar
   urgency_tier urgency_tier
-  // CHANGED — was a raw copied colour string only. Live map: "Now points
-  // at the zone itself rather than carrying a copy of its colour. The
-  // colour is kept beside it for rows not yet matched." territory_color
-  // kept as the legacy/unmatched fallback.
-  sector_id integer [ref: > sector.sector_id, note: 'nullable - for rows not yet matched, fall back to territory_color']
-  territory_color varchar [note: 'legacy fallback for unmatched rows only']
+  sector_id integer [ref: > sector.sector_id, note: 'nullable - not all tickets resolve to a sector']
   // NEW — live map, ticket field list: "Equipment concerned, when it is
   // about a heat pump, boiler or elevator."
   equipment_id integer [ref: > equipment.equipment_id, note: 'nullable - only set when the ticket concerns a specific piece of equipment']
@@ -834,7 +906,8 @@ Table maintenance_request {
   report_status report_status
   report_notes text
   duplicate_of_request_id integer [ref: > maintenance_request.request_id]
-  synergy_request_ids text // array, stored as delimited text or jsonb
+  addition_to_request_id integer [ref: > maintenance_request.request_id, note: 'nullable; ADDITION verdict (Guide rule 12); CHECK != request_id']
+  synergy_request_ids integer[] // typed array; queryable with = ANY(synergy_request_ids)
   synergy_reason text
   unit_label varchar
   project_label varchar [note: 'legacy fallback for unmatched rows only']
@@ -861,6 +934,28 @@ Table maintenance_request {
   work_performed text
   tenant_present boolean
   follow_up_expected boolean
+  // NEW (2026-10-09) — Triage schema additions
+  status request_status [not null, note: 'closed on all pre-2026-10-09 rows = backfill sentinel (predates app)']
+  routing_rule varchar [note: 'A0–A5; records which rule fired; subcontractor_name records the decision']
+  triage_started_at timestamp
+  triage_model_version varchar // e.g. 'skill-v6.1/guide-v4.39'
+}
+
+// NEW (2026-10-09) — one row per model call attempt (including rejected/errored).
+// Separate from data_provenance: provenance = WHERE a value came from;
+// triage_log = WHAT the model was asked and WHAT it said.
+Table triage_log {
+  log_id            integer [primary key, increment]
+  request_id        integer [not null, ref: > maintenance_request.request_id]
+  attempted_at      timestamp [not null]
+  model_version     varchar
+  context_sent      jsonb     // assembled user message
+  raw_response      text      // verbatim, before validation
+  validation_result varchar   // accepted | rejected_<gate> | error | timeout
+  validation_detail text
+  latency_ms        integer
+  input_tokens      integer
+  output_tokens     integer
 }
 
 Table maintenance_followup_entry {
@@ -869,6 +964,20 @@ Table maintenance_followup_entry {
   entry_text text
   entry_date date
   entered_by_initials varchar
+}
+
+// Links a maintenance request to a prior ticket referenced in its historique_raw.
+// relation_type = 'prior_ticket' is the only value currently produced (from historique_raw URLs);
+// the column exists so other relation kinds can be added later.
+Table maintenance_request_history {
+  history_id integer [primary key]
+  request_id integer [not null, ref: > maintenance_request.request_id]
+  referenced_request_id integer [not null, ref: > maintenance_request.request_id]
+  relation_type varchar [not null]
+
+  indexes {
+    (request_id, referenced_request_id, relation_type) [unique]
+  }
 }
 
 Table maintenance_attachment {
@@ -916,4 +1025,20 @@ Table recurring_task_pattern {
   task_type varchar
   recurrence_rule varchar
   standing_instructions text
+}
+
+Table data_provenance {
+  provenance_id integer [primary key]
+  target_table varchar [not null]
+  target_pk integer [not null]
+  target_column varchar [not null]
+  source_type varchar [note: 'FT, MRR, CROSSWALK']
+  source_drive_id varchar
+  source_file_name varchar
+  source_tab varchar
+  source_row varchar
+  source_column varchar
+  raw_value text
+  ingested_value text
+  ingested_at timestamp
 }

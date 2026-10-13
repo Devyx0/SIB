@@ -1,20 +1,49 @@
-# Python-generated files
+# ── Python ──────────────────────────────────────────────
 __pycache__/
 *.py[oc]
 build/
 dist/
 wheels/
-*.egg-info
+*.egg-info/
+.pytest_cache/
 
-# Virtual environments
-.venv
+# ── Virtual environments ──────────────────────────────────
+.venv/
 
-# OAuth credentials — never commit
+# ── Secrets & credentials ─────────────────────────────────
+.env
+.env.*
+!.env.example
 credentials.json
 token.json
 
-# Secrets
-.env
-
-# Scratch / dry-run output
+# ── Client source data (xlsx, csv, docx originals) ───────
 work/
+
+# ── Adjudication docs — contain real tenant names ─────────
+docs/client-review-cases.md
+docs/backtest-adjudication.md
+
+# ── Generated backtest outputs ────────────────────────────
+docs/backtest_full_results.jsonl
+docs/backtest_full_results_prefix.jsonl
+docs/backtest_results.jsonl
+docs/backtest_sample_ids.json
+
+# ── Node ─────────────────────────────────────────────────
+node_modules/
+
+# ── OS / editor ──────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Claude Code session files ─────────────────────────────
+.claude/
+
+# ── Logs & dumps ─────────────────────────────────────────
+*.log
+*.dump

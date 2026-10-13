@@ -12,10 +12,16 @@ CREATE TYPE urgency_tier AS ENUM (
     'ajd',  -- lowercase form: both values exist, data-quality artefact from source
     'none'
 );
+COMMENT ON TYPE urgency_tier IS
+    'AJD = aujourd''hui = urgent, handle today (guide rule 28). Both ''AJD'' and ''ajd'' exist as a data-quality artefact from source ingestion; triage service normalises to uppercase. ''none'' is a legacy ingestion artefact; the output contract uses NULL for non-urgent calls, not the string ''none''';
 
 CREATE TYPE complexity_tier AS ENUM ('C1', 'C2', 'C3', 'C4');
+COMMENT ON TYPE complexity_tier IS
+    'Guide §7a (introduced 2026-07-09). C1=N''importe qui — no tool or skill required, natural pool for delegation to tenant; C2=Ouvrier — standard toolbox, limited training sufficient (label changed from "de base" on 2026-07-12, former label judged pejorative); C3=Ouvrier expérimenté/spécialité — diagnosis required, building system knowledge, real experience needed; C4=Sous-traitant/expertise externe — Newtech, Fortin, roofing, elevator, enamelling, extermination, anything requiring a quote';
 
 CREATE TYPE congestion_level AS ENUM ('N1', 'N2', 'N3', 'N4', 'N5');
+COMMENT ON TYPE congestion_level IS
+    'Guide §7b (introduced 2026-07-09). N1=Au-dessus de nos affaires — fast response, minimal delegation; N2=Niveau courant — normal pace; N3=En retard — negotiate deferred scheduling for non-urgent calls, actively offer delegation; N4=Très en retard — maximum deferral, paid delegation accepted readily; N5=Critique — everything that can wait waits, delegation and subcontracting without hesitation';
 
 CREATE TYPE report_status AS ENUM (
     'CANNOT_WAIT',
@@ -24,6 +30,8 @@ CREATE TYPE report_status AS ENUM (
     'CAN_WAIT',
     'NOT_APPLICABLE'
 );
+COMMENT ON TYPE report_status IS
+    'Triage reporting-obligation scale (guide §9 RAPPORT SUPERVISEUR line). CANNOT_WAIT=inform supervisor immediately; SUPERVISOR_DISCRETION=inform supervisor, timing at their discretion; CAN_WAIT_SHORT_TERM=flag for next supervisor touchpoint; CAN_WAIT=no near-term supervisor action required; NOT_APPLICABLE=report obligation does not apply to this call type';
 
 CREATE TYPE delegable_status AS ENUM ('YES', 'NO', 'CONDITIONAL');
 
@@ -35,12 +43,9 @@ CREATE TYPE time_estimate_bucket AS ENUM (
     'HALF_DAY_PLUS',
     'TBD_ON_SITE'
 );
+COMMENT ON TYPE time_estimate_bucket IS
+    'Guide §9 TEMPS line. UNDER_30_MIN=<30 min; MIN30_TO_1H=30 min–1h; H1_TO_2H=1h–2h; H2_TO_4H has no direct guide equivalent (guide jumps from 1h–2h to demi-journée, retained as intermediate bucket); HALF_DAY_PLUS=demi-journée ou journée+; TBD_ON_SITE=soumission requise (quote required before estimating — guide label and enum name diverge)';
 
-CREATE TYPE ticket_format AS ENUM (
-    'SECTION_COORDOS',
-    'NOTE_DE_TRIAGE',
-    'SECTION_TERRAIN'
-);
 
 CREATE TYPE vendor_scope AS ENUM ('portfolio_wide', 'building_specific');
 
@@ -96,6 +101,7 @@ CREATE TYPE camera_platform AS ENUM (
 CREATE TYPE access_status_enum AS ENUM (
     'Oui_Paradox',
     'Oui_Akuvox',
+    'Oui',
     'Non',
     'Installation_prevue'
 );
@@ -135,7 +141,9 @@ CREATE TYPE service_contract_category AS ENUM (
     'fire',
     'elevator',
     'telecom',
-    'waste'     -- Container Rental; does not fit any of the original 7 categories
+    'waste',         -- Container Rental; does not fit any of the original 7 categories
+    'snow_parking',  -- Stationnement déneigement (parking lot snow removal)
+    'snow_pedestrian' -- Piétonnier déneigement (pedestrian path snow removal)
 );
 
 -- NEW — cleaning_task_checklist.format_type. Source: Ménage source files showed
@@ -157,6 +165,32 @@ CREATE TYPE service_visit_type AS ENUM (
 );
 
 
+CREATE TYPE employment_type AS ENUM ('staff', 'contractor_company', 'unknown');
+
+CREATE TYPE source_confidence AS ENUM ('documented', 'inferred_from_calendar');
+
+-- NEW (2026-10-09) — Triage schema additions (SoW Milestone 1, Step 1)
+CREATE TYPE request_status AS ENUM (
+    'intake_received',
+    'triage_pending',
+    'triage_clarify',
+    'triage_proposal',
+    'triage_failed',
+    'en_route',
+    'closed'
+);
+COMMENT ON TYPE request_status IS
+$$Request lifecycle states. Auto-retry eligibility: only triage_pending and triage_failed are picked up by the retry loop. triage_clarify must NOT enter the loop — it signals a human-input requirement, not a transient error.
+
+intake_received   — request landed (Gravity form, robot call, or in-app intake); waiting for the next triage run.
+triage_pending    — acquired by the triage service; triage_started_at is set. Other workers skip. Rows stuck > 10 min = abandoned lock, eligible for takeover.
+triage_clarify    — BLOCKED: triage could not proceed (ambiguous unit, address unresolvable). Requires coordinator action before the row may re-enter the queue. NEVER auto-retry: the same ambiguity will recur.
+triage_proposal   — model output written and passed validation; coordinator review pending before the row appears on the dispatch board. Coordinator either accepts (→ triaged) or rejects and edits (→ triage_pending for one retry).
+triage_failed     — all retries exhausted due to API error or repeated gate rejection. Auto-retry is permitted after coordinator review or manual reset.
+triaged           — coordinator accepted the proposal; row is on the dispatch board. assigned_employee_id/code may or may not be set (unassigned = triaged + no employee; assigned = triaged + employee set). No separate status for those sub-states.
+en_route          — field worker confirmed and heading to site. Triggers tenant SMS.
+closed            — work complete and closed out. All rows ingested before 2026-10-09 carry this value as a backfill sentinel — it does not mean work was verified complete.$$;
+
 -- ════════════════════════════════════════════════════════════
 -- TABLES — dependency order (parents before children)
 -- ════════════════════════════════════════════════════════════
@@ -164,15 +198,20 @@ CREATE TYPE service_visit_type AS ENUM (
 -- ── Level 0: no FK dependencies ──────────────────────────────────────────────
 
 CREATE TABLE project (
-    project_id          integer PRIMARY KEY,
-    nom_unique_projet   varchar,
-    adresse_quickbooks  varchar
+    project_id                  integer PRIMARY KEY,
+    nom_unique_projet            varchar,
+    adresse_quickbooks           varchar,
+    -- NEW (2026-10-06) — Table Fondamentale Phase 1
+    accounting_project_number    varchar,
+    -- NEW (2026-10-07) — Table Fondamentale finance cluster (grain: project-level, confirmed)
+    purchase_price               numeric,   -- TF col 14 "Prix d'achat"; NULL for Marais (no data), Chamonix (N/A)
+    acquisition_date             date,      -- TF col 15 "Date d'acquisition"; NULL for Marais only
+    quickbooks_class             varchar    -- TF col 5  "Nom de Classe pour Quickbooks"; NULL for Chamonix+Marais
 );
 
 CREATE TABLE sector (
     sector_id   integer PRIMARY KEY,
-    territoire  varchar,  -- broader region (e.g. "QUÉBEC-EST"); distinct from secteur/color_code — relationship TBD
-    secteur     varchar,
+    territoire  varchar,  -- broader region (e.g. "QUÉBEC-EST")
     color_code  varchar
 );
 
@@ -199,29 +238,54 @@ CREATE TABLE tenant (
 -- ── Level 1 ───────────────────────────────────────────────────────────────────
 
 CREATE TABLE building (
-    building_id         integer PRIMARY KEY,
-    project_id          integer NOT NULL REFERENCES project(project_id),
-    sector_id           integer NOT NULL REFERENCES sector(sector_id),
-    adresse             varchar,
-    ville               varchar,
-    code_postal         varchar,
-    annee_construction  varchar,
-    nb_etages           varchar,
-    nb_logements        varchar,
-    ascenseur           boolean,
-    piscine             boolean,
-    sauna               boolean,
-    gym                 boolean,
-    chauffage           varchar,
-    systeme_incendie    varchar,
-    boite_a_cle_ext     varchar,
-    boite_a_cle_int     varchar,
-    raw_fiche_technique jsonb,  -- json → jsonb for queryability
-    legacy_code         varchar -- A002-A112 code from Fire Protection RÉF. tab; 4th building-identifier system; nullable
+    building_id              integer PRIMARY KEY,
+    project_id               integer NOT NULL REFERENCES project(project_id),
+    sector_id                integer NOT NULL REFERENCES sector(sector_id),
+    adresse                  varchar,
+    ville                    varchar,
+    code_postal              varchar,
+    annee_construction       varchar,
+    nb_etages                varchar,
+    nb_logements             varchar,
+    ascenseur                boolean,
+    piscine                  boolean,
+    sauna                    boolean,
+    gym                      boolean,
+    chauffage                varchar,
+    systeme_incendie         varchar,
+    boite_a_cle_ext          varchar,  -- kept for compat; detail lives on building_key_box eventually
+    boite_a_cle_int          varchar,
+    raw_fiche_technique      jsonb,    -- json → jsonb for queryability
+    legacy_code              varchar,  -- A002-A112 cross-ref from Fire Protection RÉF. tab. NOT unique: 31 A-codes map to 2+ buildings (A-codes are project-level, our table is building-level)
+    -- NEW (2026-09-26) — Table Fondamentale + Fiches Techniques attributes (ingest_building.py Phase 1)
+    sib_territory            varchar,
+    furnished                varchar,
+    building_structure       varchar,
+    nb_elevateurs            integer,
+    num_service_elevators    integer,
+    internet                 varchar,
+    terrasse_commune         boolean,
+    num_bbqs                 integer,
+    coworking_space          boolean,
+    reception_loft           boolean,
+    chauffage_details        text,
+    chauffe_eau              varchar,
+    individual_heat_pumps    boolean,
+    heat_pump_details        text,
+    -- NEW (2026-10-06) — Table Fondamentale Phase 1 (live sheet columns 7–14, 53–54)
+    nb_units_total           integer,
+    nb_units_residential     integer,
+    actif_inactif            varchar,   -- "Actif" or "Inactif"
+    municipality             varchar,
+    property_type            varchar,
+    dogs_allowed             boolean,
+    web_building_name        varchar,
+    web_slug                 varchar
 );
 
 CREATE TABLE employee (
     employee_id        integer PRIMARY KEY,
+    initials           varchar UNIQUE,
     nom_employe        varchar,
     telephone          varchar,
     courriel           varchar,
@@ -229,8 +293,13 @@ CREATE TABLE employee (
     temps_hebdo_hiver  numeric,
     outils_fournis     boolean,
     disponibilites     text,
-    sector_id          integer NOT NULL REFERENCES sector(sector_id),
-    role               varchar
+    sector_id          integer REFERENCES sector(sector_id),  -- nullable; multi-sector employees use notes
+    role               varchar,
+    employment_type    employment_type NOT NULL DEFAULT 'unknown',
+    is_active          boolean NOT NULL DEFAULT true,
+    auth_user_id       uuid,                                 -- FK to auth.users once login exists
+    source_confidence  source_confidence,
+    notes              text
 );
 
 CREATE TABLE vendor_category_exclusivity (
@@ -243,7 +312,7 @@ CREATE TABLE vendor_category_exclusivity (
 
 CREATE TABLE service_contract (
     contract_id  integer PRIMARY KEY,
-    vendor_id    integer NOT NULL REFERENCES vendor_contact(vendor_id),
+    vendor_id    integer REFERENCES vendor_contact(vendor_id),
     category     service_contract_category,
     term_start   date,
     term_end     date,
@@ -365,9 +434,17 @@ CREATE TABLE building_key_box (
     last_validated_by     varchar
 );
 
+CREATE TABLE building_telecom (
+    building_id                  integer PRIMARY KEY REFERENCES building(building_id),
+    internet_provider            text,    -- ISP + account, combined (format too inconsistent to split)
+    internet_broadcast_provider  text,    -- broadcast / cable internet provider + account
+    tech_support_provider        text,    -- IT / tech support vendor + contact
+    telephone_provider           text     -- telephone line provider + account (often multi-line for complexes)
+);
+
 CREATE TABLE pool_access_code (
     pool_code_id  integer PRIMARY KEY,
-    building_id   integer NOT NULL REFERENCES building(building_id),
+    building_id   integer REFERENCES building(building_id),  -- nullable: codes may be complex-wide
     code_value    varchar,
     notes         text
 );
@@ -581,6 +658,8 @@ CREATE TABLE building_fire_system (
     co2_vendor_id               integer REFERENCES vendor_contact(vendor_id),  -- nullable
     dossier_link                varchar,
     current_fire_vendor_id      integer REFERENCES vendor_contact(vendor_id),  -- nullable
+    corrective_actions_date     date,
+    piezzo_status               varchar,
     notes                       text
 );
 
@@ -669,11 +748,8 @@ CREATE TABLE maintenance_request (
     unit_id                  integer NOT NULL REFERENCES unit(unit_id),
     project_id               integer REFERENCES project(project_id),         -- nullable
     source_calendar          varchar,
-    ticket_format            ticket_format,
-    category                 varchar,
     urgency_tier             urgency_tier,
     sector_id                integer REFERENCES sector(sector_id),            -- nullable
-    territory_color          varchar,
     equipment_id             integer REFERENCES equipment(equipment_id),      -- nullable
     banked_queue_date        date,
     triage_summary           text,
@@ -682,7 +758,8 @@ CREATE TABLE maintenance_request (
     report_status            report_status,
     report_notes             text,
     duplicate_of_request_id  integer REFERENCES maintenance_request(request_id), -- nullable self-ref
-    synergy_request_ids      text,
+    addition_to_request_id   integer REFERENCES maintenance_request(request_id), -- nullable self-ref; ADDITION verdict (Guide rule 12)
+    synergy_request_ids      integer[],
     synergy_reason           text,
     unit_label               varchar,
     project_label            varchar,
@@ -701,7 +778,31 @@ CREATE TABLE maintenance_request (
     dispatched               boolean,
     work_performed           text,
     tenant_present           boolean,
-    follow_up_expected       boolean
+    follow_up_expected       boolean,
+    -- NEW (2026-10-09) — Triage schema additions
+    status                   request_status NOT NULL,
+    routing_rule             varchar,
+    triage_started_at        timestamp,
+    triage_model_version     varchar,
+    CONSTRAINT mr_addition_not_self CHECK (addition_to_request_id != request_id)
+);
+
+
+-- NEW (2026-10-09) — one row per model call attempt, including rejected/errored ones.
+-- Separate from data_provenance: provenance records WHERE a value came from;
+-- this records WHAT the model was asked and WHAT it said.
+CREATE TABLE triage_log (
+    log_id            serial    PRIMARY KEY,
+    request_id        integer   NOT NULL REFERENCES maintenance_request(request_id),
+    attempted_at      timestamp NOT NULL,
+    model_version     varchar,
+    context_sent      jsonb,
+    raw_response      text,
+    validation_result varchar,
+    validation_detail text,
+    latency_ms        integer,
+    input_tokens      integer,
+    output_tokens     integer
 );
 
 
@@ -720,6 +821,18 @@ CREATE TABLE maintenance_attachment (
     request_id     integer NOT NULL REFERENCES maintenance_request(request_id),
     drive_file_id  varchar,
     file_type      varchar
+);
+
+-- Links a maintenance request to a prior ticket referenced in its historique_raw.
+-- relation_type = 'prior_ticket' is the only value currently produced (from historique_raw URLs);
+-- the column exists so other relation kinds can be added later.
+CREATE TABLE maintenance_request_history (
+    history_id              serial PRIMARY KEY,
+    request_id              integer NOT NULL REFERENCES maintenance_request(request_id),
+    referenced_request_id   integer NOT NULL REFERENCES maintenance_request(request_id),
+    relation_type           varchar NOT NULL,
+    UNIQUE (request_id, referenced_request_id, relation_type),
+    CHECK (request_id != referenced_request_id)
 );
 
 -- source_turnover_id is nullable: only set when an informal calendar intake
@@ -748,13 +861,17 @@ CREATE TABLE unit_turnover (
     parking_stall_new             varchar,
     furnished_status_current      varchar,
     furnished_status_new          varchar,
-    incoming_tenant_id            integer NOT NULL REFERENCES tenant(tenant_id),
-    outgoing_tenant_id            integer NOT NULL REFERENCES tenant(tenant_id),
+    incoming_tenant_id            integer REFERENCES tenant(tenant_id),
+    outgoing_tenant_id            integer REFERENCES tenant(tenant_id),
     pre_departure_inspection_notes text,
     general_notes                 text,
     room_count                    varchar,
     mattress_size                 varchar,
-    source_turnover_id            integer REFERENCES maintenance_request(request_id)
+    source_turnover_id            integer REFERENCES maintenance_request(request_id),
+    incoming_tenant_name_raw      varchar,
+    outgoing_tenant_name_raw      varchar,
+    outgoing_fin_bail             date,
+    outgoing_loyer                numeric
 );
 
 
@@ -810,8 +927,10 @@ COMMENT ON COLUMN building.boite_a_cle_ext IS
 COMMENT ON COLUMN building.raw_fiche_technique IS
     'Raw JSONB from the fiches techniques translation pipeline (jsonb for queryability).';
 COMMENT ON COLUMN building.legacy_code IS
-    'A002–A112 style code from the Fire Protection master table RÉF. tab. '
-    '4th building-identifier system in this schema (alongside building_id, project_id, and laundry ULN). Nullable.';
+    'A002–A112 cross-reference from the Fire Protection master table RÉF. tab. '
+    'NOT a unique key: 31 A-codes map to 2 or more buildings because the fire-protection filing '
+    'system uses a coarser project-level grain than our building table. '
+    'Nullable (4 buildings have no A-code: 2 terrain parcels, Corail, Marais).';
 
 -- building_document
 COMMENT ON COLUMN building_document.category IS
@@ -912,9 +1031,7 @@ COMMENT ON COLUMN waste_collection_schedule.embedded_access_code IS
 -- maintenance_request
 COMMENT ON COLUMN maintenance_request.source_calendar IS
     'Source calendar name. Known values: MAIN - Calls, MAIN - Calls ST Majordome Québec';
-COMMENT ON COLUMN maintenance_request.territory_color IS
-    'Legacy fallback: raw colour string for rows not yet matched to a sector_id. '
-    'Populated only when sector_id is NULL.';
+
 COMMENT ON COLUMN maintenance_request.project_label IS
     'Legacy fallback: raw project name for rows not yet matched to a project_id. '
     'Populated only when project_id is NULL.';
@@ -930,7 +1047,35 @@ COMMENT ON COLUMN maintenance_request.caller_name IS
 COMMENT ON COLUMN maintenance_request.caller_phone IS
     'Legacy fallback for unmatched or non-tenant callers. Set when caller_tenant_id is NULL.';
 COMMENT ON COLUMN maintenance_request.synergy_request_ids IS
-    'Comma-delimited or JSON-encoded list of related request IDs (synergy group).';
+    'Typed integer array of related request IDs (synergy group). Queryable with = ANY(synergy_request_ids).';
+
+COMMENT ON COLUMN maintenance_request.status IS
+    'Request lifecycle — see COMMENT ON TYPE request_status for full state descriptions. '
+    'Lifecycle: intake_received → triage_pending → (triage_clarify | triage_proposal | triage_failed) → triaged → en_route → closed. '
+    'All 10,565 rows ingested before 2026-10-09 carry ''closed'' as a backfill sentinel — it does not mean work was verified complete.';
+COMMENT ON COLUMN maintenance_request.addition_to_request_id IS
+    'ADDITION relation from Coordinator Guide rule 12 — a request that adds to an existing open ticket. '
+    'Nullable; complement to duplicate_of_request_id (the DUPLICATE verdict). '
+    'Self-reference forbidden: CONSTRAINT mr_addition_not_self CHECK (addition_to_request_id != request_id).';
+COMMENT ON COLUMN maintenance_request.routing_rule IS
+    'A0–A5 rule that produced the routing decision. Records WHICH rule fired; '
+    'subcontractor_name records the decision itself. NULL for historical rows triaged before this app.';
+
+-- triage_log
+COMMENT ON TABLE triage_log IS
+    'One row per model call attempt, including rejected and errored ones. '
+    'A rejected row is the most interesting: it means a validation gate fired. '
+    'Separate from data_provenance: provenance records WHERE a value came from; '
+    'this records WHAT the model was asked and WHAT it said.';
+COMMENT ON COLUMN triage_log.context_sent IS
+    'Assembled user message sent to the model (JSONB). Enables exact reproduction of what the model saw.';
+COMMENT ON COLUMN triage_log.raw_response IS
+    'Verbatim model output, before validation or parsing.';
+COMMENT ON COLUMN triage_log.validation_result IS
+    'Outcome: accepted | rejected_<gate> | error | timeout. '
+    'rejected_<gate> names the specific gate that fired (e.g. rejected_no_financial_terms).';
+COMMENT ON COLUMN triage_log.validation_detail IS
+    'Gate name, error message, or NULL for accepted responses.';
 
 -- service_visit
 COMMENT ON TABLE service_visit IS
@@ -983,3 +1128,48 @@ COMMENT ON COLUMN maintenance_attachment.file_type IS
 -- unit_turnover_furniture_item
 COMMENT ON COLUMN unit_turnover_furniture_item.appliance_type IS
     'Known values: internet, cuisiniere, refrigerateur, lave-vaisselle, laveuse, secheuse';
+
+-- ── data_provenance ───────────────────────────────────────────────────────────
+
+CREATE TABLE data_provenance (
+    provenance_id    integer PRIMARY KEY,
+    target_table     varchar NOT NULL,
+    target_pk        integer NOT NULL,
+    target_column    varchar NOT NULL,
+    source_type      varchar,
+    source_drive_id  varchar,
+    source_file_name varchar,
+    source_tab       varchar,
+    source_row       varchar,
+    source_column    varchar,
+    raw_value        text,
+    ingested_value   text,
+    ingested_at      timestamp
+);
+
+COMMENT ON TABLE data_provenance IS
+    'One row per field per record for every ingestion script. Enables full field-level lineage tracing.';
+COMMENT ON COLUMN data_provenance.target_table IS
+    'Destination table name (e.g. ''building'')';
+COMMENT ON COLUMN data_provenance.target_pk IS
+    'Primary key value in the destination table';
+COMMENT ON COLUMN data_provenance.target_column IS
+    'Column name in the destination table';
+COMMENT ON COLUMN data_provenance.source_type IS
+    'Source category: FT (Fiches Techniques xlsx), MRR (Master Rent Roll xlsx), CROSSWALK';
+COMMENT ON COLUMN data_provenance.source_drive_id IS
+    'Google Drive file ID of the source file';
+COMMENT ON COLUMN data_provenance.source_file_name IS
+    'Human-readable filename of the source';
+COMMENT ON COLUMN data_provenance.source_tab IS
+    'Worksheet/tab name within the xlsx (null for single-sheet files)';
+COMMENT ON COLUMN data_provenance.source_row IS
+    '1-based row number or label within the source sheet';
+COMMENT ON COLUMN data_provenance.source_column IS
+    'Column reference within the source (letter or header name)';
+COMMENT ON COLUMN data_provenance.raw_value IS
+    'Exact value as read from the source, before any coercion';
+COMMENT ON COLUMN data_provenance.ingested_value IS
+    'Value as written to the destination column, after coercion/normalization';
+COMMENT ON COLUMN data_provenance.ingested_at IS
+    'UTC timestamp when this provenance row was written';

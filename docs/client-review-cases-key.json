@@ -1,0 +1,210 @@
+{
+  "note": "Option mapping for docs/client-review-cases.md. Do not share with reviewer until review is complete.",
+  "key": {
+    "28": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "138": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "160": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "434": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "470": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "542": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "553": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "623": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "715": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "741": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "883": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "1146": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "A"
+    },
+    "1153": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "1424": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "1432": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "1740": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "1762": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "1861": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "1955": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "1978": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "2079": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "2125": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "A"
+    },
+    "2186": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "2199": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "2282": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "2290": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "8442": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "8558": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "8746": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "8873": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "9023": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "9200": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "9302": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "9318": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "9403": {
+      "opt1": "stored",
+      "opt2": "new",
+      "bucket": "?"
+    },
+    "9416": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "A"
+    },
+    "9517": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "9575": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "A"
+    },
+    "9663": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "10350": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    },
+    "10524": {
+      "opt1": "new",
+      "opt2": "stored",
+      "bucket": "?"
+    }
+  }
+}

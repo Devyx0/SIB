@@ -1,0 +1,6 @@
+{
+  "name": "sib-web",
+  "version": "0.0.1",
+  "private": true,
+  "description": "SIB dispatch board, intake, and field views — framework TBD"
+}
