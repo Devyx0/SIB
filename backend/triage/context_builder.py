@@ -456,14 +456,9 @@ if __name__ == "__main__":
     import os, json
     from dotenv import load_dotenv
     load_dotenv(os.path.join(os.path.dirname(__file__), "../../.env"))
-    import psycopg2
 
-    conn = psycopg2.connect(
-        host=os.environ["SUPABASE_HOST"], port=5432,
-        user=f"postgres.{os.environ['SUPABASE_PROJECT_REF']}",
-        password=os.environ["DATABASE_PASSWORD"],
-        dbname="postgres", sslmode="require",
-    )
+    from backend.core.db import get_legacy_conn
+    conn = get_legacy_conn()
 
     # Task 5: 10 historical requests — mix of buildings, formats, verdicts
     test_ids = [

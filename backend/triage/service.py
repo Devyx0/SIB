@@ -384,19 +384,13 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
 # ── Self-check ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    import os
-    import psycopg2
     from pathlib import Path
     from dotenv import load_dotenv
 
     load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
-    conn = psycopg2.connect(
-        host=os.environ["SUPABASE_HOST"], port=5432,
-        user=f"postgres.{os.environ['SUPABASE_PROJECT_REF']}",
-        password=os.environ["DATABASE_PASSWORD"],
-        dbname="postgres", sslmode="require",
-    )
+    from backend.core.db import get_legacy_conn
+    conn = get_legacy_conn()
 
     with conn.cursor() as cur:
         cur.execute(

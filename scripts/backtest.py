@@ -13,9 +13,9 @@ requests that were triaged but have no unit attachment). All 1,956 are already c
 so status='closed' is a guard against future rows, not the cause of the discrepancy.
 
 Usage:
-    uv run python3 -m drive_pipeline.triage.backtest [--sample-only]
-    uv run python3 -m drive_pipeline.triage.backtest --rerun   # replay the last 50 IDs
-    uv run python3 -m drive_pipeline.triage.backtest --full    # full 1,392-row pool, resumable
+    uv run python3 scripts/backtest.py [--sample-only]
+    uv run python3 scripts/backtest.py --rerun   # replay the last 50 IDs
+    uv run python3 scripts/backtest.py --full    # full 1,392-row pool, resumable
 """
 from __future__ import annotations
 
@@ -27,15 +27,15 @@ from datetime import date
 from pathlib import Path
 
 import anthropic
-import psycopg2
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent.parent.parent / ".env")
+load_dotenv(Path(__file__).parent.parent / ".env")
 
-from drive_pipeline.triage.context_builder import assemble
-from drive_pipeline.triage.output_contract import ValidationError, parse_response, validate
-from drive_pipeline.triage.service import _format_context
-from drive_pipeline.triage.system_prompt import DOCUMENTS_HASH, build_system_prompt
+from backend.triage.context_builder import assemble
+from backend.triage.output_contract import ValidationError, parse_response, validate
+from backend.triage.service import _format_context
+from backend.triage.system_prompt import DOCUMENTS_HASH, build_system_prompt
+from backend.core.db import get_legacy_conn
 
 _MODEL = os.getenv("TRIAGE_MODEL", "claude-sonnet-4-6")
 
@@ -53,11 +53,11 @@ _COMPARE_FIELDS = [
     "duplicate_of_request_id",
 ]
 
-_OUT          = Path(__file__).parent.parent.parent / "docs" / "backtest_results.jsonl"
-_RERUN_OUT    = Path(__file__).parent.parent.parent / "docs" / "backtest_results_rerun.jsonl"
-_FULL_OUT     = Path(__file__).parent.parent.parent / "docs" / "backtest_full_results.jsonl"
-_SAMPLE_IDS   = Path(__file__).parent.parent.parent / "docs" / "backtest_sample_ids.json"
-_COST_LOG     = Path(__file__).parent.parent.parent / "docs" / "api-cost-log.md"
+_OUT          = Path(__file__).parent.parent / "docs" / "backtest_results.jsonl"
+_RERUN_OUT    = Path(__file__).parent.parent / "docs" / "backtest_results_rerun.jsonl"
+_FULL_OUT     = Path(__file__).parent.parent / "docs" / "backtest_full_results.jsonl"
+_SAMPLE_IDS   = Path(__file__).parent.parent / "docs" / "backtest_sample_ids.json"
+_COST_LOG     = Path(__file__).parent.parent / "docs" / "api-cost-log.md"
 
 # Sonnet 4.6 pricing (USD per token)
 _PRICE_INPUT        = 3.00  / 1_000_000  # regular (uncached) input
@@ -607,12 +607,7 @@ def main() -> None:
     rerun       = "--rerun"       in sys.argv
     full_run    = "--full"        in sys.argv
 
-    conn = psycopg2.connect(
-        host=os.environ["SUPABASE_HOST"], port=5432,
-        user=f"postgres.{os.environ['SUPABASE_PROJECT_REF']}",
-        password=os.environ["DATABASE_PASSWORD"],
-        dbname="postgres", sslmode="require",
-    )
+    conn = get_legacy_conn()
 
     done_ids: set[int] = set()
     out_path = _FULL_OUT if full_run else (_RERUN_OUT if rerun else _OUT)

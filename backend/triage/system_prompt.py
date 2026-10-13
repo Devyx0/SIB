@@ -11,7 +11,9 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-_DOCS_DIR = Path(__file__).parent.parent.parent / "docs" / "client-ai-system"
+from backend.core.config import settings
+
+_DOCS_DIR: Path = settings.TRIAGE_PROMPT_DIR
 
 _OUTPUT_CONTRACT = """\
 ## Output contract
