@@ -954,9 +954,10 @@ _GF_LABEL_MAP: dict[str, str] = {
 
 
 def _gf_nrm_label(label: str) -> str:
-    """Normalize a Gravity Forms label for lookup: lowercase, strip accents, collapse whitespace."""
+    """Normalize a Gravity Forms label for lookup: lowercase, strip accents and apostrophes, collapse whitespace."""
     s = unicodedata.normalize("NFD", label.lower())
     s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    s = re.sub(r"['’ʼ]", " ", s)  # apostrophes survive Mn filter — strip explicitly
     return re.sub(r"\s+", " ", s).strip()
 
 
@@ -964,6 +965,7 @@ def _parse_gravity_forms(description: str) -> dict:
     """Parse an untriaged Gravity Forms submission (flat Label : Value block)."""
     text = html.unescape(description)
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = text.replace(" ", "\n")   # LINE SEPARATOR used in telephony notifications
     text = _HTML_TAG_RE.sub("", text)
 
     fields: dict[str, Any] = {
@@ -994,20 +996,35 @@ def _parse_gravity_forms(description: str) -> dict:
 
     form_text = text[m_start.start():]
 
-    # Split into paragraphs (blank-line delimited); each paragraph is one Label : Value pair.
+    # Label-anchored splitter: within each blank-line paragraph, scan line-by-line.
+    # A line whose text before ':' normalises to a known GF label opens a new field.
+    # Any other non-empty line is appended to the current field's value.
+    # Blank lines delimit paragraphs, preventing guard-contact blocks from contaminating
+    # the last GF field. Events that use single-\n separators (no blank lines) are
+    # handled because all lines land in one paragraph and the label check still fires.
     for para in re.split(r"\n\s*\n", form_text):
         para = para.strip()
         if not para:
             continue
-        # Label : Value — label ends at first " : " or " :\n"
-        sep = re.search(r"\s*:\s*", para)
-        if not sep:
-            continue
-        label_raw = para[: sep.start()].strip()
-        value = para[sep.end() :].strip()
-        key = _GF_LABEL_MAP.get(_gf_nrm_label(label_raw))
-        if key and value:
-            fields[key] = value
+        current_key: str | None = None
+        current_val: list[str] = []
+        for line in para.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            m = re.match(r"^(.+?)\s*:\s*(.*)", line)
+            if m:
+                key = _GF_LABEL_MAP.get(_gf_nrm_label(m.group(1).strip()))
+                if key:
+                    if current_key and current_val:
+                        fields[current_key] = "\n".join(current_val)
+                    current_key = key
+                    current_val = [m.group(2).strip()] if m.group(2).strip() else []
+                    continue
+            if current_key:
+                current_val.append(line)
+        if current_key and current_val:
+            fields[current_key] = "\n".join(current_val)
 
     return fields
 
