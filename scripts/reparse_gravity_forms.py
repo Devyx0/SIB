@@ -170,9 +170,15 @@ def main():
                 will_fill[col] += 1
                 writes.append((request_id, col, coerced))
             else:
+                # submission_date: psycopg2 returns timestamptz as UTC-aware datetime;
+                # compare as instants so 11:17:55-04:00 == 15:17:55+00:00.
+                if col == "submission_date" and hasattr(current, "utctimetuple"):
+                    match = current == coerced
+                else:
+                    match = str(current).strip() == str(coerced).strip()
                 cur_str = str(current).strip()
                 new_str = str(coerced).strip()
-                if cur_str != new_str:
+                if not match:
                     disagreements.append({
                         "request_id": request_id,
                         "column":     col,
