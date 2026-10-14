@@ -373,12 +373,21 @@ Resolution logic (mirrors `ingest_units_leases_tenants.py`):
 | Outcome | Count | % |
 |---|---|---|
 | Key → exactly 1 unit | 4 327 | 99.3% |
-| Key → 0 units | 26 | 0.6% |
+| Key → 0 units | **4** | 0.1% |
 | Key → >1 unit | 4 | 0.1% |
 
-**Zero-match causes (sample):**
-- `'STAT_41eRue-Gros-Pins_J'` — revenue-format key not caught by `_is_revenue()` filter; building found but (bid, rue, apt) not in unit table
-- `'TOTAL'`, `'Total'` — MRR summary rows with no building (bldg_col77=None)
+Note: an earlier run reported 26 zero-match using a weaker revenue filter (excluded only "STATIONNEMENT"). The 22 extra entries were STAT_ parking, Buanderie, Coinamatic, and Rogers rows that `_is_revenue_unit()` in `ingest_units_leases_tenants.py` correctly excludes. The count 4 is the result after applying that function.
+
+**Zero-match causes — full classification (re-verified 2026-10-14):**
+
+| Key | apt | col77 | Classification |
+|---|---|---|---|
+| `1235-202 Colline` | *(blank)* | *(blank)* | Genuine residential — unit_id=1385 confirmed (`1235, rue de la Colline`, apt 202, bid=67); col77 blank in MRR prevents lookup |
+| `135-TOIT-2 Grande Allee O.` | *(blank)* | *(blank)* | Ambiguous — "TOIT" = roof; likely storage unit; building not found in `building.adresse` |
+| `1625-207 Courtemanche` | *(blank)* | *(blank)* | Genuine residential but ambiguous — 2 candidates: unit_id=1638 (bid=82, `1625 Courtemanche`) and unit_id=1669 (bid=83, `1675 Courtemanche`); col77 blank in MRR |
+| `4875-3 Saint-Georges` | `3` | `4837-4847 Saint-Georges` | Genuine residential — unit_id=3709 at bid=149 (`4875 Saint-Georges`); col77 stale after manual correction, resolves to bid=147 |
+
+**Backfill requirement:** the `unique_unit_number` backfill dry-run must explicitly name all 4 of these keys in its output (not silently skip them).
 
 **Multi-match keys (4):**
 These correspond to the 2 known duplicate (building_id, rue, numero_appartement) triples:
