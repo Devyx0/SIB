@@ -40,9 +40,9 @@ NAMED_CASES = [
     (1638, "1625-207 Courtemanche bid=82 (expect: set unambiguously)"),
     (1669, "1675-207 Courtemanche bid=83 (expect: set unambiguously)"),
     (3126, "duplicate pair 4298-104 Roses (expect: NULL)"),
-    (3127, "duplicate pair 4298-104 Roses (expect: NULL)"),
+    (3127, "duplicate pair 4298-104 Roses (expect: set (current tenant))"),
     (3294, "duplicate pair 12085-310 Berlioz (expect: NULL)"),
-    (3295, "duplicate pair 12085-310 Berlioz (expect: NULL)"),
+    (3295, "duplicate pair 12085-310 Berlioz (expect: set (current tenant))"),
 ]
 
 
