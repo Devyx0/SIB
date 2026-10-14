@@ -1,4 +1,6 @@
 """
+DO NOT RE-RUN. All schema changes go through supabase/migrations/ (supabase db diff → new migration file).
+
 ingest_rls_schema.py — RLS schema migrations: new tables, credential migration, views.
 
 Creates:

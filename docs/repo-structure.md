@@ -81,3 +81,15 @@ All eight files are recoverable from git history if ever needed.
 | `scripts/build_inventory.py` | Downloaded all 350 Fiches xlsx from Drive, extracted column-A labels, wrote `columns_inventory.py` |
 | `scripts/sample_layout.py` | Sampled Fiches xlsx row/column layout from Drive for one-time structural analysis |
 | `scripts/swap_ancienne.py` | Swapped FR↔EN Drive file IDs in `links.py` for "01-Old Technical Sheets" entries; carried a CWD-relative `LINKS_FILE` path that required running from repo root |
+
+---
+
+## Where the canonical schema lives (2026-10-14)
+
+`supabase/migrations/20261014000000_baseline.sql` is the single source of truth for the database schema. It was produced by `supabase db dump --schema public` and includes all tables, columns, RLS policies, views (with `security_invoker=true`), functions, grants, default ACLs, and the `ensure_rls` event trigger.
+
+`schema/sql/schema.sql` is now a pointer-only stub — it is not applied anywhere and should not be edited.
+
+`schema/migrations/` was empty and has been removed.
+
+To inspect the current schema state: run `supabase start`, then connect to `localhost:54322`. To apply the baseline to a fresh local instance: `supabase db reset`. To push to remote for the first time, run `supabase migration repair --status applied 20261014000000` against remote first, then `supabase db push` for any subsequent migrations.
