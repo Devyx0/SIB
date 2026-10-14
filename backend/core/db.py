@@ -1,14 +1,23 @@
 """
 DB connections.
-  get_conn()        — psycopg3 sync pool, for new backend code
-  get_legacy_conn() — psycopg2, for frozen triage (context_builder imports psycopg2.extras)
+  DBTransactionMiddleware — one pool connection per request; commits before response.
+  get_db_conn()           — FastAPI dependency (pulls from request.state).
+  get_legacy_conn()       — psycopg2, for frozen triage (context_builder uses psycopg2.extras).
 """
 from __future__ import annotations
 
+import logging
+
 import psycopg2
+from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from .config import settings
+
+logger = logging.getLogger("backend.db")
 
 _pool: ConnectionPool | None = None
 
@@ -16,8 +25,12 @@ _pool: ConnectionPool | None = None
 def get_pool() -> ConnectionPool:
     global _pool
     if _pool is None:
-        if settings.DATABASE_URL:
-            conninfo = settings.DATABASE_URL
+        if settings.DB_TARGET == "local":
+            conninfo = (
+                f"host={settings.LOCAL_DB_HOST} port={settings.LOCAL_DB_PORT}"
+                f" user={settings.LOCAL_DB_USER} password={settings.LOCAL_DB_PASSWORD}"
+                f" dbname={settings.LOCAL_DB_NAME}"
+            )
         else:
             conninfo = (
                 f"host={settings.SUPABASE_HOST} port=5432"
@@ -25,13 +38,56 @@ def get_pool() -> ConnectionPool:
                 f" password={settings.DATABASE_PASSWORD}"
                 f" dbname=postgres sslmode=require"
             )
-        _pool = ConnectionPool(conninfo, open=True)
+        _pool = ConnectionPool(conninfo, open=True, kwargs={"row_factory": dict_row})
     return _pool
 
 
-def get_conn():
-    """psycopg3 connection from the pool (context manager)."""
-    return get_pool().connection()
+class DBTransactionMiddleware(BaseHTTPMiddleware):
+    """
+    Acquires one connection per request from the pool, stores it on
+    request.state.db_conn, runs the handler, then commits before returning
+    the buffered response to the client.
+
+    BaseHTTPMiddleware.call_next buffers the full response body before
+    returning, so conn.commit() below runs BEFORE any bytes reach the client.
+    A commit failure returns 500 — the handler's response is discarded.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        with get_pool().connection() as conn:
+            request.state.db_conn = conn
+            try:
+                response = await call_next(request)
+            except Exception:
+                conn.rollback()
+                raise
+            if response.status_code >= 400:
+                conn.rollback()
+                return response
+            try:
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                rid = getattr(request.state, "request_id", None)
+                logger.error(
+                    "DB commit failed  req=%s  path=%s",
+                    rid, request.url.path, exc_info=True,
+                )
+                return JSONResponse(
+                    status_code=500,
+                    content={"error": {
+                        "code":       "INTERNAL_ERROR",
+                        "message":    "An unexpected error occurred",
+                        "request_id": rid,
+                        "details":    None,
+                    }},
+                )
+            return response
+
+
+def get_db_conn(request: Request):
+    """FastAPI dependency: returns the per-request connection set by DBTransactionMiddleware."""
+    return request.state.db_conn
 
 
 def get_legacy_conn():

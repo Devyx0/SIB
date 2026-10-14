@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -12,6 +15,17 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    APP_ENV: Literal["dev", "staging", "prod"] = "dev"
+    DB_TARGET: Literal["local", "remote"] = "local"
+
+    # Local Supabase defaults (supabase start)
+    LOCAL_DB_HOST: str = "localhost"
+    LOCAL_DB_PORT: int = 54322
+    LOCAL_DB_USER: str = "postgres"
+    LOCAL_DB_PASSWORD: str = "postgres"
+    LOCAL_DB_NAME: str = "postgres"
+
+    # Remote Supabase (required when DB_TARGET=remote)
     SUPABASE_HOST: str = ""
     SUPABASE_PROJECT_REF: str = ""
     DATABASE_PASSWORD: str = ""

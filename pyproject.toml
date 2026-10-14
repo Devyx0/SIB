@@ -33,4 +33,5 @@ testpaths = ["tests"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "httpx>=0.27",
 ]
