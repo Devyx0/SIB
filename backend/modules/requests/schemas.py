@@ -28,12 +28,20 @@ SORT_SQL: dict[str, str] = {
     "time_estimate_bucket":   "mr.time_estimate_bucket",
     "status":                 "mr.status",
     "source_calendar":        "mr.source_calendar",
+    "last_followup_date":     "lf.entry_date",
 }
 
 SortKey = Literal[
     "start_date", "asnu", "urgency_tier", "raw_title",
     "territoire", "building_address", "assigned_employee_name",
     "subcontractor_name", "time_estimate_bucket", "status", "source_calendar",
+    "last_followup_date",
+]
+
+StatusValue = Literal[
+    "intake_received", "triage_pending", "triaged",
+    "triage_clarify", "triage_proposal", "triage_failed",
+    "en_route", "closed",
 ]
 
 
@@ -67,6 +75,8 @@ class ListRow(BaseModel):
     status: str
     event_id: Optional[str] = None
     estimated_cost: None = None  # pending migration 0002
+    last_followup_date: Optional[date] = None
+    last_followup_text: Optional[str] = None
 
 
 class RequestDetail(ListRow):

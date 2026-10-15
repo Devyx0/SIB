@@ -83,6 +83,7 @@ def list_requests(conn, params, user: CurrentUser) -> ListResponse:
         assigned_employee_id=params.assigned_employee_id,
         urgency=params.urgency,
         source_calendar=params.source_calendar,
+        q=params.q,
         sort_by=params.sort_by,
         sort_dir=params.sort_dir,
         limit=params.limit,

@@ -20,6 +20,7 @@ from .schemas import (
     RequestDetail,
     SectorLookup,
     SortKey,
+    StatusValue,
 )
 
 router = APIRouter(prefix="/requests", tags=["requests"])
@@ -36,12 +37,13 @@ class RequestListParams:
         self,
         start_date: date = Query(...),
         end_date: date = Query(...),
-        status: list[str] = Query(default=[]),
+        status: list[StatusValue] = Query(default=[]),
         building_id: Optional[int] = Query(default=None),
         sector_id: Optional[int] = Query(default=None),
         assigned_employee_id: Optional[int] = Query(default=None),
         urgency: Optional[Literal["AJD", "ajd", "none"]] = Query(default=None),
         source_calendar: Optional[Literal["main", "st_maj"]] = Query(default=None),
+        q: Optional[str] = Query(default=None),
         sort_by: SortKey = Query(default="start_date"),
         sort_dir: Literal["asc", "desc"] = Query(default="asc"),
         limit: int = Query(default=50, ge=1, le=200),
@@ -59,6 +61,7 @@ class RequestListParams:
         self.assigned_employee_id = assigned_employee_id
         self.urgency = urgency
         self.source_calendar = source_calendar
+        self.q = q
         self.sort_by = sort_by
         self.sort_dir = sort_dir
         self.limit = limit

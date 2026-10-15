@@ -27,11 +27,20 @@ _LIST_SELECT = """
         mr.time_estimate_raw,
         mr.source_calendar,
         mr.status::text                  AS status,
-        mr.event_id
+        mr.event_id,
+        lf.entry_date                    AS last_followup_date,
+        lf.entry_text                    AS last_followup_text
     FROM maintenance_request mr
     LEFT JOIN building  b ON b.building_id = mr.building_id
     LEFT JOIN sector    s ON s.sector_id   = mr.sector_id
     LEFT JOIN employee  e ON e.employee_id = mr.assigned_employee_id
+    LEFT JOIN LATERAL (
+        SELECT entry_date, entry_text
+        FROM maintenance_followup_entry
+        WHERE request_id = mr.request_id
+        ORDER BY entry_date DESC NULLS LAST, followup_id DESC
+        LIMIT 1
+    ) lf ON true
 """
 
 
@@ -52,6 +61,7 @@ def list_requests(
     assigned_employee_id: int | None,
     urgency: str | None,
     source_calendar: str | None,
+    q: str | None,
     sort_by: str,
     sort_dir: str,
     limit: int,
@@ -80,6 +90,15 @@ def list_requests(
     if source_calendar is not None:
         conditions.append("mr.source_calendar = %(source_calendar)s")
         params["source_calendar"] = source_calendar
+    if q is not None:
+        conditions.append("""(
+            unaccent(mr.asnu) ILIKE unaccent(%(q_pat)s)
+            OR unaccent(mr.raw_title) ILIKE unaccent(%(q_pat)s)
+            OR unaccent(b.adresse) ILIKE unaccent(%(q_pat)s)
+            OR unaccent(b.web_building_name) ILIKE unaccent(%(q_pat)s)
+            OR unaccent(e.nom_employe) ILIKE unaccent(%(q_pat)s)
+        )""")
+        params["q_pat"] = f"%{q}%"
 
     where = " AND ".join(conditions)
     if scope_sql:
@@ -89,7 +108,11 @@ def list_requests(
     direction = "ASC" if sort_dir == "asc" else "DESC"
 
     total = conn.execute(
-        f"SELECT count(*) AS n FROM maintenance_request mr WHERE {where}",
+        f"""SELECT count(*) AS n
+            FROM maintenance_request mr
+            LEFT JOIN building b ON b.building_id = mr.building_id
+            LEFT JOIN employee e ON e.employee_id = mr.assigned_employee_id
+            WHERE {where}""",
         params,
     ).fetchone()["n"]
 

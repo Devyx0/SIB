@@ -532,3 +532,111 @@ def test_detail_coordinator_sees_occupants(ac):
     r = c.get(f"/api/v1/requests/{_REQ_WITH_OCCUPANTS}")
     assert r.status_code == 200
     assert r.json()["occupants_raw"] is not None
+
+
+# ── Search (q param) ───────────────────────────────────────────────────────────
+
+def test_list_search_by_asnu(ac, db_conn):
+    row = db_conn.execute(
+        "SELECT asnu FROM maintenance_request WHERE start_date BETWEEN %s AND %s AND asnu IS NOT NULL LIMIT 1",
+        [_START, _END],
+    ).fetchone()
+    assert row, "Expected a request with non-null ASNU in the date range"
+    asnu = row["asnu"]
+    c = ac(_user(_COORD_EMP, "coordinator"))
+    r = c.get(f"/api/v1/requests?{_BASE}&q={asnu}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] > 0
+    for item in body["items"]:
+        assert item["asnu"] == asnu
+
+
+def test_list_search_by_title_case_insensitive(ac, db_conn):
+    row = db_conn.execute(
+        "SELECT raw_title FROM maintenance_request WHERE start_date BETWEEN %s AND %s AND raw_title IS NOT NULL AND length(raw_title) >= 6 LIMIT 1",
+        [_START, _END],
+    ).fetchone()
+    assert row, "Expected a request with non-null raw_title in the date range"
+    # Use an uppercase 4-char slice — ILIKE must match it
+    fragment = row["raw_title"][:4].upper()
+    c = ac(_user(_COORD_EMP, "coordinator"))
+    r = c.get(f"/api/v1/requests?{_BASE}&q={fragment}")
+    assert r.status_code == 200
+    assert r.json()["total"] > 0
+
+
+def test_list_search_no_match_returns_empty(ac):
+    c = ac(_user(_COORD_EMP, "coordinator"))
+    r = c.get(f"/api/v1/requests?{_BASE}&q=ZZZNOMATCH999XYZ")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 0
+    assert body["items"] == []
+
+
+def test_list_search_scope_respected_for_technician(ac, db_conn):
+    # Tech 1's scoped total with a broad search must be <= coordinator's total.
+    c_coord = ac(_user(_COORD_EMP, "coordinator"))
+    c_tech  = ac(_user(1, "technician"))
+    r_coord = c_coord.get(f"/api/v1/requests?{_BASE}&q=a")
+    r_tech  = c_tech.get(f"/api/v1/requests?{_BASE}&q=a")
+    assert r_coord.status_code == 200
+    assert r_tech.status_code == 200
+    assert r_tech.json()["total"] <= r_coord.json()["total"]
+
+
+# ── Last followup in list response ─────────────────────────────────────────────
+
+def test_list_last_followup_populated(ac, db_conn):
+    row = db_conn.execute("""
+        SELECT mr.request_id FROM maintenance_request mr
+        WHERE mr.start_date BETWEEN %s AND %s
+        AND EXISTS (
+            SELECT 1 FROM maintenance_followup_entry fe WHERE fe.request_id = mr.request_id
+        )
+        LIMIT 1
+    """, [_START, _END]).fetchone()
+    assert row, "Expected a request with followup entries in the date range"
+    rid = row["request_id"]
+    c = ac(_user(_COORD_EMP, "coordinator"))
+    r = c.get(f"/api/v1/requests?{_BASE}&limit=200&offset=0")
+    assert r.status_code == 200
+    items = {i["request_id"]: i for i in r.json()["items"]}
+    if rid in items:
+        item = items[rid]
+        assert item["last_followup_date"] is not None
+        assert item["last_followup_text"] is not None
+
+
+def test_list_last_followup_null_for_no_entries(ac, db_conn):
+    row = db_conn.execute("""
+        SELECT mr.request_id FROM maintenance_request mr
+        WHERE mr.start_date BETWEEN %s AND %s
+        AND NOT EXISTS (
+            SELECT 1 FROM maintenance_followup_entry fe WHERE fe.request_id = mr.request_id
+        )
+        LIMIT 1
+    """, [_START, _END]).fetchone()
+    assert row, "Expected a request with no followup entries in the date range"
+    rid = row["request_id"]
+    c = ac(_user(_COORD_EMP, "coordinator"))
+    r = c.get(f"/api/v1/requests?{_BASE}&limit=200&offset=0")
+    assert r.status_code == 200
+    items = {i["request_id"]: i for i in r.json()["items"]}
+    if rid in items:
+        item = items[rid]
+        assert item["last_followup_date"] is None
+
+
+def test_list_sort_by_last_followup_date(ac):
+    c = ac(_user(_COORD_EMP, "coordinator"))
+    r = c.get(f"/api/v1/requests?{_BASE}&sort_by=last_followup_date&sort_dir=asc&limit=50")
+    assert r.status_code == 200
+    dates = [i["last_followup_date"] for i in r.json()["items"] if i["last_followup_date"]]
+    nulls = [i for i in r.json()["items"] if i["last_followup_date"] is None]
+    assert dates == sorted(dates)
+    # NULLs at end
+    all_dates = [i["last_followup_date"] for i in r.json()["items"]]
+    null_count = all_dates.count(None)
+    assert all_dates == [d for d in all_dates if d is not None] + [None] * null_count
