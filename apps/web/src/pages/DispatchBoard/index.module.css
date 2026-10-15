@@ -1,0 +1,29 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 28px 12px;
+  border-bottom: 1px solid var(--color-divider);
+  background: var(--color-surface);
+}
+
+.tableWrap {
+  flex: 1;
+  overflow-x: auto;
+  padding: 0 28px 40px;
+}
+
+.errorFull {
+  padding: 48px 28px;
+  font-size: 15px;
+  color: var(--c-coral);
+  font-weight: 600;
+}

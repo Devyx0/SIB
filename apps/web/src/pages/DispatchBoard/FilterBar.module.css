@@ -1,0 +1,193 @@
+.bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 28px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-neutral-700);
+}
+
+.input {
+  min-height: 34px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--r-md);
+  transition: border-color 0.15s;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-accent-400);
+  box-shadow: 0 0 0 4px var(--color-accent-200);
+}
+
+.searchGroup {
+  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.searchInput {
+  min-height: 34px;
+  width: 100%;
+  max-width: 340px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--r-md);
+  transition: border-color 0.15s;
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: var(--color-accent-400);
+  box-shadow: 0 0 0 4px var(--color-accent-200);
+}
+
+.count {
+  font-size: 12px;
+  color: var(--color-neutral-700);
+  align-self: flex-end;
+  white-space: nowrap;
+  padding-bottom: 6px;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.checkGroup {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--color-neutral-800);
+}
+
+.check input[type='checkbox'] {
+  accent-color: var(--color-accent);
+  width: 14px;
+  height: 14px;
+}
+
+.clearBtn {
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-divider);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-neutral-700);
+  cursor: pointer;
+}
+
+.clearBtn:hover {
+  background: var(--color-accent-100);
+  border-color: var(--color-accent-300);
+}
+
+.chipGroup {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid var(--color-divider);
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-neutral-700);
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.chip:hover {
+  background: var(--color-accent-50, #f4f6ff);
+  border-color: var(--color-accent-300);
+}
+
+.chipActive {
+  background: var(--color-accent-100);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.colorDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.colsBtn {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid var(--color-divider);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-neutral-700);
+  cursor: pointer;
+  white-space: nowrap;
+  align-self: flex-end;
+}
+
+.colsBtn:hover {
+  background: var(--color-accent-100);
+  border-color: var(--color-accent-300);
+}
+
+.colsBtnActive {
+  background: var(--color-accent-100);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 600;
+}

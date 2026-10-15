@@ -1,0 +1,162 @@
+.wrap {
+  overflow-x: auto;
+  margin-top: 16px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table thead th {
+  background: var(--color-surface);
+  border-bottom: 2px solid var(--color-divider);
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-neutral-700);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.table thead th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.table thead th.sortable:hover {
+  color: var(--color-accent);
+}
+
+.sortArrow {
+  margin-left: 4px;
+  color: var(--color-accent);
+}
+
+.row {
+  border-bottom: 1px solid var(--color-divider);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.row:hover {
+  background: var(--color-accent-50, #f4f6ff);
+}
+
+.row td {
+  padding: 8px 12px;
+  vertical-align: top;
+  color: var(--color-text);
+}
+
+.selectedRow {
+  background: var(--color-accent-100) !important;
+}
+
+.ajdRow {
+  border-left: 3px solid var(--c-coral);
+}
+
+.dayHeader {
+  pointer-events: none;
+}
+
+.dayGroupOdd {
+  background: var(--color-surface);
+}
+
+.dayGroupEven {
+  background: var(--color-bg);
+}
+
+.dayHeaderCell {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+.emptyState {
+  padding: 48px 12px;
+  text-align: center;
+  color: var(--color-neutral-500);
+  font-size: 14px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.bold {
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--color-neutral-400);
+}
+
+.titleCell {
+  max-width: 320px;
+}
+
+.tagAJD {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--c-coral-t);
+  color: oklch(0.45 0.17 25);
+}
+
+.tagAjd {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  background: oklch(0.95 0.01 265);
+  color: var(--color-text);
+}
+
+.tagStatus {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--color-accent-100);
+  color: var(--color-accent);
+}
+
+.skeleton td {
+  padding: 8px 12px;
+}
+
+.skeletonCell {
+  display: block;
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--color-divider) 25%, var(--color-bg) 50%, var(--color-divider) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  min-width: 60px;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
