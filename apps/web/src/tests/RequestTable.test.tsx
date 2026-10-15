@@ -28,6 +28,8 @@ function makeRow(overrides: Partial<ListRow> = {}): ListRow {
     status: 'triaged',
     event_id: null,
     estimated_cost: null,
+    next_follow_up_date: null,
+    next_steps: null,
     last_followup_date: null,
     last_followup_text: null,
     ...overrides,

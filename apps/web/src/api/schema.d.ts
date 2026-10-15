@@ -22,7 +22,10 @@ export type SortKey =
   | 'time_estimate_bucket'
   | 'status'
   | 'source_calendar'
-  | 'last_followup_date';
+  | 'last_followup_date'
+  | 'estimated_cost'
+  | 'next_follow_up_date'
+  | 'next_steps';
 
 export interface FollowupEntry {
   followup_id: number;
@@ -53,7 +56,9 @@ export interface ListRow {
   source_calendar_label: string | null;
   status: string;
   event_id: string | null;
-  estimated_cost: null;
+  estimated_cost: number | null;
+  next_follow_up_date: string | null;
+  next_steps: string | null;
   last_followup_date: string | null;
   last_followup_text: string | null;
 }
@@ -81,8 +86,6 @@ export interface RequestDetail extends ListRow {
   caller_phone: string | null;
   caller_email: string | null;
   caller_tenant_id: number | null;
-  next_follow_up_date: null;
-  next_steps: null;
 }
 
 export interface ListResponse {

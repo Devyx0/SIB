@@ -164,9 +164,9 @@ export default function RequestTable({
           {/* optional cells */}
           {showAllCols && <td className={styles.nowrap}>{row.subcontractor_name ?? '—'}</td>}
           {showAllCols && <td className={styles.nowrap}>{row.time_estimate_bucket ?? '—'}</td>}
-          {showAllCols && <td className={styles.nowrap + ' ' + styles.muted}>—</td>}
-          {showAllCols && <td className={styles.nowrap + ' ' + styles.muted}>—</td>}
-          {showAllCols && <td className={styles.muted}>—</td>}
+          {showAllCols && <td className={styles.nowrap}>{row.estimated_cost != null ? String(row.estimated_cost) : '—'}</td>}
+          {showAllCols && <td className={styles.nowrap}>{row.next_follow_up_date ?? '—'}</td>}
+          {showAllCols && <td>{row.next_steps ?? '—'}</td>}
         </tr>,
       );
     });
