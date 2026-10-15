@@ -63,6 +63,17 @@ export interface ListRow {
   last_followup_text: string | null;
 }
 
+export interface JustificationEntry {
+  id: number;
+  decision_type: string;
+  before_value: Record<string, unknown> | null;
+  after_value: Record<string, unknown> | null;
+  justification_text: string;
+  input_method: string | null;
+  created_at: string;
+  employee_id: number;
+}
+
 export interface RequestDetail extends ListRow {
   problem_summary: string | null;
   triage_summary: string | null;
@@ -82,6 +93,7 @@ export interface RequestDetail extends ListRow {
   html_link: string | null;
   caller_type: string | null;
   followup_log: FollowupEntry[];
+  justification_log: JustificationEntry[];
   caller_name: string | null;
   caller_phone: string | null;
   caller_email: string | null;

@@ -11,15 +11,18 @@ import DetailPanel from './DetailPanel';
 import Pagination from '../../components/Pagination';
 import styles from './index.module.css';
 
+import type { MeResponse } from '../../api/schema.d.ts';
+
 interface Props {
   lang: Lang;
+  me?: MeResponse | null;
 }
 
 const PAGE_SIZE = 50;
 const DEFAULT_START = '2026-09-01';
 const DEFAULT_END = '2026-09-25';
 
-export default function DispatchBoard({ lang }: Props) {
+export default function DispatchBoard({ lang, me }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showAllCols, setShowAllCols] = useState(false);
@@ -187,6 +190,7 @@ export default function DispatchBoard({ lang }: Props) {
           lang={lang}
           requestId={selectedId}
           onClose={() => setSelectedId(null)}
+          me={me}
         />
       )}
     </div>

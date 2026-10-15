@@ -59,7 +59,7 @@ export default function App() {
               onSignOut={handleSignOut}
             >
               <Routes>
-                <Route path="board" element={<DispatchBoard lang={lang} />} />
+                <Route path="board" element={<DispatchBoard lang={lang} me={me} />} />
                 <Route path="*" element={<Navigate to="board" replace />} />
               </Routes>
             </AppShell>

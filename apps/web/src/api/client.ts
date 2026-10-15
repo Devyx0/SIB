@@ -1,4 +1,5 @@
-import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, MeResponse } from './schema.d.ts';
+import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, MeResponse, JustificationEntry } from './schema.d.ts';
+export type { JustificationEntry };
 import { supabase } from '../lib/supabase';
 
 export class ApiError extends Error {
@@ -28,14 +29,16 @@ export interface RequestListParams {
   offset?: number;
 }
 
-async function apiFetch<T>(path: string): Promise<T> {
+async function request<T>(path: string, method: string, body?: unknown): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (session?.access_token) {
-    headers['authorization'] = `Bearer ${session.access_token}`;
-  }
+  if (session?.access_token) headers['authorization'] = `Bearer ${session.access_token}`;
 
-  const res = await fetch(path, { headers });
+  const res = await fetch(path, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
 
   if (res.status === 401) {
     await supabase.auth.signOut();
@@ -48,16 +51,22 @@ async function apiFetch<T>(path: string): Promise<T> {
     let message = res.statusText;
     let traceId: string | undefined;
     try {
-      const body = await res.json();
-      if (body?.error?.code) code = body.error.code;
-      if (body?.error?.message) message = body.error.message;
-      if (body?.error?.request_id) traceId = body.error.request_id;
-    } catch {
-      // ignore parse error
-    }
+      const envelope = await res.json();
+      if (envelope?.error?.code) code = envelope.error.code;
+      if (envelope?.error?.message) message = envelope.error.message;
+      if (envelope?.error?.request_id) traceId = envelope.error.request_id;
+    } catch { /* ignore parse error */ }
     throw new ApiError(code, message, traceId);
   }
   return res.json() as Promise<T>;
+}
+
+function apiFetch<T>(path: string): Promise<T> {
+  return request<T>(path, 'GET');
+}
+
+function apiPost<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, 'POST', body);
 }
 
 function buildQuery(params: RequestListParams): string {
@@ -96,4 +105,34 @@ export function fetchEmployees(): Promise<EmployeeLookup[]> {
 
 export function fetchMe(): Promise<MeResponse> {
   return apiFetch<MeResponse>('/api/v1/employees/me');
+}
+
+export interface Justification { text: string; input_method: 'voice' | 'typed'; }
+
+export function dispatchAssign(id: number, body: { employee_id: number | null; current_employee_id: number | null; justification: Justification }): Promise<RequestDetail> {
+  return apiPost(`/api/v1/requests/${id}/assign`, body);
+}
+
+export function dispatchReschedule(id: number, body: { start_date: string; current_start_date: string | null; justification: Justification }): Promise<RequestDetail> {
+  return apiPost(`/api/v1/requests/${id}/reschedule`, body);
+}
+
+export function dispatchSetUrgency(id: number, body: { urgency_tier: string | null; current_urgency_tier: string | null; justification: Justification }): Promise<RequestDetail> {
+  return apiPost(`/api/v1/requests/${id}/urgency`, body);
+}
+
+export function dispatchSetFollowUpDate(id: number, body: { next_follow_up_date: string | null; current_next_follow_up_date: string | null }): Promise<RequestDetail> {
+  return apiPost(`/api/v1/requests/${id}/follow-up-date`, body);
+}
+
+export function dispatchSetNextSteps(id: number, body: { next_steps: string | null; current_next_steps: string | null }): Promise<RequestDetail> {
+  return apiPost(`/api/v1/requests/${id}/next-steps`, body);
+}
+
+export function dispatchSetCost(id: number, body: { estimated_cost: number | null; current_estimated_cost: number | null }): Promise<RequestDetail> {
+  return apiPost(`/api/v1/requests/${id}/cost`, body);
+}
+
+export function dispatchAddLog(id: number, body: { entry_text: string }): Promise<RequestDetail> {
+  return apiPost(`/api/v1/requests/${id}/log`, body);
 }

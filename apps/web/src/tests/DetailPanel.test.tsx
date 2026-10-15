@@ -1,14 +1,23 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import DetailPanel from '../pages/DispatchBoard/DetailPanel';
 import { ApiError } from '../api/client';
+import * as client from '../api/client';
 
 vi.mock('../hooks/useRequest', () => ({
   useRequest: vi.fn(),
 }));
 import { useRequest } from '../hooks/useRequest';
+
+const MOCK_REQUEST = {
+  request_id: 1, raw_title: 'Test request', status: 'triaged',
+  start_date: '2026-10-15', assigned_employee_id: null, assigned_employee_name: null,
+  urgency_tier: null, next_follow_up_date: null, next_steps: null, estimated_cost: null,
+  asnu: null, building_address: null, territoire: null, subcontractor_name: null,
+  time_estimate_bucket: null, source_calendar: null, followup_log: [], justification_log: [],
+};
 
 function wrap(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -67,5 +76,27 @@ describe('DetailPanel', () => {
     const backdrop = container.querySelector('[aria-hidden]') as HTMLElement;
     await userEvent.click(backdrop);
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('hides edit controls for technician', () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 14, roles: ['technician'] } as any} />);
+    expect(screen.queryByTestId('edit-controls')).toBeNull();
+  });
+
+  it('hides edit controls for contractor', () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 20, roles: ['contractor'] } as any} />);
+    expect(screen.queryByTestId('edit-controls')).toBeNull();
+  });
+
+  it('shows stale message when STALE_DATA 409 received', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    vi.spyOn(client, 'dispatchAddLog').mockRejectedValue(new ApiError('STALE_DATA', 'stale'));
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+    await userEvent.type(screen.getByTestId('log-text'), 'Note de suivi test.');
+    await userEvent.click(screen.getByRole('button', { name: /ajouter/i }));
+    await waitFor(() => expect(screen.getByText(/modifi/i)).toBeTruthy());
   });
 });
