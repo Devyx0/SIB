@@ -1,3 +1,4 @@
+import type { MeResponse } from '../api/schema.d.ts';
 import type { Lang } from '../i18n';
 import { t } from '../i18n';
 import styles from './AppShell.module.css';
@@ -5,19 +6,12 @@ import styles from './AppShell.module.css';
 interface Props {
   lang: Lang;
   onToggleLang: () => void;
-  employeeId: string | null;
-  onSetEmployee: (id: string) => void;
+  me: MeResponse | null;
+  onSignOut: () => void;
   children: React.ReactNode;
 }
 
-const DEV_USERS = [
-  { id: '4',  label: 'Coordinateur (4)' },
-  { id: '5',  label: 'Directeur (5)' },
-  { id: '24', label: 'Technicien (24)' },
-  { id: '20', label: 'Contractuel Butler (20)' },
-];
-
-export default function AppShell({ lang, onToggleLang, employeeId, onSetEmployee, children }: Props) {
+export default function AppShell({ lang, onToggleLang, me, onSignOut, children }: Props) {
   return (
     <div className={styles.shell}>
       <aside className={styles.sidebar}>
@@ -33,25 +27,21 @@ export default function AppShell({ lang, onToggleLang, employeeId, onSetEmployee
         </nav>
 
         <div className={styles.bottom}>
-          {import.meta.env.DEV && (
-            <label className={styles.devLabel}>
-              {t(lang, 'Utilisateur (dev)', 'User (dev)')}
-              <select
-                className={styles.devSelect}
-                value={employeeId ?? '4'}
-                onChange={(e) => onSetEmployee(e.target.value)}
-                data-testid="dev-employee-input"
-              >
-                {DEV_USERS.map((u) => (
-                  <option key={u.id} value={u.id}>{u.label}</option>
-                ))}
-              </select>
-            </label>
+          {me && (
+            <div className={styles.userInfo}>
+              <span className={styles.userName}>{me.nom_employe}</span>
+              <span className={styles.userRole}>{me.roles[0] ?? ''}</span>
+            </div>
           )}
 
-          <button className={styles.langBtn} onClick={onToggleLang} aria-label="Toggle language">
-            {t(lang, 'EN', 'FR')}
-          </button>
+          <div className={styles.bottomRow}>
+            <button className={styles.langBtn} onClick={onToggleLang} aria-label="Toggle language">
+              {t(lang, 'EN', 'FR')}
+            </button>
+            <button className={styles.signOutBtn} onClick={onSignOut}>
+              {t(lang, 'Déconnexion', 'Sign out')}
+            </button>
+          </div>
         </div>
       </aside>
 

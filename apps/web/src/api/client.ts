@@ -1,4 +1,5 @@
-import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup } from './schema.d.ts';
+import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, MeResponse } from './schema.d.ts';
+import { supabase } from '../lib/supabase';
 
 export class ApiError extends Error {
   constructor(
@@ -27,16 +28,21 @@ export interface RequestListParams {
   offset?: number;
 }
 
-function buildHeaders(employeeId: string | null): HeadersInit {
+async function apiFetch<T>(path: string): Promise<T> {
+  const { data: { session } } = await supabase.auth.getSession();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (import.meta.env.DEV && employeeId) {
-    headers['x-dev-employee-id'] = employeeId;
+  if (session?.access_token) {
+    headers['authorization'] = `Bearer ${session.access_token}`;
   }
-  return headers;
-}
 
-async function apiFetch<T>(path: string, employeeId: string | null): Promise<T> {
-  const res = await fetch(path, { headers: buildHeaders(employeeId) });
+  const res = await fetch(path, { headers });
+
+  if (res.status === 401) {
+    await supabase.auth.signOut();
+    window.location.href = '/login';
+    throw new ApiError('UNAUTHORIZED', 'Session expired');
+  }
+
   if (!res.ok) {
     let code = `HTTP_${res.status}`;
     let message = res.statusText;
@@ -72,18 +78,22 @@ function buildQuery(params: RequestListParams): string {
   return q.toString();
 }
 
-export function fetchRequests(params: RequestListParams, employeeId: string | null): Promise<ListResponse> {
-  return apiFetch<ListResponse>(`/api/v1/requests?${buildQuery(params)}`, employeeId);
+export function fetchRequests(params: RequestListParams): Promise<ListResponse> {
+  return apiFetch<ListResponse>(`/api/v1/requests?${buildQuery(params)}`);
 }
 
-export function fetchRequest(id: number, employeeId: string | null): Promise<RequestDetail> {
-  return apiFetch<RequestDetail>(`/api/v1/requests/${id}`, employeeId);
+export function fetchRequest(id: number): Promise<RequestDetail> {
+  return apiFetch<RequestDetail>(`/api/v1/requests/${id}`);
 }
 
-export function fetchSectors(employeeId: string | null): Promise<SectorLookup[]> {
-  return apiFetch<SectorLookup[]>('/api/v1/lookup/sectors', employeeId);
+export function fetchSectors(): Promise<SectorLookup[]> {
+  return apiFetch<SectorLookup[]>('/api/v1/lookup/sectors');
 }
 
-export function fetchEmployees(employeeId: string | null): Promise<EmployeeLookup[]> {
-  return apiFetch<EmployeeLookup[]>('/api/v1/lookup/employees', employeeId);
+export function fetchEmployees(): Promise<EmployeeLookup[]> {
+  return apiFetch<EmployeeLookup[]>('/api/v1/lookup/employees');
+}
+
+export function fetchMe(): Promise<MeResponse> {
+  return apiFetch<MeResponse>('/api/v1/employees/me');
 }

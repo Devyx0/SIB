@@ -7,13 +7,12 @@ import styles from './DetailPanel.module.css';
 
 interface Props {
   requestId: number;
-  employeeId: string | null;
   onClose: () => void;
   lang?: Lang;
 }
 
-export default function DetailPanel({ requestId, employeeId, onClose, lang = 'fr' }: Props) {
-  const { data, isPending, isError, error } = useRequest(requestId, employeeId);
+export default function DetailPanel({ requestId, onClose, lang = 'fr' }: Props) {
+  const { data, isPending, isError, error } = useRequest(requestId);
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {

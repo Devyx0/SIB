@@ -13,14 +13,13 @@ import styles from './index.module.css';
 
 interface Props {
   lang: Lang;
-  employeeId: string | null;
 }
 
 const PAGE_SIZE = 50;
 const DEFAULT_START = '2026-09-01';
 const DEFAULT_END = '2026-09-25';
 
-export default function DispatchBoard({ lang, employeeId }: Props) {
+export default function DispatchBoard({ lang }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showAllCols, setShowAllCols] = useState(false);
@@ -56,21 +55,20 @@ export default function DispatchBoard({ lang, employeeId }: Props) {
     assigned_employee_id: assignedEmployeeId,
   };
 
-  const { data, isPending, isError, error } = useRequests(params, employeeId);
+  const { data, isPending, isError, error } = useRequests(params);
 
   const { data: sectors } = useQuery({
-    queryKey: ['sectors', employeeId],
-    queryFn: () => fetchSectors(employeeId),
+    queryKey: ['sectors'],
+    queryFn: fetchSectors,
     staleTime: 5 * 60 * 1000,
   });
 
   const { data: employees } = useQuery({
-    queryKey: ['employees', employeeId],
-    queryFn: () => fetchEmployees(employeeId),
+    queryKey: ['employees'],
+    queryFn: fetchEmployees,
     staleTime: 5 * 60 * 1000,
   });
 
-  // Changing a filter resets to page 1.
   function setFilter(key: string, value: string | null) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -81,7 +79,6 @@ export default function DispatchBoard({ lang, employeeId }: Props) {
     });
   }
 
-  // For page navigation only — does NOT reset offset.
   function setPage(newOffset: number) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -121,7 +118,7 @@ export default function DispatchBoard({ lang, employeeId }: Props) {
     (error.code === 'PERMISSION_DENIED' || error.code === 'HTTP_403');
 
   const errorMsg = is403
-    ? t(lang, 'Choisissez un utilisateur', 'Choose a user')
+    ? t(lang, 'Accès refusé', 'Access denied')
     : undefined;
 
   const total = data?.total ?? 0;
@@ -189,7 +186,6 @@ export default function DispatchBoard({ lang, employeeId }: Props) {
         <DetailPanel
           lang={lang}
           requestId={selectedId}
-          employeeId={employeeId}
           onClose={() => setSelectedId(null)}
         />
       )}

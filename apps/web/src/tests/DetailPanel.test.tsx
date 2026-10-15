@@ -18,19 +18,19 @@ function wrap(ui: React.ReactElement) {
 describe('DetailPanel', () => {
   it('renders detail-panel testid', () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: null, isPending: true, isError: false, error: null });
-    wrap(<DetailPanel requestId={42} employeeId={null} onClose={vi.fn()} />);
+    wrap(<DetailPanel requestId={42} onClose={vi.fn()} />);
     expect(screen.getByTestId('detail-panel')).toBeTruthy();
   });
 
   it('shows loading state', () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: null, isPending: true, isError: false, error: null });
-    wrap(<DetailPanel requestId={42} employeeId={null} onClose={vi.fn()} />);
+    wrap(<DetailPanel requestId={42} onClose={vi.fn()} />);
     expect(screen.getByText(/Chargement/)).toBeTruthy();
   });
 
   it('shows error message without maintenance request ID', () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: null, isPending: false, isError: true, error: null });
-    wrap(<DetailPanel requestId={42} employeeId={null} onClose={vi.fn()} />);
+    wrap(<DetailPanel requestId={42} onClose={vi.fn()} />);
     const el = screen.getByText(/Erreur lors du chargement/);
     expect(el).toBeTruthy();
     // must not show the maintenance request number
@@ -40,14 +40,14 @@ describe('DetailPanel', () => {
   it('shows trace ID from error envelope when present', () => {
     const err = new ApiError('NOT_FOUND', 'Request not found', 'abc-trace-123');
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: null, isPending: false, isError: true, error: err });
-    wrap(<DetailPanel requestId={42} employeeId={null} onClose={vi.fn()} />);
+    wrap(<DetailPanel requestId={42} onClose={vi.fn()} />);
     expect(screen.getByText(/abc-trace-123/)).toBeTruthy();
   });
 
   it('shows no trace ID bracket when traceId absent', () => {
     const err = new ApiError('NOT_FOUND', 'Request not found');
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: null, isPending: false, isError: true, error: err });
-    wrap(<DetailPanel requestId={42} employeeId={null} onClose={vi.fn()} />);
+    wrap(<DetailPanel requestId={42} onClose={vi.fn()} />);
     const el = screen.getByText(/Erreur lors du chargement/);
     expect(el.textContent).not.toContain('[');
   });
@@ -55,7 +55,7 @@ describe('DetailPanel', () => {
   it('calls onClose when Escape is pressed', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: null, isPending: true, isError: false, error: null });
     const onClose = vi.fn();
-    wrap(<DetailPanel requestId={1} employeeId={null} onClose={onClose} />);
+    wrap(<DetailPanel requestId={1} onClose={onClose} />);
     await userEvent.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalled();
   });
@@ -63,7 +63,7 @@ describe('DetailPanel', () => {
   it('calls onClose when backdrop clicked', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: null, isPending: true, isError: false, error: null });
     const onClose = vi.fn();
-    const { container } = wrap(<DetailPanel requestId={1} employeeId={null} onClose={onClose} />);
+    const { container } = wrap(<DetailPanel requestId={1} onClose={onClose} />);
     const backdrop = container.querySelector('[aria-hidden]') as HTMLElement;
     await userEvent.click(backdrop);
     expect(onClose).toHaveBeenCalled();

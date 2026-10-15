@@ -88,6 +88,12 @@ export interface RequestDetail extends ListRow {
   caller_tenant_id: number | null;
 }
 
+export interface MeResponse {
+  employee_id: number;
+  nom_employe: string;
+  roles: string[];
+}
+
 export interface ListResponse {
   total: number;
   items: ListRow[];

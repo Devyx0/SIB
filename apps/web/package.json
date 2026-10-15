@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@fontsource/plus-jakarta-sans": "^5.0.0",
+    "@supabase/supabase-js": "^2.118.0",
     "@tanstack/react-query": "^5.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",

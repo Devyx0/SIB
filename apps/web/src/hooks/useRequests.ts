@@ -2,10 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchRequests, type RequestListParams } from '../api/client';
 import type { ListResponse } from '../api/schema.d.ts';
 
-export function useRequests(params: RequestListParams | null, employeeId: string | null) {
+export function useRequests(params: RequestListParams | null) {
   return useQuery<ListResponse, Error>({
-    queryKey: ['requests', params, employeeId],
-    queryFn: () => fetchRequests(params!, employeeId),
+    queryKey: ['requests', params],
+    queryFn: () => fetchRequests(params!),
     enabled: params !== null,
   });
 }
