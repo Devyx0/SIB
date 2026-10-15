@@ -49,6 +49,59 @@ StatusValue = Literal[
 ]
 
 
+class JustificationBody(BaseModel):
+    text: str = Field(..., min_length=10)
+    input_method: Literal["voice", "typed"]
+
+
+class AssignBody(BaseModel):
+    employee_id: Optional[int] = None
+    current_employee_id: Optional[int] = None
+    justification: JustificationBody
+
+
+class RescheduleBody(BaseModel):
+    start_date: date
+    current_start_date: Optional[date] = None
+    justification: JustificationBody
+
+
+class SetUrgencyBody(BaseModel):
+    urgency_tier: Optional[Literal["AJD", "ajd"]] = None
+    current_urgency_tier: Optional[str] = None
+    justification: JustificationBody
+
+
+class SetFollowUpDateBody(BaseModel):
+    next_follow_up_date: Optional[date] = None
+    current_next_follow_up_date: Optional[date] = None
+
+
+class SetNextStepsBody(BaseModel):
+    next_steps: Optional[str] = None
+    current_next_steps: Optional[str] = None
+
+
+class SetCostBody(BaseModel):
+    estimated_cost: Optional[Decimal] = Field(None, ge=0)
+    current_estimated_cost: Optional[Decimal] = None
+
+
+class AddLogBody(BaseModel):
+    entry_text: str = Field(..., min_length=1)
+
+
+class JustificationEntry(BaseModel):
+    id: int
+    decision_type: str
+    before_value: Optional[dict] = None
+    after_value: Optional[dict] = None
+    justification_text: str
+    input_method: Optional[str] = None
+    created_at: str
+    employee_id: int
+
+
 class FollowupEntry(BaseModel):
     followup_id: int
     entry_date: Optional[date] = None
@@ -104,6 +157,7 @@ class RequestDetail(ListRow):
     html_link: Optional[str] = None
     caller_type: Optional[str] = None
     followup_log: list[FollowupEntry] = Field(default_factory=list)
+    justification_log: list[JustificationEntry] = Field(default_factory=list)
     # PII — null for tech/contractor unless they are the case-assigned employee
     caller_name: Optional[str] = None
     caller_phone: Optional[str] = None

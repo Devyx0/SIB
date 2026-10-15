@@ -1,13 +1,20 @@
 """Business logic for the requests module. Calls requests.repository, enforces domain rules."""
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
 from typing import Any
 
-from backend.core.exceptions import NotFoundError
+from backend.core.exceptions import (
+    NotFoundError, RequestClosedError, StaleDataError, ValidationFailed,
+)
 from backend.core.security import CurrentUser
 
 from . import repository as repo
-from .schemas import ListResponse, ListRow, RequestDetail
+from .schemas import (
+    AddLogBody, AssignBody, ListResponse, ListRow, RequestDetail,
+    RescheduleBody, SetCostBody, SetFollowUpDateBody, SetNextStepsBody, SetUrgencyBody,
+)
 
 # Internal coordinator/admin fields — always null for technician and contractor.
 _INTERNAL_TECH: frozenset[str] = frozenset({
@@ -103,10 +110,178 @@ def get_request(conn, request_id: int, user: CurrentUser) -> RequestDetail:
 
     is_restricted = not bool(user.roles & {"director", "coordinator"})
     if is_restricted:
+        row["justification_log"] = []
         for field in _INTERNAL_TECH:
             row[field] = None
         if not _case_pii_visible(user, row):
             for field in _CASE_SCOPED_PII:
                 row[field] = None
+    else:
+        row["justification_log"] = repo.list_justification_entries(conn, request_id)
 
     return RequestDetail(**row)
+
+
+def _after_action(conn, request_id: int, user: CurrentUser) -> RequestDetail:
+    """Return updated RequestDetail after a dispatch action (user is always coord/dir)."""
+    row = repo.get_request(conn, request_id, scope_sql="", scope_params={})
+    if row is None:  # should never happen — we just updated it
+        raise NotFoundError(f"Request {request_id} not found")
+    row["followup_log"] = repo.list_followup_entries(conn, request_id)
+    row["justification_log"] = repo.list_justification_entries(conn, request_id)
+    return RequestDetail(**row)
+
+
+def _lock_or_404(conn, request_id: int) -> dict:
+    row = repo.lock_request(conn, request_id)
+    if row is None:
+        raise NotFoundError(f"Request {request_id} not found")
+    return row
+
+
+def _check_not_closed(row: dict) -> None:
+    if row["status"] == "closed":
+        raise RequestClosedError()
+
+
+def _to_str(v: Any) -> str | None:
+    return str(v) if v is not None else None
+
+
+# ── Dispatch actions ───────────────────────────────────────────────────────────
+
+def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) -> RequestDetail:
+    row = _lock_or_404(conn, request_id)
+    _check_not_closed(row)
+    if row["assigned_employee_id"] != body.current_employee_id:
+        raise StaleDataError()
+    if body.employee_id is not None and not repo.is_valid_assignee(conn, body.employee_id):
+        raise ValidationFailed("Employee must be an active technician or contractor")
+
+    repo.update_field(conn, request_id, "assigned_employee_id", body.employee_id)
+    repo.write_justification(conn,
+        request_id=request_id, employee_id=user.employee_id, decision_type="assign",
+        before_value={"assigned_employee_id": row["assigned_employee_id"]},
+        after_value={"assigned_employee_id": body.employee_id},
+        text=body.justification.text, input_method=body.justification.input_method,
+    )
+    repo.write_provenance(conn,
+        target_table="maintenance_request", target_pk=str(request_id),
+        target_column="assigned_employee_id", employee_id=user.employee_id,
+        previous_value=_to_str(row["assigned_employee_id"]),
+        new_value=_to_str(body.employee_id),
+    )
+    return _after_action(conn, request_id, user)
+
+
+def action_reschedule(conn, request_id: int, body: RescheduleBody, user: CurrentUser) -> RequestDetail:
+    row = _lock_or_404(conn, request_id)
+    _check_not_closed(row)
+    if row["start_date"] != body.current_start_date:
+        raise StaleDataError()
+
+    repo.update_field(conn, request_id, "start_date", body.start_date)
+    repo.write_justification(conn,
+        request_id=request_id, employee_id=user.employee_id, decision_type="reschedule",
+        before_value={"start_date": _to_str(row["start_date"])},
+        after_value={"start_date": str(body.start_date)},
+        text=body.justification.text, input_method=body.justification.input_method,
+    )
+    repo.write_provenance(conn,
+        target_table="maintenance_request", target_pk=str(request_id),
+        target_column="start_date", employee_id=user.employee_id,
+        previous_value=_to_str(row["start_date"]), new_value=str(body.start_date),
+    )
+    return _after_action(conn, request_id, user)
+
+
+def action_set_urgency(conn, request_id: int, body: SetUrgencyBody, user: CurrentUser) -> RequestDetail:
+    row = _lock_or_404(conn, request_id)
+    _check_not_closed(row)
+    if row["urgency_tier"] != body.current_urgency_tier:
+        raise StaleDataError()
+
+    repo.update_field(conn, request_id, "urgency_tier", body.urgency_tier)
+    repo.write_justification(conn,
+        request_id=request_id, employee_id=user.employee_id, decision_type="urgency",
+        before_value={"urgency_tier": row["urgency_tier"]},
+        after_value={"urgency_tier": body.urgency_tier},
+        text=body.justification.text, input_method=body.justification.input_method,
+    )
+    repo.write_provenance(conn,
+        target_table="maintenance_request", target_pk=str(request_id),
+        target_column="urgency_tier", employee_id=user.employee_id,
+        previous_value=row["urgency_tier"], new_value=body.urgency_tier,
+    )
+    return _after_action(conn, request_id, user)
+
+
+def action_set_follow_up_date(conn, request_id: int, body: SetFollowUpDateBody, user: CurrentUser) -> RequestDetail:
+    row = _lock_or_404(conn, request_id)
+    _check_not_closed(row)
+    if row["next_follow_up_date"] != body.current_next_follow_up_date:
+        raise StaleDataError()
+
+    repo.update_field(conn, request_id, "next_follow_up_date", body.next_follow_up_date)
+    repo.write_provenance(conn,
+        target_table="maintenance_request", target_pk=str(request_id),
+        target_column="next_follow_up_date", employee_id=user.employee_id,
+        previous_value=_to_str(row["next_follow_up_date"]),
+        new_value=_to_str(body.next_follow_up_date),
+    )
+    return _after_action(conn, request_id, user)
+
+
+def action_set_next_steps(conn, request_id: int, body: SetNextStepsBody, user: CurrentUser) -> RequestDetail:
+    row = _lock_or_404(conn, request_id)
+    _check_not_closed(row)
+    if row["next_steps"] != body.current_next_steps:
+        raise StaleDataError()
+
+    repo.update_field(conn, request_id, "next_steps", body.next_steps)
+    repo.write_provenance(conn,
+        target_table="maintenance_request", target_pk=str(request_id),
+        target_column="next_steps", employee_id=user.employee_id,
+        previous_value=row["next_steps"], new_value=body.next_steps,
+    )
+    return _after_action(conn, request_id, user)
+
+
+def action_set_cost(conn, request_id: int, body: SetCostBody, user: CurrentUser) -> RequestDetail:
+    row = _lock_or_404(conn, request_id)
+    _check_not_closed(row)
+    # Decimal comparison: normalise both to str for a reliable check
+    current_db = row["estimated_cost"]
+    if (current_db is None) != (body.current_estimated_cost is None) or \
+       (current_db is not None and Decimal(str(current_db)) != Decimal(str(body.current_estimated_cost))):
+        raise StaleDataError()
+
+    repo.update_field(conn, request_id, "estimated_cost", body.estimated_cost)
+    repo.write_provenance(conn,
+        target_table="maintenance_request", target_pk=str(request_id),
+        target_column="estimated_cost", employee_id=user.employee_id,
+        previous_value=_to_str(current_db), new_value=_to_str(body.estimated_cost),
+    )
+    return _after_action(conn, request_id, user)
+
+
+def action_add_log(conn, request_id: int, body: AddLogBody, user: CurrentUser) -> RequestDetail:
+    # Allowed even on closed requests — no status check.
+    # Lock the request row to confirm it exists.
+    row = _lock_or_404(conn, request_id)
+
+    # Resolve initials from the employee's name
+    emp_row = conn.execute(
+        "SELECT nom_employe FROM employee WHERE employee_id = %(emp_id)s",
+        {"emp_id": user.employee_id},
+    ).fetchone()
+    initials = "".join(w[0].upper() for w in (emp_row["nom_employe"] if emp_row else "?").split() if w)[:4]
+    today = date.today()
+
+    followup_id = repo.add_log_entry(conn, request_id, body.entry_text, initials, today)
+    repo.write_provenance(conn,
+        target_table="maintenance_followup_entry", target_pk=str(followup_id),
+        target_column="entry_text", employee_id=user.employee_id,
+        previous_value=None, new_value=body.entry_text,
+    )
+    return _after_action(conn, request_id, user)

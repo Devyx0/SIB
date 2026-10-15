@@ -44,6 +44,17 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     )
 
 
+def _safe_errors(exc: RequestValidationError) -> list:
+    # Pydantic ctx values (Decimal, ValueError, etc.) are not always JSON-serializable.
+    result = []
+    for e in exc.errors():
+        safe = dict(e)
+        if "ctx" in safe:
+            safe["ctx"] = {k: str(v) for k, v in safe["ctx"].items()}
+        result.append(safe)
+    return result
+
+
 async def validation_error_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
@@ -53,7 +64,7 @@ async def validation_error_handler(
             code="VALIDATION_FAILED",
             message="Request validation failed",
             request_id=_rid(request),
-            details=exc.errors(),
+            details=_safe_errors(exc),
         ),
     )
 

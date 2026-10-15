@@ -14,11 +14,18 @@ from backend.core.security import CurrentUser
 from . import repository as repo
 from . import service
 from .schemas import (
+    AddLogBody,
+    AssignBody,
     BuildingLookup,
     EmployeeLookup,
     ListResponse,
     RequestDetail,
+    RescheduleBody,
     SectorLookup,
+    SetCostBody,
+    SetFollowUpDateBody,
+    SetNextStepsBody,
+    SetUrgencyBody,
     SortKey,
     StatusValue,
 )
@@ -117,6 +124,41 @@ def lookup_buildings(
     conn=Depends(get_db_conn),
 ) -> list[BuildingLookup]:
     return [BuildingLookup(**r) for r in repo.list_buildings(conn, sector_id)]
+
+
+@router.post("/{request_id}/assign", operation_id="request_assign", response_model=RequestDetail)
+def request_assign(request_id: int, body: AssignBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_assign(conn, request_id, body, user)
+
+
+@router.post("/{request_id}/reschedule", operation_id="request_reschedule", response_model=RequestDetail)
+def request_reschedule(request_id: int, body: RescheduleBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_reschedule(conn, request_id, body, user)
+
+
+@router.post("/{request_id}/urgency", operation_id="request_set_urgency", response_model=RequestDetail)
+def request_set_urgency(request_id: int, body: SetUrgencyBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_set_urgency(conn, request_id, body, user)
+
+
+@router.post("/{request_id}/follow-up-date", operation_id="request_set_follow_up_date", response_model=RequestDetail)
+def request_set_follow_up_date(request_id: int, body: SetFollowUpDateBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_set_follow_up_date(conn, request_id, body, user)
+
+
+@router.post("/{request_id}/next-steps", operation_id="request_set_next_steps", response_model=RequestDetail)
+def request_set_next_steps(request_id: int, body: SetNextStepsBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_set_next_steps(conn, request_id, body, user)
+
+
+@router.post("/{request_id}/cost", operation_id="request_set_cost", response_model=RequestDetail)
+def request_set_cost(request_id: int, body: SetCostBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_set_cost(conn, request_id, body, user)
+
+
+@router.post("/{request_id}/log", operation_id="request_add_log", response_model=RequestDetail)
+def request_add_log(request_id: int, body: AddLogBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_add_log(conn, request_id, body, user)
 
 
 @lookup_router.get(

@@ -51,5 +51,15 @@ class InvalidTransition(AppError):
     detail = "Invalid status transition"
 
 
+class StaleDataError(ConflictError):
+    code = "STALE_DATA"
+    detail = "Request was modified by another user"
+
+
+class RequestClosedError(ConflictError):
+    code = "REQUEST_CLOSED"
+    detail = "No changes allowed on a closed request"
+
+
 # Legacy alias kept for any future references
 ForbiddenError = PermissionDenied

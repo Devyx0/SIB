@@ -1,10 +1,21 @@
 """Raw-SQL repository for the requests module. Receives a psycopg3 connection."""
 from __future__ import annotations
 
+import json
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from .schemas import SORT_SQL, SOURCE_CALENDAR_LABELS
+
+_UPDATABLE_FIELDS: dict[str, str] = {
+    "assigned_employee_id": "assigned_employee_id = %(v)s",
+    "start_date":            "start_date = %(v)s",
+    "urgency_tier":          "urgency_tier = %(v)s::urgency_tier",
+    "next_follow_up_date":   "next_follow_up_date = %(v)s",
+    "next_steps":            "next_steps = %(v)s",
+    "estimated_cost":        "estimated_cost = %(v)s",
+}
 
 _LIST_SELECT = """
     SELECT
@@ -215,6 +226,115 @@ def list_followup_entries(conn, request_id: int) -> list[dict]:
         FROM maintenance_followup_entry
         WHERE request_id = %(request_id)s
         ORDER BY entry_date ASC NULLS LAST, followup_id ASC
+        """,
+        {"request_id": request_id},
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def lock_request(conn, request_id: int) -> dict | None:
+    """SELECT FOR UPDATE — returns mutable snapshot needed for concurrency checks."""
+    row = conn.execute(
+        """
+        SELECT request_id, status::text, assigned_employee_id, start_date,
+               urgency_tier::text AS urgency_tier, next_follow_up_date,
+               next_steps, estimated_cost
+        FROM maintenance_request
+        WHERE request_id = %(request_id)s
+        FOR UPDATE
+        """,
+        {"request_id": request_id},
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def is_valid_assignee(conn, employee_id: int) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1 FROM employee e
+        JOIN employee_role er ON er.employee_id = e.employee_id
+        WHERE e.employee_id = %(emp_id)s AND e.is_active = true
+          AND er.role IN ('technician', 'contractor')
+        LIMIT 1
+        """,
+        {"emp_id": employee_id},
+    ).fetchone()
+    return row is not None
+
+
+def update_field(conn, request_id: int, column: str, value: Any) -> None:
+    # ponytail: column is validated against _UPDATABLE_FIELDS — never from user string
+    sql_frag = _UPDATABLE_FIELDS[column]
+    conn.execute(
+        f"UPDATE maintenance_request SET {sql_frag} WHERE request_id = %(request_id)s",
+        {"v": value, "request_id": request_id},
+    )
+
+
+def add_log_entry(conn, request_id: int, entry_text: str, initials: str, entry_date: date) -> int:
+    row = conn.execute(
+        """
+        INSERT INTO maintenance_followup_entry (request_id, entry_text, entered_by_initials, entry_date)
+        VALUES (%(request_id)s, %(entry_text)s, %(initials)s, %(entry_date)s)
+        RETURNING followup_id
+        """,
+        {"request_id": request_id, "entry_text": entry_text,
+         "initials": initials, "entry_date": entry_date},
+    ).fetchone()
+    return row["followup_id"]
+
+
+def write_justification(
+    conn, *, request_id: int, employee_id: int, decision_type: str,
+    before_value: dict | None, after_value: dict | None, text: str, input_method: str,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO decision_justification_log
+            (request_id, employee_id, decision_type, before_value, after_value,
+             justification_text, input_method)
+        VALUES (%(request_id)s, %(employee_id)s, %(decision_type)s,
+                %(before_value)s::jsonb, %(after_value)s::jsonb,
+                %(text)s, %(input_method)s)
+        """,
+        {
+            "request_id": request_id, "employee_id": employee_id,
+            "decision_type": decision_type,
+            "before_value": json.dumps(before_value) if before_value is not None else None,
+            "after_value":  json.dumps(after_value)  if after_value  is not None else None,
+            "text": text, "input_method": input_method,
+        },
+    )
+
+
+def write_provenance(
+    conn, *, target_table: str, target_pk: str, target_column: str,
+    employee_id: int, previous_value: str | None, new_value: str | None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO data_provenance
+            (target_table, target_pk, target_column, source_type, employee_id,
+             previous_value, raw_value, ingested_value, ingested_at)
+        VALUES (%(target_table)s, %(target_pk)s, %(target_column)s, 'app', %(employee_id)s,
+                %(previous_value)s, %(new_value)s, %(new_value)s, NOW())
+        """,
+        {
+            "target_table": target_table, "target_pk": target_pk,
+            "target_column": target_column, "employee_id": employee_id,
+            "previous_value": previous_value, "new_value": new_value,
+        },
+    )
+
+
+def list_justification_entries(conn, request_id: int) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT id, decision_type, before_value, after_value, justification_text,
+               input_method, created_at::text AS created_at, employee_id
+        FROM decision_justification_log
+        WHERE request_id = %(request_id)s
+        ORDER BY created_at ASC, id ASC
         """,
         {"request_id": request_id},
     ).fetchall()
