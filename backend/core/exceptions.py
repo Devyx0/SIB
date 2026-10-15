@@ -32,6 +32,12 @@ class ValidationFailed(AppError):
     detail = "Validation failed"
 
 
+class Unauthorized(AppError):
+    status_code = 401
+    code = "UNAUTHORIZED"
+    detail = "Unauthorized"
+
+
 class PermissionDenied(AppError):
     status_code = 403
     code = "PERMISSION_DENIED"

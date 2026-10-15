@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     APP_ENV: Literal["dev", "staging", "prod"] = "dev"
     DB_TARGET: Literal["local", "remote"] = "local"
 
+    # No default — app refuses to start if unset (prevents forged tokens on misconfigured deploys).
+    SUPABASE_JWT_SECRET: str
+
     # Local Supabase defaults (supabase start)
     LOCAL_DB_HOST: str = "localhost"
     LOCAL_DB_PORT: int = 54322
