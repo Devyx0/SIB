@@ -113,8 +113,13 @@ def test_list_null_fields_present(ac):
     r = c.get(f"/api/v1/requests?{_BASE}&limit=1")
     assert r.status_code == 200
     item = r.json()["items"][0]
-    assert "estimated_cost" in item
-    assert item["estimated_cost"] is None
+    assert "estimated_cost"      in item
+    assert "next_follow_up_date" in item
+    assert "next_steps"          in item
+    # existing rows have no data yet — all NULL
+    assert item["estimated_cost"]      is None
+    assert item["next_follow_up_date"] is None
+    assert item["next_steps"]          is None
 
 
 # ── Filters ────────────────────────────────────────────────────────────────────
@@ -640,3 +645,26 @@ def test_list_sort_by_last_followup_date(ac):
     all_dates = [i["last_followup_date"] for i in r.json()["items"]]
     null_count = all_dates.count(None)
     assert all_dates == [d for d in all_dates if d is not None] + [None] * null_count
+
+
+def test_list_sort_by_estimated_cost(ac):
+    # All current rows have NULL cost; endpoint must accept the sort key and
+    # return 200 with NULLs last (trivially satisfied when all are NULL).
+    c = ac(_user(_COORD_EMP, "coordinator"))
+    r = c.get(f"/api/v1/requests?{_BASE}&sort_by=estimated_cost&sort_dir=asc&limit=10")
+    assert r.status_code == 200
+    assert all(i["estimated_cost"] is None for i in r.json()["items"])
+
+
+def test_list_sort_by_next_follow_up_date(ac):
+    c = ac(_user(_COORD_EMP, "coordinator"))
+    r = c.get(f"/api/v1/requests?{_BASE}&sort_by=next_follow_up_date&sort_dir=asc&limit=10")
+    assert r.status_code == 200
+    assert all(i["next_follow_up_date"] is None for i in r.json()["items"])
+
+
+def test_list_sort_by_next_steps(ac):
+    c = ac(_user(_COORD_EMP, "coordinator"))
+    r = c.get(f"/api/v1/requests?{_BASE}&sort_by=next_steps&sort_dir=asc&limit=10")
+    assert r.status_code == 200
+    assert all(i["next_steps"] is None for i in r.json()["items"])

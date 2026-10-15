@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -29,13 +30,16 @@ SORT_SQL: dict[str, str] = {
     "status":                 "mr.status",
     "source_calendar":        "mr.source_calendar",
     "last_followup_date":     "lf.entry_date",
+    "estimated_cost":         "mr.estimated_cost",
+    "next_follow_up_date":    "mr.next_follow_up_date",
+    "next_steps":             "mr.next_steps",
 }
 
 SortKey = Literal[
     "start_date", "asnu", "urgency_tier", "raw_title",
     "territoire", "building_address", "assigned_employee_name",
     "subcontractor_name", "time_estimate_bucket", "status", "source_calendar",
-    "last_followup_date",
+    "last_followup_date", "estimated_cost", "next_follow_up_date", "next_steps",
 ]
 
 StatusValue = Literal[
@@ -74,7 +78,9 @@ class ListRow(BaseModel):
     source_calendar_label: Optional[str] = None
     status: str
     event_id: Optional[str] = None
-    estimated_cost: None = None  # pending migration 0002
+    estimated_cost: Optional[Decimal] = None
+    next_follow_up_date: Optional[date] = None
+    next_steps: Optional[str] = None
     last_followup_date: Optional[date] = None
     last_followup_text: Optional[str] = None
 
@@ -103,9 +109,6 @@ class RequestDetail(ListRow):
     caller_phone: Optional[str] = None
     caller_email: Optional[str] = None
     caller_tenant_id: Optional[int] = None
-    # Pending migration 0002
-    next_follow_up_date: None = None
-    next_steps: None = None
 
 
 class ListResponse(BaseModel):

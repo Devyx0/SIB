@@ -28,6 +28,9 @@ _LIST_SELECT = """
         mr.source_calendar,
         mr.status::text                  AS status,
         mr.event_id,
+        mr.estimated_cost,
+        mr.next_follow_up_date,
+        mr.next_steps,
         lf.entry_date                    AS last_followup_date,
         lf.entry_text                    AS last_followup_text
     FROM maintenance_request mr
@@ -46,7 +49,6 @@ _LIST_SELECT = """
 
 def _add_label(d: dict) -> dict:
     d["source_calendar_label"] = SOURCE_CALENDAR_LABELS.get(d.get("source_calendar") or "")
-    d["estimated_cost"] = None
     return d
 
 
@@ -167,6 +169,9 @@ def get_request(
             mr.source_calendar,
             mr.status::text                  AS status,
             mr.event_id,
+            mr.estimated_cost,
+            mr.next_follow_up_date,
+            mr.next_steps,
             mr.problem_summary,
             mr.triage_summary,
             mr.work_performed,
@@ -200,10 +205,7 @@ def get_request(
     if row is None:
         return None
 
-    d = _add_label(dict(row))
-    d["next_follow_up_date"] = None
-    d["next_steps"] = None
-    return d
+    return _add_label(dict(row))
 
 
 def list_followup_entries(conn, request_id: int) -> list[dict]:
