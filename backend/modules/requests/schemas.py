@@ -56,19 +56,25 @@ class JustificationBody(BaseModel):
 
 class AssignBody(BaseModel):
     employee_id: Optional[int] = None
-    current_employee_id: Optional[int] = None
+    current_assigned_employee_id: Optional[int] = None
+    current_start_date: Optional[date] = None
+    current_urgency_tier: Optional[str] = None
     justification: JustificationBody
 
 
 class RescheduleBody(BaseModel):
     start_date: date
     current_start_date: Optional[date] = None
+    current_assigned_employee_id: Optional[int] = None
+    current_urgency_tier: Optional[str] = None
     justification: JustificationBody
 
 
 class SetUrgencyBody(BaseModel):
     urgency_tier: Optional[Literal["AJD", "ajd"]] = None
     current_urgency_tier: Optional[str] = None
+    current_assigned_employee_id: Optional[int] = None
+    current_start_date: Optional[date] = None
     justification: JustificationBody
 
 

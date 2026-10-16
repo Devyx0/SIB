@@ -9,6 +9,7 @@ from backend.core.exceptions import (
     NotFoundError, RequestClosedError, StaleDataError, ValidationFailed,
 )
 from backend.core.security import CurrentUser
+from backend.core.utils import today_local
 
 from . import repository as repo
 from .schemas import (
@@ -148,12 +149,19 @@ def _to_str(v: Any) -> str | None:
     return str(v) if v is not None else None
 
 
+def _norm_urgency(v: Any) -> str | None:
+    """Treat 'none' enum value and Python None both as absent urgency."""
+    return None if (v is None or v == "none") else str(v)
+
+
 # ── Dispatch actions ───────────────────────────────────────────────────────────
 
 def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) -> RequestDetail:
     row = _lock_or_404(conn, request_id)
     _check_not_closed(row)
-    if row["assigned_employee_id"] != body.current_employee_id:
+    if (row["assigned_employee_id"] != body.current_assigned_employee_id
+            or row["start_date"] != body.current_start_date
+            or _norm_urgency(row["urgency_tier"]) != _norm_urgency(body.current_urgency_tier)):
         raise StaleDataError()
     if body.employee_id is not None and not repo.is_valid_assignee(conn, body.employee_id):
         raise ValidationFailed("Employee must be an active technician or contractor")
@@ -177,7 +185,9 @@ def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) ->
 def action_reschedule(conn, request_id: int, body: RescheduleBody, user: CurrentUser) -> RequestDetail:
     row = _lock_or_404(conn, request_id)
     _check_not_closed(row)
-    if row["start_date"] != body.current_start_date:
+    if (row["start_date"] != body.current_start_date
+            or row["assigned_employee_id"] != body.current_assigned_employee_id
+            or _norm_urgency(row["urgency_tier"]) != _norm_urgency(body.current_urgency_tier)):
         raise StaleDataError()
 
     repo.update_field(conn, request_id, "start_date", body.start_date)
@@ -198,7 +208,9 @@ def action_reschedule(conn, request_id: int, body: RescheduleBody, user: Current
 def action_set_urgency(conn, request_id: int, body: SetUrgencyBody, user: CurrentUser) -> RequestDetail:
     row = _lock_or_404(conn, request_id)
     _check_not_closed(row)
-    if row["urgency_tier"] != body.current_urgency_tier:
+    if (_norm_urgency(row["urgency_tier"]) != _norm_urgency(body.current_urgency_tier)
+            or row["assigned_employee_id"] != body.current_assigned_employee_id
+            or row["start_date"] != body.current_start_date):
         raise StaleDataError()
 
     repo.update_field(conn, request_id, "urgency_tier", body.urgency_tier)
@@ -276,7 +288,7 @@ def action_add_log(conn, request_id: int, body: AddLogBody, user: CurrentUser) -
         {"emp_id": user.employee_id},
     ).fetchone()
     initials = "".join(w[0].upper() for w in (emp_row["nom_employe"] if emp_row else "?").split() if w)[:4]
-    today = date.today()
+    today = today_local()
 
     followup_id = repo.add_log_entry(conn, request_id, body.entry_text, initials, today)
     repo.write_provenance(conn,

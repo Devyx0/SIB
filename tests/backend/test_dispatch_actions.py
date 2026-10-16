@@ -74,7 +74,9 @@ def test_assign_success(ac, test_request):
     c = ac(_user(_COORD, "coordinator"))
     r = c.post(f"/api/v1/requests/{test_request}/assign", json={
         "employee_id": _TECH,
-        "current_employee_id": None,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
+        "current_urgency_tier": None,
         "justification": {"text": "Technician is closest to the building", "input_method": "typed"},
     })
     assert r.status_code == 200
@@ -85,7 +87,9 @@ def test_assign_stores_justification(ac, db_conn, test_request):
     c = ac(_user(_COORD, "coordinator"))
     c.post(f"/api/v1/requests/{test_request}/assign", json={
         "employee_id": _TECH,
-        "current_employee_id": None,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
+        "current_urgency_tier": None,
         "justification": {"text": "Available this afternoon for sector 1", "input_method": "typed"},
     })
     rows = db_conn.execute(
@@ -100,7 +104,9 @@ def test_assign_stores_provenance(ac, db_conn, test_request):
     c = ac(_user(_COORD, "coordinator"))
     c.post(f"/api/v1/requests/{test_request}/assign", json={
         "employee_id": _TECH,
-        "current_employee_id": None,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
+        "current_urgency_tier": None,
         "justification": {"text": "Nearest available technician now", "input_method": "typed"},
     })
     row = db_conn.execute(
@@ -117,7 +123,9 @@ def test_assign_stale_409(ac, test_request):
     c = ac(_user(_COORD, "coordinator"))
     r = c.post(f"/api/v1/requests/{test_request}/assign", json={
         "employee_id": _TECH,
-        "current_employee_id": 999,  # wrong — DB has NULL
+        "current_assigned_employee_id": 999,  # wrong — DB has NULL
+        "current_start_date": _DATE_A,
+        "current_urgency_tier": None,
         "justification": {"text": "Technician available and confirmed", "input_method": "typed"},
     })
     assert r.status_code == 409
@@ -128,7 +136,9 @@ def test_assign_closed_409(ac, closed_request):
     c = ac(_user(_COORD, "coordinator"))
     r = c.post(f"/api/v1/requests/{closed_request}/assign", json={
         "employee_id": _TECH,
-        "current_employee_id": None,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
+        "current_urgency_tier": None,
         "justification": {"text": "Technician available and confirmed", "input_method": "typed"},
     })
     assert r.status_code == 409
@@ -139,7 +149,9 @@ def test_assign_technician_403(ac, test_request):
     c = ac(_user(_TECH, "technician"))
     r = c.post(f"/api/v1/requests/{test_request}/assign", json={
         "employee_id": _TECH,
-        "current_employee_id": None,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
+        "current_urgency_tier": None,
         "justification": {"text": "Technician available and confirmed", "input_method": "typed"},
     })
     assert r.status_code == 403
@@ -149,7 +161,9 @@ def test_assign_no_justification_422(ac, test_request):
     c = ac(_user(_COORD, "coordinator"))
     r = c.post(f"/api/v1/requests/{test_request}/assign", json={
         "employee_id": _TECH,
-        "current_employee_id": None,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
+        "current_urgency_tier": None,
         "justification": {"text": "Short", "input_method": "typed"},
     })
     assert r.status_code == 422
@@ -159,7 +173,9 @@ def test_assign_stale_no_justification_written(ac, db_conn, test_request):
     c = ac(_user(_COORD, "coordinator"))
     c.post(f"/api/v1/requests/{test_request}/assign", json={
         "employee_id": _TECH,
-        "current_employee_id": 999,
+        "current_assigned_employee_id": 999,
+        "current_start_date": _DATE_A,
+        "current_urgency_tier": None,
         "justification": {"text": "Technician available and confirmed", "input_method": "typed"},
     })
     count = db_conn.execute(
@@ -176,6 +192,8 @@ def test_reschedule_success(ac, test_request):
     r = c.post(f"/api/v1/requests/{test_request}/reschedule", json={
         "start_date": _DATE_B,
         "current_start_date": _DATE_A,
+        "current_assigned_employee_id": None,
+        "current_urgency_tier": None,
         "justification": {"text": "Tenant requested a later date", "input_method": "typed"},
     })
     assert r.status_code == 200
@@ -187,6 +205,8 @@ def test_reschedule_stale_409(ac, test_request):
     r = c.post(f"/api/v1/requests/{test_request}/reschedule", json={
         "start_date": _DATE_B,
         "current_start_date": "2020-01-01",  # wrong
+        "current_assigned_employee_id": None,
+        "current_urgency_tier": None,
         "justification": {"text": "Tenant requested a later date", "input_method": "typed"},
     })
     assert r.status_code == 409
@@ -198,6 +218,8 @@ def test_reschedule_closed_409(ac, closed_request):
     r = c.post(f"/api/v1/requests/{closed_request}/reschedule", json={
         "start_date": _DATE_B,
         "current_start_date": _DATE_A,
+        "current_assigned_employee_id": None,
+        "current_urgency_tier": None,
         "justification": {"text": "Tenant requested a later date", "input_method": "typed"},
     })
     assert r.status_code == 409
@@ -208,6 +230,8 @@ def test_reschedule_technician_403(ac, test_request):
     r = c.post(f"/api/v1/requests/{test_request}/reschedule", json={
         "start_date": _DATE_B,
         "current_start_date": _DATE_A,
+        "current_assigned_employee_id": None,
+        "current_urgency_tier": None,
         "justification": {"text": "Tenant requested a later date", "input_method": "typed"},
     })
     assert r.status_code == 403
@@ -220,6 +244,8 @@ def test_set_urgency_success(ac, test_request):
     r = c.post(f"/api/v1/requests/{test_request}/urgency", json={
         "urgency_tier": "AJD",
         "current_urgency_tier": None,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
         "justification": {"text": "Tenant has water damage spreading", "input_method": "typed"},
     })
     assert r.status_code == 200
@@ -231,6 +257,8 @@ def test_set_urgency_stale_409(ac, test_request):
     r = c.post(f"/api/v1/requests/{test_request}/urgency", json={
         "urgency_tier": "AJD",
         "current_urgency_tier": "ajd",  # wrong — DB has NULL
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
         "justification": {"text": "Tenant has water damage spreading", "input_method": "typed"},
     })
     assert r.status_code == 409
@@ -241,6 +269,8 @@ def test_set_urgency_closed_409(ac, closed_request):
     r = c.post(f"/api/v1/requests/{closed_request}/urgency", json={
         "urgency_tier": "AJD",
         "current_urgency_tier": None,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
         "justification": {"text": "Tenant has water damage spreading", "input_method": "typed"},
     })
     assert r.status_code == 409
@@ -251,6 +281,8 @@ def test_set_urgency_technician_403(ac, test_request):
     r = c.post(f"/api/v1/requests/{test_request}/urgency", json={
         "urgency_tier": "AJD",
         "current_urgency_tier": None,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
         "justification": {"text": "Tenant has water damage spreading", "input_method": "typed"},
     })
     assert r.status_code == 403
@@ -364,7 +396,9 @@ def test_justification_log_visible_to_coordinator(ac, test_request):
     c = ac(_user(_COORD, "coordinator"))
     c.post(f"/api/v1/requests/{test_request}/assign", json={
         "employee_id": _TECH,
-        "current_employee_id": None,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
+        "current_urgency_tier": None,
         "justification": {"text": "First available qualified technician", "input_method": "typed"},
     })
     r = c.get(f"/api/v1/requests/{test_request}")
@@ -373,14 +407,15 @@ def test_justification_log_visible_to_coordinator(ac, test_request):
 
 
 def test_justification_log_empty_for_technician(ac, db_conn, test_request):
-    # Assign as coordinator to create a justification entry, then read as technician.
     coord_c = ac(_user(_COORD, "coordinator"))
     coord_c.post(f"/api/v1/requests/{test_request}/assign", json={
         "employee_id": _TECH,
-        "current_employee_id": None,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
+        "current_urgency_tier": None,
         "justification": {"text": "Technician closest to building today", "input_method": "typed"},
     })
-    app = coord_c.app  # re-use app ref
+    app = coord_c.app
     app.dependency_overrides[get_db_conn] = lambda: db_conn
     app.dependency_overrides[get_current_user] = lambda: _user(_TECH, "technician")
     tech_c = TestClient(app, raise_server_exceptions=False)
@@ -401,6 +436,19 @@ def test_add_log_sets_initials_and_date(ac, test_request):
     assert entry["entered_by_initials"]  # non-empty; derived from emp name server-side
 
 
+# ── timezone: today_local() drives entry_date ─────────────────────────────────
+
+def test_add_log_uses_today_local(ac, test_request, monkeypatch):
+    """action_add_log must use today_local(), not date.today()."""
+    import backend.modules.requests.service as svc
+    monkeypatch.setattr(svc, "today_local", lambda: date(2026, 10, 15))
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{test_request}/log", json={"entry_text": "Timezone probe entry."})
+    assert r.status_code == 200
+    entry = next(e for e in r.json()["followup_log"] if e["entry_text"] == "Timezone probe entry.")
+    assert entry["entry_date"] == "2026-10-15"
+
+
 # ── provenance for all 7 actions ──────────────────────────────────────────────
 
 def test_reschedule_stores_provenance(ac, db_conn, test_request):
@@ -408,6 +456,8 @@ def test_reschedule_stores_provenance(ac, db_conn, test_request):
     c.post(f"/api/v1/requests/{test_request}/reschedule", json={
         "start_date": _DATE_B,
         "current_start_date": _DATE_A,
+        "current_assigned_employee_id": None,
+        "current_urgency_tier": None,
         "justification": {"text": "Tenant requested a later appointment", "input_method": "typed"},
     })
     row = db_conn.execute(
@@ -425,6 +475,8 @@ def test_set_urgency_stores_provenance(ac, db_conn, test_request):
     c.post(f"/api/v1/requests/{test_request}/urgency", json={
         "urgency_tier": "AJD",
         "current_urgency_tier": None,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
         "justification": {"text": "Life-safety risk escalated to urgent", "input_method": "typed"},
     })
     row = db_conn.execute(
@@ -469,6 +521,32 @@ def test_set_cost_stores_provenance(ac, db_conn, test_request):
     assert row["employee_id"] == _COORD
 
 
+# ── concurrency: stale on any of the three justified fields ───────────────────
+
+def test_concurrency_stale_on_cross_field(ac, test_request):
+    """Assign succeeds; urgency with a stale current_assigned_employee_id must 409."""
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{test_request}/assign", json={
+        "employee_id": _TECH,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
+        "current_urgency_tier": None,
+        "justification": {"text": "Nearest technician confirmed available", "input_method": "typed"},
+    })
+    assert r.status_code == 200
+
+    # DB now has assigned_employee_id = _TECH; client still thinks it's None → stale
+    r2 = c.post(f"/api/v1/requests/{test_request}/urgency", json={
+        "urgency_tier": "AJD",
+        "current_urgency_tier": None,
+        "current_assigned_employee_id": None,  # stale — DB now has _TECH
+        "current_start_date": _DATE_A,
+        "justification": {"text": "Water damage spreading rapidly", "input_method": "typed"},
+    })
+    assert r2.status_code == 409
+    assert r2.json()["error"]["code"] == "STALE_DATA"
+
+
 # ── same-transaction rollback ─────────────────────────────────────────────────
 
 def test_assign_rolls_back_on_failed_justification(monkeypatch):
@@ -506,7 +584,9 @@ def test_assign_rolls_back_on_failed_justification(monkeypatch):
         with TestClient(fresh_app, raise_server_exceptions=False) as c:
             r = c.post(f"/api/v1/requests/{request_id}/assign", json={
                 "employee_id": _TECH,
-                "current_employee_id": None,
+                "current_assigned_employee_id": None,
+                "current_start_date": _DATE_A,
+                "current_urgency_tier": None,
                 "justification": {"text": "Rollback test — should not persist", "input_method": "typed"},
             })
 

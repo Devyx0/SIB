@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     SERVICE_ROLE: str = ""
     SECRET_KEY: str = ""
 
+    TIMEZONE: str = "America/Toronto"
     TRIAGE_PROMPT_DIR: Path = _REPO_ROOT / "docs" / "client-ai-system"
 
 
