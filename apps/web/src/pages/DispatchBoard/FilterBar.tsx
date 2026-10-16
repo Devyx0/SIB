@@ -88,7 +88,11 @@ export default function FilterBar({
             type="date"
             className={styles.input}
             value={startDate}
-            onChange={(e) => onStartDate(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              onStartDate(v);
+              if (endDate && v > endDate) onEndDate(v);
+            }}
           />
         </div>
         <div className={styles.fieldGroup}>
@@ -97,7 +101,11 @@ export default function FilterBar({
             type="date"
             className={styles.input}
             value={endDate}
-            onChange={(e) => onEndDate(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              onEndDate(v);
+              if (startDate && v < startDate) onStartDate(v);
+            }}
           />
         </div>
 

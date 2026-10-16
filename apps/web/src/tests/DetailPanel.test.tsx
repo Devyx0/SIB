@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -98,5 +98,100 @@ describe('DetailPanel', () => {
     await userEvent.type(screen.getByTestId('log-text'), 'Note de suivi test.');
     await userEvent.click(screen.getByRole('button', { name: /ajouter/i }));
     await waitFor(() => expect(screen.getByText(/modifi/i)).toBeTruthy());
+  });
+
+  it('invalidates board query after successful assign (justified dispatch action)', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([
+      { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' },
+    ]);
+    vi.spyOn(client, 'dispatchAssign').mockResolvedValue({
+      ...MOCK_REQUEST, assigned_employee_id: 14, assigned_employee_name: 'Jean Tech',
+    } as any);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(qc, 'invalidateQueries');
+    render(
+      <QueryClientProvider client={qc}>
+        <DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />
+      </QueryClientProvider>
+    );
+    // Wait for employee options to load then pick one
+    await waitFor(() => expect(screen.getByRole('combobox').querySelectorAll('option').length).toBeGreaterThan(1));
+    await userEvent.selectOptions(screen.getByRole('combobox'), '14');
+    // Justification modal opens — fill and save
+    await userEvent.type(screen.getByTestId('justification-text'), 'Nearest available technician');
+    await userEvent.click(screen.getByTestId('justification-save'));
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['requests'] }))
+    );
+  });
+
+  it('renders both Estimation (time bucket) and Coût estimé (cost) rows', () => {
+    const reqWithBoth = { ...MOCK_REQUEST, time_estimate_bucket: '<1h', estimated_cost: 350 };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: reqWithBoth, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
+    expect(screen.getByText('<1h')).toBeTruthy();      // Estimation row — time_estimate_bucket
+    expect(screen.getByText(/350/)).toBeTruthy();      // Coût estimé row — formatted CAD
+  });
+
+  it('disables edit controls (except log) when status is closed', async () => {
+    const closedReq = { ...MOCK_REQUEST, status: 'closed' };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: closedReq, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+    const assignSelect = screen.getByRole('combobox') as HTMLSelectElement;
+    expect(assignSelect.disabled).toBe(true);
+    // Log Add button exists (section not gated by isClosed)
+    expect(screen.getByRole('button', { name: /ajouter/i })).toBeTruthy();
+  });
+
+  it('formats entry_date as short month + day without timezone shift', () => {
+    const reqWithLog = {
+      ...MOCK_REQUEST,
+      followup_log: [{ followup_id: 1, entry_date: '2026-10-15', entered_by_initials: 'AB', entry_text: 'Test log' }],
+    };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: reqWithLog, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="en" me={null} />);
+    // '2026-10-15' must render as 'Oct 15' (en-CA short) — not as '2026-10-15' raw string
+    expect(screen.getByText(/\bOct[\s.]?\s*15\b/i)).toBeTruthy();
+  });
+
+  it('shows ineligible assignee with translated role label in select', async () => {
+    const coordAssigned = { ...MOCK_REQUEST, assigned_employee_id: 4, assigned_employee_name: 'Marie Lavoie' };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: coordAssigned, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([
+      { employee_id: 4, nom_employe: 'Marie Lavoie', role: 'coordinator' },
+      { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' },
+    ]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 5, roles: ['director'] } as any} />);
+    await waitFor(() => {
+      const sel = screen.getByRole('combobox') as HTMLSelectElement;
+      expect(sel.value).toBe('4');
+      const ineligibleOpt = Array.from(sel.options).find((o) => o.disabled && o.value === '4');
+      expect(ineligibleOpt).toBeTruthy();
+      expect(ineligibleOpt!.text).toContain('Coordonnateur');
+    });
+  });
+
+  it('cancel justification resets reschedule date to server value', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+
+    // The reschedule date input shows MOCK_REQUEST.start_date
+    const rescheduleInput = screen.getByDisplayValue(MOCK_REQUEST.start_date) as HTMLInputElement;
+    // Change to a new date to open pending action
+    fireEvent.change(rescheduleInput, { target: { value: '2026-11-01' } });
+    expect(rescheduleInput.value).toBe('2026-11-01');
+
+    // Click the first Apply button (reschedule)
+    const applyBtns = screen.getAllByRole('button', { name: /appliquer/i });
+    await userEvent.click(applyBtns[0]);
+
+    // Justification modal is open — cancel
+    await userEvent.click(screen.getByText('Annuler'));
+
+    // Reschedule date should reset to server value
+    expect(rescheduleInput.value).toBe(MOCK_REQUEST.start_date);
   });
 });

@@ -109,15 +109,15 @@ export function fetchMe(): Promise<MeResponse> {
 
 export interface Justification { text: string; input_method: 'voice' | 'typed'; }
 
-export function dispatchAssign(id: number, body: { employee_id: number | null; current_employee_id: number | null; justification: Justification }): Promise<RequestDetail> {
+export function dispatchAssign(id: number, body: { employee_id: number | null; current_assigned_employee_id: number | null; current_start_date: string | null; current_urgency_tier: string | null; justification: Justification }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/assign`, body);
 }
 
-export function dispatchReschedule(id: number, body: { start_date: string; current_start_date: string | null; justification: Justification }): Promise<RequestDetail> {
+export function dispatchReschedule(id: number, body: { start_date: string; current_start_date: string | null; current_assigned_employee_id: number | null; current_urgency_tier: string | null; justification: Justification }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/reschedule`, body);
 }
 
-export function dispatchSetUrgency(id: number, body: { urgency_tier: string | null; current_urgency_tier: string | null; justification: Justification }): Promise<RequestDetail> {
+export function dispatchSetUrgency(id: number, body: { urgency_tier: string | null; current_urgency_tier: string | null; current_assigned_employee_id: number | null; current_start_date: string | null; justification: Justification }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/urgency`, body);
 }
 

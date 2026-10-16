@@ -133,6 +133,8 @@
   font-style: italic;
   color: var(--color-neutral-700);
   line-height: 1.5;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 /* ── Edit controls (coordinator / director only) ───────────────────── */
@@ -266,6 +268,18 @@
   font-size: 13px;
   color: var(--color-neutral-700);
   line-height: 1.5;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.closedNotice {
+  font-size: 12px;
+  color: var(--color-neutral-700);
+  background: var(--color-accent-100, #f0f4ff);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--r-md);
+  padding: 8px 12px;
+  margin: 0;
 }
 
 /* ── Log entry form ────────────────────────────────────────────────── */

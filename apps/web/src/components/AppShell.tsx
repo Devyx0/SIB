@@ -35,7 +35,7 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
           )}
 
           <div className={styles.bottomRow}>
-            <button className={styles.langBtn} onClick={onToggleLang} aria-label="Toggle language">
+            <button className={styles.langBtn} onClick={onToggleLang} aria-label={lang === 'fr' ? 'Switch to English' : 'Passer en français'}>
               {t(lang, 'EN', 'FR')}
             </button>
             <button className={styles.signOutBtn} onClick={onSignOut}>

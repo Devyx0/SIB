@@ -12,9 +12,15 @@ export default function Login() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (err) setError(err.message);
+    try {
+      const { data, error: err } = await supabase.auth.signInWithPassword({ email, password });
+      if (err) { setError(err.message); return; }
+      if (!data.session) { setError('Connexion échouée — aucune session reçue.'); return; }
+    } catch {
+      setError('Connexion échouée — veuillez réessayer.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
