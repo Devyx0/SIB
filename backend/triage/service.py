@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import anthropic
 
@@ -278,7 +278,7 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
         return {"result": "skipped", "reason": "triage_clarify — blocked on human input; coordinator must resolve before retry"}
 
     if current_status == "triage_pending" and started_at is not None:
-        age_min = (datetime.utcnow() - started_at).total_seconds() / 60
+        age_min = (datetime.now(timezone.utc) - started_at.replace(tzinfo=timezone.utc)).total_seconds() / 60
         if age_min < _ABANDONED_MINUTES:
             conn.rollback()
             return {"result": "skipped", "reason": f"in progress by another worker ({age_min:.1f} min ago)"}
