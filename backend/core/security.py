@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Annotated
 
 import jwt
+from jwt import PyJWKClient
 from fastapi import Depends, Header
 
 from .config import settings
@@ -18,24 +19,55 @@ class CurrentUser:
     roles: frozenset[str]  # values from employee_role.role
 
 
+# Lazily initialised from settings.SUPABASE_JWKS_URL — never from the token's iss.
+_jwks_client: PyJWKClient | None = None
+
+
+def _init_jwks_client() -> PyJWKClient | None:
+    global _jwks_client
+    if _jwks_client is None and settings.SUPABASE_JWKS_URL:
+        _jwks_client = PyJWKClient(settings.SUPABASE_JWKS_URL)
+    return _jwks_client
+
+
 def verify_jwt(token: str) -> dict:
     """Decode and verify a Supabase JWT. Returns the payload.
 
-    Raises Unauthorized on any failure (bad signature, expired, wrong audience,
-    missing required claims).
-
-    # ponytail: HS256 only — swap to JWKS by replacing this function with
-    # python-jose + a JWKS URL fetch; no other code changes required.
+    HS256: verified with SUPABASE_JWT_SECRET (remote Supabase).
+    ES256: verified via JWKS at SUPABASE_JWKS_URL (config only — never from token iss).
+    Both paths require iss == SUPABASE_ISSUER (enforced unconditionally).
+    Any other algorithm or any verification failure raises Unauthorized.
     """
     try:
-        return jwt.decode(
-            token,
-            settings.SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            audience="authenticated",
-            options={"require": ["exp", "sub", "aud"]},
-        )
-    except jwt.InvalidTokenError:
+        alg = jwt.get_unverified_header(token).get("alg", "")
+        if alg == "HS256":
+            payload = jwt.decode(
+                token,
+                settings.SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                audience="authenticated",
+                options={"require": ["exp", "sub", "aud", "iss"]},
+            )
+        elif alg == "ES256":
+            client = _init_jwks_client()
+            if client is None:
+                raise Unauthorized()
+            signing_key = client.get_signing_key_from_jwt(token)
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["ES256"],
+                audience="authenticated",
+                options={"require": ["exp", "sub", "aud", "iss"]},
+            )
+        else:
+            raise Unauthorized()
+        if payload["iss"] != settings.SUPABASE_ISSUER:
+            raise Unauthorized()
+        return payload
+    except Unauthorized:
+        raise
+    except jwt.PyJWTError:
         raise Unauthorized()
 
 

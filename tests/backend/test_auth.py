@@ -26,7 +26,7 @@ def _token(
     payload = {
         "sub": sub,
         "aud": aud,
-        "iss": "supabase-demo",
+        "iss": settings.SUPABASE_ISSUER,
         "exp": int(time.time()) + exp_offset,
     }
     return pyjwt.encode(payload, secret or settings.SUPABASE_JWT_SECRET, algorithm="HS256")

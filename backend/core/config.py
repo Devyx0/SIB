@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -27,6 +28,23 @@ class Settings(BaseSettings):
     LOCAL_DB_USER: str = "postgres"
     LOCAL_DB_PASSWORD: str = "postgres"
     LOCAL_DB_NAME: str = "postgres"
+
+    # ES256 JWKS endpoint — app refuses to start if unset.
+    # Local:  http://127.0.0.1:54321/auth/v1/.well-known/jwks.json
+    # Remote: https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json
+    SUPABASE_JWKS_URL: str = ""
+    # Expected iss claim — app refuses to start if unset.
+    # Local:  http://127.0.0.1:54321/auth/v1
+    # Remote: https://<project-ref>.supabase.co/auth/v1
+    SUPABASE_ISSUER: str = ""
+
+    @model_validator(mode="after")
+    def _require_jwt_endpoints(self) -> "Settings":
+        if not self.SUPABASE_JWKS_URL:
+            raise ValueError("SUPABASE_JWKS_URL must be set")
+        if not self.SUPABASE_ISSUER:
+            raise ValueError("SUPABASE_ISSUER must be set")
+        return self
 
     # Remote Supabase (required when DB_TARGET=remote)
     SUPABASE_HOST: str = ""
