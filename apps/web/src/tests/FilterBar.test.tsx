@@ -59,4 +59,26 @@ describe('FilterBar', () => {
     await userEvent.click(screen.getByText('Effacer'));
     expect(onStatus).toHaveBeenCalledWith([]);
   });
+
+  it('date input guard rejects partial year — onStartDate not called for invalid value', () => {
+    // The onChange guard requires /^\d{4}-\d{2}-\d{2}$/ and year 2020-2099.
+    // A browser-generated partial value like "0102-02-06" (bad year) or an
+    // empty intermediate value must not propagate.
+    const onStartDate = vi.fn();
+    render(<FilterBar {...defaultProps} onStartDate={onStartDate} />);
+    const input = screen.getAllByDisplayValue('2026-09-01')[0];
+
+    // Empty value (user clears the field) — allowed (clears the filter)
+    fireEvent.change(input, { target: { value: '' } });
+    expect(onStartDate).toHaveBeenCalledWith('');
+
+    // Partial / garbled year outside 2020-2099 — must NOT call onStartDate
+    onStartDate.mockClear();
+    fireEvent.change(input, { target: { value: '0102-02-06' } });
+    expect(onStartDate).not.toHaveBeenCalled();
+
+    // Valid value — must call onStartDate
+    fireEvent.change(input, { target: { value: '2026-10-15' } });
+    expect(onStartDate).toHaveBeenCalledWith('2026-10-15');
+  });
 });
