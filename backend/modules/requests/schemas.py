@@ -97,6 +97,11 @@ class AddLogBody(BaseModel):
     entry_text: str = Field(..., min_length=1)
 
 
+class RouteBody(BaseModel):
+    source_calendar: Literal["main", "st_maj"]
+    expected_source_calendar: Optional[str] = None
+
+
 class JustificationEntry(BaseModel):
     id: int
     decision_type: str
@@ -169,6 +174,7 @@ class RequestDetail(ListRow):
     caller_phone: Optional[str] = None
     caller_email: Optional[str] = None
     caller_tenant_id: Optional[int] = None
+    raw_caller_body: Optional[dict] = None
 
 
 class ListResponse(BaseModel):
@@ -193,3 +199,8 @@ class EmployeeLookup(BaseModel):
     employee_id: int
     nom_employe: str
     role: str
+
+
+class UnitLookup(BaseModel):
+    unit_id: int
+    numero_appartement: str

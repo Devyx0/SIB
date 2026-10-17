@@ -100,7 +100,15 @@ def list_requests(
     if urgency is not None:
         conditions.append("mr.urgency_tier::text = %(urgency)s")
         params["urgency"] = urgency
-    if source_calendar is not None:
+    if source_calendar == "unrouted":
+        # Replace the date-range condition with a 90-day window on submission_date.
+        # start_date is NULL on intake rows; the board date picker is ignored here.
+        conditions[0] = (
+            "mr.source_calendar IS NULL"
+            " AND mr.status::text NOT IN ('closed', 'en_route')"
+            " AND (mr.submission_date >= NOW() - INTERVAL '90 days' OR mr.submission_date IS NULL)"
+        )
+    elif source_calendar is not None:
         conditions.append("mr.source_calendar = %(source_calendar)s")
         params["source_calendar"] = source_calendar
     if q is not None:
@@ -203,7 +211,8 @@ def get_request(
             mr.caller_name,
             mr.caller_phone,
             mr.caller_email,
-            mr.caller_tenant_id
+            mr.caller_tenant_id,
+            mr.raw_caller_body
         FROM maintenance_request mr
         LEFT JOIN building  b ON b.building_id = mr.building_id
         LEFT JOIN sector    s ON s.sector_id   = mr.sector_id
@@ -238,7 +247,7 @@ def lock_request(conn, request_id: int) -> dict | None:
         """
         SELECT request_id, status::text, assigned_employee_id, start_date,
                urgency_tier::text AS urgency_tier, next_follow_up_date,
-               next_steps, estimated_cost
+               next_steps, estimated_cost, source_calendar
         FROM maintenance_request
         WHERE request_id = %(request_id)s
         FOR UPDATE
@@ -341,6 +350,14 @@ def list_justification_entries(conn, request_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def list_units(conn, building_id: int) -> list[dict]:
+    rows = conn.execute(
+        "SELECT unit_id, numero_appartement FROM unit WHERE building_id = %(bid)s ORDER BY numero_appartement",
+        {"bid": building_id},
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def list_sectors(conn) -> list[dict]:
     return [
         dict(r) for r in conn.execute(
@@ -388,3 +405,26 @@ def list_employees(conn, role: str | None) -> list[dict]:
             """
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_triage_status(conn, request_id: int) -> dict | None:
+    row = conn.execute(
+        "SELECT status::text AS status, triage_started_at FROM maintenance_request WHERE request_id = %(rid)s",
+        {"rid": request_id},
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def route_request(
+    conn, *, request_id: int, source_calendar: str,
+    old_source_calendar: str | None, employee_id: int,
+) -> None:
+    conn.execute(
+        "UPDATE maintenance_request SET source_calendar = %(cal)s WHERE request_id = %(rid)s",
+        {"cal": source_calendar, "rid": request_id},
+    )
+    write_provenance(conn,
+        target_table="maintenance_request", target_pk=str(request_id),
+        target_column="source_calendar", employee_id=employee_id,
+        previous_value=old_source_calendar, new_value=source_calendar,
+    )

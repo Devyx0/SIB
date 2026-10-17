@@ -155,7 +155,65 @@ def _format_context(ctx: dict) -> str:
 
 # ── DB write helpers ───────────────────────────────────────────────────────────
 
+_PROVENANCE_COLS = (
+    "problem_summary", "problems", "entry_permission", "animals",
+    "urgency_tier", "complexity_tier", "congestion_level",
+    "time_estimate_bucket", "delegable_status", "report_status",
+    "routing_rule", "other_notes",
+)
+
+
+def _write_triage_provenance(cur, request_id: int, parsed: dict,
+                              model_version: str, old_row: tuple) -> None:
+    problems_text = None
+    if parsed.get("problems"):
+        problems_text = "\n".join(f"- {p}" for p in parsed["problems"])
+    new_vals = {
+        "problem_summary":    parsed.get("title"),
+        "problems":           problems_text,
+        "entry_permission":   parsed.get("entry_permission"),
+        "animals":            parsed.get("animals"),
+        "urgency_tier":       parsed.get("urgency_tier"),
+        "complexity_tier":    parsed.get("complexity_tier"),
+        "congestion_level":   parsed.get("congestion_level"),
+        "time_estimate_bucket": parsed.get("time_estimate_bucket"),
+        "delegable_status":   parsed.get("delegable_status"),
+        "report_status":      parsed.get("report_status"),
+        "routing_rule":       parsed.get("routing_rule"),
+        "other_notes":        parsed.get("other_notes"),
+    }
+    rows = [
+        (
+            str(request_id), col,
+            str(old_row[i]) if old_row[i] is not None else None,
+            str(new_vals[col]) if new_vals[col] is not None else None,
+            model_version,
+        )
+        for i, col in enumerate(_PROVENANCE_COLS)
+        if (old_row[i] if old_row[i] is not None else None) != (
+            str(new_vals[col]) if new_vals[col] is not None else None
+        )
+    ]
+    if not rows:
+        return
+    cur.executemany(
+        """
+        INSERT INTO data_provenance
+            (target_table, target_pk, target_column, source_type,
+             previous_value, ingested_value, raw_value, source_file_name, ingested_at)
+        VALUES ('maintenance_request', %s, %s, 'triage', %s, %s, NULL, %s, NOW())
+        """,
+        rows,
+    )
+
+
 def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> None:
+    cur.execute(
+        f"SELECT {', '.join(_PROVENANCE_COLS)} FROM maintenance_request WHERE request_id = %s",
+        (request_id,),
+    )
+    old_row = cur.fetchone()
+
     problems_text = None
     if parsed.get("problems"):
         problems_text = "\n".join(f"- {p}" for p in parsed["problems"])
@@ -207,6 +265,8 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
             "request_id":         request_id,
         },
     )
+    if old_row is not None:
+        _write_triage_provenance(cur, request_id, parsed, model_version, old_row)
 
 
 def _log_attempt(cur, request_id: int, *, model_version: str, context_sent: dict,
@@ -315,7 +375,7 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
         wid = os.environ.get("ANTHROPIC_WORKSPACE_ID", "")
         if wid:
             extra_headers["anthropic-workspace-id"] = wid
-    client = anthropic.Anthropic(api_key=api_key, default_headers=extra_headers)
+    client = anthropic.Anthropic(api_key=api_key, default_headers=extra_headers, timeout=120.0)
     last_result = "triage_failed"
     last_detail = None
 

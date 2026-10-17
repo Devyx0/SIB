@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated, Literal, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
 from backend.core.db import get_db_conn
 from backend.core.exceptions import ValidationFailed
@@ -21,6 +21,7 @@ from .schemas import (
     ListResponse,
     RequestDetail,
     RescheduleBody,
+    RouteBody,
     SectorLookup,
     SetCostBody,
     SetFollowUpDateBody,
@@ -28,6 +29,7 @@ from .schemas import (
     SetUrgencyBody,
     SortKey,
     StatusValue,
+    UnitLookup,
 )
 
 router = APIRouter(prefix="/requests", tags=["requests"])
@@ -49,7 +51,7 @@ class RequestListParams:
         sector_id: Optional[int] = Query(default=None),
         assigned_employee_id: Optional[int] = Query(default=None),
         urgency: Optional[Literal["AJD", "ajd", "none"]] = Query(default=None),
-        source_calendar: Optional[Literal["main", "st_maj"]] = Query(default=None),
+        source_calendar: Optional[Literal["main", "st_maj", "unrouted"]] = Query(default=None),
         q: Optional[str] = Query(default=None),
         sort_by: SortKey = Query(default="start_date"),
         sort_dir: Literal["asc", "desc"] = Query(default="asc"),
@@ -126,6 +128,38 @@ def lookup_buildings(
     return [BuildingLookup(**r) for r in repo.list_buildings(conn, sector_id)]
 
 
+def _run_triage_background(request_id: int) -> None:
+    from backend.core.db import get_legacy_conn
+    from backend.triage.service import triage
+    conn = get_legacy_conn()
+    try:
+        triage(conn, request_id)
+    finally:
+        conn.close()
+
+
+@router.post("/{request_id}/triage", operation_id="request_trigger_triage", status_code=202)
+def request_trigger_triage(
+    request_id: int,
+    background_tasks: BackgroundTasks,
+    user: CurrentUser = _COORD_DIR,
+    conn=Depends(get_db_conn),
+) -> dict:
+    service.action_trigger_triage(conn, request_id)
+    background_tasks.add_task(_run_triage_background, request_id)
+    return {"request_id": request_id, "status": "triage_pending"}
+
+
+@router.post("/{request_id}/route", operation_id="request_route", response_model=RequestDetail)
+def request_route(
+    request_id: int,
+    body: RouteBody,
+    user: CurrentUser = _COORD_DIR,
+    conn=Depends(get_db_conn),
+) -> RequestDetail:
+    return service.action_route(conn, request_id, body, user)
+
+
 @router.post("/{request_id}/assign", operation_id="request_assign", response_model=RequestDetail)
 def request_assign(request_id: int, body: AssignBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> RequestDetail:
     return service.action_assign(conn, request_id, body, user)
@@ -159,6 +193,19 @@ def request_set_cost(request_id: int, body: SetCostBody, user: CurrentUser = _CO
 @router.post("/{request_id}/log", operation_id="request_add_log", response_model=RequestDetail)
 def request_add_log(request_id: int, body: AddLogBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> RequestDetail:
     return service.action_add_log(conn, request_id, body, user)
+
+
+@lookup_router.get(
+    "/units",
+    operation_id="lookup_units",
+    response_model=list[UnitLookup],
+)
+def lookup_units(
+    building_id: int = Query(...),
+    user: CurrentUser = _ALL_ROLES,
+    conn=Depends(get_db_conn),
+) -> list[UnitLookup]:
+    return [UnitLookup(**r) for r in repo.list_units(conn, building_id)]
 
 
 @lookup_router.get(

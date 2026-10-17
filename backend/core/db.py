@@ -96,6 +96,14 @@ def get_legacy_conn():
     # ponytail: triage has import psycopg2.extras at module level; psycopg3 migration
     # waits until the triage freeze lifts.
     """
+    if settings.DB_TARGET == "local":
+        return psycopg2.connect(
+            host=settings.LOCAL_DB_HOST,
+            port=settings.LOCAL_DB_PORT,
+            user=settings.LOCAL_DB_USER,
+            password=settings.LOCAL_DB_PASSWORD,
+            dbname=settings.LOCAL_DB_NAME,
+        )
     return psycopg2.connect(
         host=settings.SUPABASE_HOST,
         port=5432,

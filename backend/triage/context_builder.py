@@ -39,10 +39,25 @@ Never truncated silently.
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from typing import Any
 
 import psycopg2.extras
+
+
+def _ref_date(request: dict) -> date | None:
+    """Return start_date, or submission_date.date() when start_date is NULL (intake rows)."""
+    d = request.get("start_date")
+    if d is not None:
+        return d
+    sub = request.get("submission_date")
+    if sub is None:
+        return None
+    if isinstance(sub, datetime):
+        return sub.date()
+    if isinstance(sub, date):
+        return sub
+    return None
 
 
 # ── Pest-control keyword detection ────────────────────────────────────────────
@@ -129,7 +144,7 @@ def unit_context(cur, request: dict) -> dict | None:
     tenancy_record.start_date/end_date (NULL on all backfilled rows).
     See module docstring for the full assumption and its limits.
     """
-    d = request["start_date"]
+    d = _ref_date(request)
     unit_id = request["unit_id"]
 
     cur.execute(
@@ -206,7 +221,9 @@ def duplicates(cur, request: dict) -> list[dict]:
     Same unit_id, window −90d → +45d from request.start_date.
     Mechanical exclusions applied. Self excluded.
     """
-    d = request["start_date"]
+    d = _ref_date(request)
+    if d is None:
+        return []
     cur.execute(
         f"""
         SELECT {_CAND_COLS}
@@ -244,7 +261,9 @@ def synergy(cur, request: dict) -> dict:
     if not request.get("project_id"):
         return {"scope": "project", "items": [], "total": 0, "narrowed_from": None}
 
-    d = request["start_date"]
+    d = _ref_date(request)
+    if d is None:
+        return {"scope": "project", "items": [], "total": 0, "narrowed_from": None}
     stream = _stream(request)
 
     if stream == "pest":
@@ -380,7 +399,9 @@ def _synergy_pest(cur, request: dict, d: date) -> dict:
 
 def history(cur, request: dict) -> list[dict]:
     """Same unit_id, −6mo → +21d. Excludes self and recurring events."""
-    d = request["start_date"]
+    d = _ref_date(request)
+    if d is None:
+        return []
     cur.execute(
         f"""
         SELECT {_CAND_COLS}

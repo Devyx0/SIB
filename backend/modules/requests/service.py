@@ -5,8 +5,11 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from datetime import datetime, timezone
+
 from backend.core.exceptions import (
-    NotFoundError, RequestClosedError, StaleDataError, ValidationFailed,
+    ConflictError, InvalidTransition, NotFoundError, RequestClosedError,
+    StaleDataError, ValidationFailed,
 )
 from backend.core.security import CurrentUser
 from backend.core.utils import today_local
@@ -14,8 +17,11 @@ from backend.core.utils import today_local
 from . import repository as repo
 from .schemas import (
     AddLogBody, AssignBody, ListResponse, ListRow, RequestDetail,
-    RescheduleBody, SetCostBody, SetFollowUpDateBody, SetNextStepsBody, SetUrgencyBody,
+    RescheduleBody, RouteBody, SetCostBody, SetFollowUpDateBody, SetNextStepsBody,
+    SetUrgencyBody,
 )
+
+_TRIAGE_ABANDONED_MINUTES = 10
 
 # Internal coordinator/admin fields — always null for technician and contractor.
 _INTERNAL_TECH: frozenset[str] = frozenset({
@@ -273,6 +279,46 @@ def action_set_cost(conn, request_id: int, body: SetCostBody, user: CurrentUser)
         target_table="maintenance_request", target_pk=str(request_id),
         target_column="estimated_cost", employee_id=user.employee_id,
         previous_value=_to_str(current_db), new_value=_to_str(body.estimated_cost),
+    )
+    return _after_action(conn, request_id, user)
+
+
+def action_trigger_triage(conn, request_id: int) -> None:
+    """Validate that triage can be triggered. Raises on bad state.
+
+    The actual triage runs in a BackgroundTask (caller's responsibility).
+    Returns without writing — the lock is set inside triage() after the request is committed.
+    """
+    row = repo.get_triage_status(conn, request_id)
+    if row is None:
+        raise NotFoundError()
+    status = row["status"]
+    if status == "closed":
+        raise RequestClosedError()
+    if status in ("triaged", "triage_proposal", "en_route"):
+        raise InvalidTransition(f"Cannot trigger triage: current status is '{status}'")
+    if status == "triage_clarify":
+        raise ConflictError("Triage bloqué — résoudre l'ambiguïté d'adresse d'abord")
+    if status == "triage_pending":
+        started_at = row["triage_started_at"]
+        if started_at is not None:
+            age_min = (datetime.now(timezone.utc) - started_at.replace(tzinfo=timezone.utc)).total_seconds() / 60
+            if age_min < _TRIAGE_ABANDONED_MINUTES:
+                raise ConflictError(
+                    f"Triage déjà en cours (démarré il y a {age_min:.0f} min) — réessayez dans quelques minutes"
+                )
+
+
+def action_route(conn, request_id: int, body: RouteBody, user: CurrentUser) -> RequestDetail:
+    row = _lock_or_404(conn, request_id)
+    _check_not_closed(row)
+    if body.expected_source_calendar is not None and row["source_calendar"] != body.expected_source_calendar:
+        raise StaleDataError()
+    repo.route_request(conn,
+        request_id=request_id,
+        source_calendar=body.source_calendar,
+        old_source_calendar=row["source_calendar"],
+        employee_id=user.employee_id,
     )
     return _after_action(conn, request_id, user)
 
