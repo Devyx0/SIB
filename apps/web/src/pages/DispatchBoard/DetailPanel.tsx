@@ -5,6 +5,7 @@ import {
   ApiError, fetchEmployees,
   dispatchAssign, dispatchReschedule, dispatchSetUrgency,
   dispatchSetFollowUpDate, dispatchSetNextSteps, dispatchSetCost, dispatchAddLog,
+  triggerTriage, routeRequest,
 } from '../../api/client';
 import type { MeResponse } from '../../api/schema.d.ts';
 import { statusLabel, t } from '../../i18n';
@@ -84,7 +85,8 @@ const URGENCY_OPTIONS: Array<{ value: string | null }> = [
 ];
 
 export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Props) {
-  const { data, isPending, isError, error } = useRequest(requestId);
+  const [polling, setPolling] = useState(false);
+  const { data, isPending, isError, error } = useRequest(requestId, { refetchInterval: polling ? 2000 : false });
   const qc = useQueryClient();
   const isEditor = !!(me?.roles.includes('coordinator') || me?.roles.includes('director'));
   const isClosed = data?.status === 'closed';
@@ -113,6 +115,11 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
   useEffect(() => {
     if (data) setAssignEmpId(data.assigned_employee_id ?? null);
   }, [data?.request_id, data?.assigned_employee_id]);
+
+  // Poll while triage is in progress
+  useEffect(() => {
+    setPolling(data?.status === 'triage_pending');
+  }, [data?.status]);
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -247,6 +254,87 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                 <dt>Source</dt>
                 <dd>{data.source_calendar ?? '—'}</dd>
               </dl>
+
+              {/* Dual display: tenant's original values vs triage interpretation */}
+              {data.raw_caller_body && (
+                <section className={styles.followupSection} data-testid="dual-display">
+                  <h3 className={styles.followupHeading}>
+                    {t(lang, 'Valeurs déclarées par le locataire', 'Tenant-declared values')}
+                  </h3>
+                  <dl className={styles.dl}>
+                    <dt style={{ fontSize: 11 }}>{t(lang, 'Accès (déclaré)', 'Access (declared)')}</dt>
+                    <dd style={{ fontSize: 12 }}>{data.raw_caller_body.entry_permission ?? '—'}</dd>
+                    <dt style={{ fontSize: 11, color: 'var(--color-accent)' }}>{t(lang, 'Accès (IA)', 'Access (AI)')}</dt>
+                    <dd style={{ fontSize: 12 }}>{data.entry_permission ?? '—'}</dd>
+
+                    <dt style={{ fontSize: 11 }}>{t(lang, 'Animaux (déclaré)', 'Animals (declared)')}</dt>
+                    <dd style={{ fontSize: 12 }}>{data.raw_caller_body.animals ?? t(lang, 'Non', 'No')}</dd>
+                    <dt style={{ fontSize: 11, color: 'var(--color-accent)' }}>{t(lang, 'Animaux (IA)', 'Animals (AI)')}</dt>
+                    <dd style={{ fontSize: 12 }}>{data.animals ?? t(lang, 'Non', 'No')}</dd>
+                  </dl>
+                </section>
+              )}
+
+              {/* Triage button — intake_received or triage_failed */}
+              {isEditor && (data.status === 'intake_received' || data.status === 'triage_failed' || data.status === 'triage_pending') && (
+                <section className={styles.editSection} data-testid="triage-section">
+                  <h3 className={styles.editSectionHeading}>{t(lang, 'Triage automatique', 'Auto triage')}</h3>
+                  {data.status === 'triage_pending' ? (
+                    <p className={styles.loading} data-testid="triage-pending-msg">
+                      {t(lang, 'Triage en cours…', 'Triage in progress…')}
+                    </p>
+                  ) : (
+                    <>
+                      {data.status === 'triage_failed' && (
+                        <p className={styles.error}>{t(lang, 'Triage échoué — réessayez.', 'Triage failed — retry.')}</p>
+                      )}
+                      <button
+                        className={styles.applyBtn}
+                        data-testid="triage-btn"
+                        onClick={async () => {
+                          try {
+                            await triggerTriage(requestId);
+                            qc.invalidateQueries({ queryKey: ['request', requestId] });
+                            setPolling(true);
+                          } catch (err) {
+                            const msg = err instanceof ApiError ? err.message : String(err);
+                            setStaleMsg(msg);
+                          }
+                        }}
+                      >
+                        {t(lang, 'Lancer le triage', 'Run triage')}
+                      </button>
+                    </>
+                  )}
+                </section>
+              )}
+
+              {/* Routing buttons — triaged but not yet routed */}
+              {isEditor && data.status === 'triaged' && data.source_calendar === null && (
+                <section className={styles.editSection} data-testid="routing-section">
+                  <h3 className={styles.editSectionHeading}>{t(lang, 'Acheminer vers', 'Route to')}</h3>
+                  <div className={styles.urgencyPills}>
+                    <button
+                      className={styles.applyBtn}
+                      data-testid="route-majordome"
+                      onClick={() => applyAndRefresh(() =>
+                        routeRequest(requestId, { source_calendar: 'st_maj', expected_source_calendar: null })
+                      )}
+                    >
+                      {t(lang, 'Envoyer à Majordome', 'Send to Butler')}
+                    </button>
+                    <button
+                      className={styles.applyBtn}
+                      data-testid="route-principal"
+                      onClick={() => applyAndRefresh(() =>
+                        routeRequest(requestId, { source_calendar: 'main', expected_source_calendar: null })
+                      )}
+                    >
+                      {t(lang, 'Garder sur Principal', 'Keep on Main')}
+                    </button>
+                  </div>
+                </section>
+              )}
 
               {data.followup_log.length > 0 && (
                 <section className={styles.followupSection}>

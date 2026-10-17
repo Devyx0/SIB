@@ -1,5 +1,5 @@
-import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, MeResponse, JustificationEntry } from './schema.d.ts';
-export type { JustificationEntry };
+import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry } from './schema.d.ts';
+export type { JustificationEntry, BuildingLookup, UnitLookup };
 import { supabase } from '../lib/supabase';
 
 export class ApiError extends Error {
@@ -135,4 +135,50 @@ export function dispatchSetCost(id: number, body: { estimated_cost: number | nul
 
 export function dispatchAddLog(id: number, body: { entry_text: string }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/log`, body);
+}
+
+export function triggerTriage(id: number): Promise<{ request_id: number; status: string }> {
+  return apiPost(`/api/v1/requests/${id}/triage`, {});
+}
+
+export function routeRequest(id: number, body: { source_calendar: string; expected_source_calendar: string | null }): Promise<RequestDetail> {
+  return apiPost(`/api/v1/requests/${id}/route`, body);
+}
+
+export interface IntakeBody {
+  caller_name: string;
+  caller_email?: string;
+  phone_1?: string;
+  civic: string;
+  street: string;
+  apartment?: string;
+  city: string;
+  access: 'yes' | 'tenant_required' | 'common_area' | 'unknown';
+  access_details?: string;
+  has_animals?: boolean;
+  animal_details?: string;
+  problem: string;
+  attention?: string;
+  building_id_override?: number;
+  unit_id_override?: number;
+}
+
+export interface IntakeResponse {
+  request_id: number;
+  building_id: number | null;
+  unit_id: number | null;
+  match_status: string;
+}
+
+export function createManualRequest(body: IntakeBody): Promise<IntakeResponse> {
+  return apiPost('/api/v1/intake', body);
+}
+
+export function fetchBuildings(sectorId?: number): Promise<BuildingLookup[]> {
+  const q = sectorId != null ? `?sector_id=${sectorId}` : '';
+  return apiFetch(`/api/v1/lookup/buildings${q}`);
+}
+
+export function fetchUnits(buildingId: number): Promise<UnitLookup[]> {
+  return apiFetch(`/api/v1/lookup/units?building_id=${buildingId}`);
 }

@@ -173,6 +173,77 @@ describe('DetailPanel', () => {
     });
   });
 
+  it('shows triage button for intake_received status (coordinator)', () => {
+    const intakeReq = { ...MOCK_REQUEST, status: 'intake_received' };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: intakeReq, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+    expect(screen.getByTestId('triage-btn')).toBeTruthy();
+  });
+
+  it('hides triage button when status is triaged', () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+    expect(screen.queryByTestId('triage-btn')).toBeNull();
+  });
+
+  it('triage button calls triggerTriage on click', async () => {
+    const intakeReq = { ...MOCK_REQUEST, status: 'intake_received' };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: intakeReq, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    vi.spyOn(client, 'triggerTriage').mockResolvedValue({ request_id: 1, status: 'triage_pending' });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+    await userEvent.click(screen.getByTestId('triage-btn'));
+    await waitFor(() => expect(client.triggerTriage).toHaveBeenCalledWith(1));
+  });
+
+  it('shows routing buttons when status triaged and source_calendar null', () => {
+    const triaged = { ...MOCK_REQUEST, status: 'triaged', source_calendar: null };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: triaged, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+    expect(screen.getByTestId('route-majordome')).toBeTruthy();
+    expect(screen.getByTestId('route-principal')).toBeTruthy();
+  });
+
+  it('hides routing buttons when source_calendar already set', () => {
+    const routed = { ...MOCK_REQUEST, status: 'triaged', source_calendar: 'main' };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: routed, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+    expect(screen.queryByTestId('routing-section')).toBeNull();
+  });
+
+  it('routing button calls routeRequest with st_maj', async () => {
+    const triaged = { ...MOCK_REQUEST, status: 'triaged', source_calendar: null };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: triaged, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    vi.spyOn(client, 'routeRequest').mockResolvedValue({ ...triaged, source_calendar: 'st_maj' } as any);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+    await userEvent.click(screen.getByTestId('route-majordome'));
+    await waitFor(() => expect(client.routeRequest).toHaveBeenCalledWith(1, { source_calendar: 'st_maj', expected_source_calendar: null }));
+  });
+
+  it('shows dual display section when raw_caller_body is present', () => {
+    const withRaw = {
+      ...MOCK_REQUEST,
+      raw_caller_body: { entry_permission: 'Accès autorisé (traitement prioritaire)', animals: null, problems: 'Fuite' },
+      entry_permission: 'N/A Non applicable (exemple espace commun)',
+    };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: withRaw, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
+    expect(screen.getByTestId('dual-display')).toBeTruthy();
+    expect(screen.getByText(/Accès autorisé/)).toBeTruthy();
+    expect(screen.getByText(/N\/A Non applicable/)).toBeTruthy();
+  });
+
+  it('hides dual display when raw_caller_body is null', () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
+    expect(screen.queryByTestId('dual-display')).toBeNull();
+  });
+
   it('cancel justification resets reschedule date to server value', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);

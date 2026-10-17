@@ -65,6 +65,7 @@ export default function FilterBar({
     { value: '', label: t(lang, 'Tous', 'All') },
     { value: 'main', label: t(lang, 'Principal', 'Main') },
     { value: 'st_maj', label: t(lang, 'Butler/Majordome', 'Butler') },
+    { value: 'unrouted', label: t(lang, 'À router', 'To route') },
   ];
 
   const URGENCY_OPTS = [

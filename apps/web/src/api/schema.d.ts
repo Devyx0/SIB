@@ -98,6 +98,7 @@ export interface RequestDetail extends ListRow {
   caller_phone: string | null;
   caller_email: string | null;
   caller_tenant_id: number | null;
+  raw_caller_body: { entry_permission: string | null; animals: string | null; problems: string | null } | null;
 }
 
 export interface MeResponse {
@@ -128,4 +129,9 @@ export interface EmployeeLookup {
   employee_id: number;
   nom_employe: string;
   role: string;
+}
+
+export interface UnitLookup {
+  unit_id: number;
+  numero_appartement: string;
 }

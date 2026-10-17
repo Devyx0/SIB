@@ -8,6 +8,7 @@ import { t } from '../../i18n';
 import FilterBar from './FilterBar';
 import RequestTable from './RequestTable';
 import DetailPanel from './DetailPanel';
+import NouvelAppelModal from './NouvelAppelModal';
 import Pagination from '../../components/Pagination';
 import styles from './index.module.css';
 
@@ -26,6 +27,8 @@ export default function DispatchBoard({ lang, me }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showAllCols, setShowAllCols] = useState(false);
+  const [showNewCall, setShowNewCall] = useState(false);
+  const isCoordOrDir = !!(me?.roles.includes('coordinator') || me?.roles.includes('director'));
 
   const startDate = searchParams.get('start_date') ?? DEFAULT_START;
   const endDate = searchParams.get('end_date') ?? DEFAULT_END;
@@ -130,6 +133,15 @@ export default function DispatchBoard({ lang, me }: Props) {
     <div className={styles.page}>
       <header className={styles.header}>
         <h1>{t(lang, 'Répartition', 'Dispatch')}</h1>
+        {isCoordOrDir && (
+          <button
+            data-testid="nouvel-appel-btn"
+            onClick={() => setShowNewCall(true)}
+            style={{ fontWeight: 700, padding: '6px 16px', background: 'var(--color-accent)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 13 }}
+          >
+            {t(lang, '+ Nouvel appel', '+ New call')}
+          </button>
+        )}
       </header>
 
       <FilterBar
@@ -193,6 +205,12 @@ export default function DispatchBoard({ lang, me }: Props) {
           me={me}
         />
       )}
+
+      <NouvelAppelModal
+        open={showNewCall}
+        onClose={() => setShowNewCall(false)}
+        lang={lang}
+      />
     </div>
   );
 }
