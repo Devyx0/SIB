@@ -20,7 +20,7 @@ _VALID_BODY = {
     "apartment": "101",
     "city": "Quebec",
     "access": "yes",
-    "has_animals": False,
+    "animals": "non",
     "problem": "Robinet qui coule dans la cuisine.",
 }
 
@@ -97,7 +97,7 @@ def test_manual_create_writes_raw_caller_body(ac, db_conn):
 
 
 def test_animals_bundled_in_problems(ac, db_conn):
-    body = {**_VALID_BODY, "has_animals": True, "animal_details": "Un chien de berger"}
+    body = {**_VALID_BODY, "animals": "oui", "animal_details": "Un chien de berger"}
     r = ac(_user(_COORD, "coordinator")).post("/api/v1/intake", json=body)
     assert r.status_code == 201
     rid = r.json()["request_id"]

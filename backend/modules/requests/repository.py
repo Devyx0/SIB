@@ -212,7 +212,8 @@ def get_request(
             mr.caller_phone,
             mr.caller_email,
             mr.caller_tenant_id,
-            mr.raw_caller_body
+            mr.raw_caller_body,
+            mr.problems
         FROM maintenance_request mr
         LEFT JOIN building  b ON b.building_id = mr.building_id
         LEFT JOIN sector    s ON s.sector_id   = mr.sector_id

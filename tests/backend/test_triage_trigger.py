@@ -132,9 +132,11 @@ def test_background_runs_after_commit(app, db_conn):
     def spy_bg(rid):
         # Fresh psycopg2 connection — independent of the test's db_conn.
         # The row must be visible here (middleware committed before background tasks run).
+        from backend.core.config import settings
         c = psycopg2.connect(
-            host="127.0.0.1", port=54322, user="postgres",
-            password="postgres", dbname="postgres",
+            host=settings.LOCAL_DB_HOST, port=settings.LOCAL_DB_PORT,
+            user=settings.LOCAL_DB_USER, password=settings.LOCAL_DB_PASSWORD,
+            dbname=settings.LOCAL_DB_NAME,
         )
         with c.cursor() as cur:
             cur.execute("SELECT request_id FROM maintenance_request WHERE request_id = %s", [rid])
@@ -142,6 +144,7 @@ def test_background_runs_after_commit(app, db_conn):
             seen_rid.append(row[0] if row else None)
         c.close()
 
+    original_bg = rtr._run_triage_background
     rtr._run_triage_background = spy_bg
     app.dependency_overrides[get_db_conn] = lambda: db_conn
     app.dependency_overrides[get_current_user] = lambda: _user(_COORD, "coordinator")
@@ -149,13 +152,80 @@ def test_background_runs_after_commit(app, db_conn):
     client = TestClient(app, raise_server_exceptions=False)
 
     rid = _insert_request(db_conn, "intake_received")
-    db_conn.connection.commit()  # commit so the row is visible to the spy's fresh connection
+    db_conn.commit()  # commit so the row is visible to the spy's fresh connection
 
-    client.post(f"/api/v1/requests/{rid}/triage")
-    app.dependency_overrides.clear()
+    try:
+        client.post(f"/api/v1/requests/{rid}/triage")
+    finally:
+        rtr._run_triage_background = original_bg
+        app.dependency_overrides.clear()
 
     # Spy ran during the client.post() call, found the committed row via fresh psycopg2 conn
     assert seen_rid == [rid], f"got {seen_rid}"
+
+
+def test_exception_before_api_call_sets_triage_failed():
+    """Any exception raised inside triage() → _run_triage_background catches → triage_failed.
+
+    Uses its own psycopg2 connections (matching the pattern of other direct-commit tests in
+    this file) so that commit visibility is not affected by the psycopg3 pool's transaction state.
+    """
+    import psycopg2
+    import psycopg2.extras
+    import backend.modules.requests.router as rtr
+    import backend.triage.service as svc
+    from backend.core.config import settings
+
+    # Insert a row and commit it so the background task's connection can see it.
+    c_setup = psycopg2.connect(
+        host=settings.LOCAL_DB_HOST, port=settings.LOCAL_DB_PORT,
+        user=settings.LOCAL_DB_USER, password=settings.LOCAL_DB_PASSWORD,
+        dbname=settings.LOCAL_DB_NAME,
+    )
+    c_setup.cursor_factory = psycopg2.extras.RealDictCursor
+    try:
+        with c_setup.cursor() as cur:
+            cur.execute(
+                "INSERT INTO maintenance_request (status, building_id, sector_id)"
+                " VALUES ('intake_received', %s, %s) RETURNING request_id",
+                [_BLDG, _SECTOR],
+            )
+            rid = cur.fetchone()["request_id"]
+        c_setup.commit()
+    finally:
+        c_setup.close()
+
+    def crashing_triage(conn, request_id, **_):
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE maintenance_request SET status='triage_pending', triage_started_at=NOW() WHERE request_id=%s",
+                [request_id],
+            )
+        conn.commit()
+        raise KeyError("ANTHROPIC_API_KEY")
+
+    original = svc.triage
+    svc.triage = crashing_triage
+    try:
+        rtr._run_triage_background(rid)
+    finally:
+        svc.triage = original
+
+    # Verify via a fresh psycopg2 connection so there's no transaction-isolation ambiguity.
+    c_check = psycopg2.connect(
+        host=settings.LOCAL_DB_HOST, port=settings.LOCAL_DB_PORT,
+        user=settings.LOCAL_DB_USER, password=settings.LOCAL_DB_PASSWORD,
+        dbname=settings.LOCAL_DB_NAME,
+    )
+    c_check.cursor_factory = psycopg2.extras.RealDictCursor
+    try:
+        with c_check.cursor() as cur:
+            cur.execute("SELECT status FROM maintenance_request WHERE request_id = %s", [rid])
+            row = cur.fetchone()
+    finally:
+        c_check.close()
+
+    assert row["status"] == "triage_failed"
 
 
 def test_provenance_skips_unchanged():
@@ -175,13 +245,14 @@ def test_provenance_skips_unchanged():
 def test_timeout_sets_triage_failed(app, db_conn):
     """When the Anthropic call times out, status → triage_failed."""
     import backend.modules.requests.router as rtr
-    import anthropic
+    from backend.core.config import settings
 
     def triage_that_times_out(rid):
         import psycopg2
         c = psycopg2.connect(
-            host="127.0.0.1", port=54322, user="postgres",
-            password="postgres", dbname="postgres",
+            host=settings.LOCAL_DB_HOST, port=settings.LOCAL_DB_PORT,
+            user=settings.LOCAL_DB_USER, password=settings.LOCAL_DB_PASSWORD,
+            dbname=settings.LOCAL_DB_NAME,
         )
         try:
             with c.cursor() as cur:
@@ -207,7 +278,7 @@ def test_timeout_sets_triage_failed(app, db_conn):
     client = TestClient(app, raise_server_exceptions=False)
 
     rid = _insert_request(db_conn, "intake_received")
-    db_conn.connection.commit()
+    db_conn.commit()
     client.post(f"/api/v1/requests/{rid}/triage")
     app.dependency_overrides.clear()
 

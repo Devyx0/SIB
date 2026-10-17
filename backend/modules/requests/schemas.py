@@ -175,6 +175,7 @@ class RequestDetail(ListRow):
     caller_email: Optional[str] = None
     caller_tenant_id: Optional[int] = None
     raw_caller_body: Optional[dict] = None
+    problems: Optional[str] = None
 
 
 class ListResponse(BaseModel):

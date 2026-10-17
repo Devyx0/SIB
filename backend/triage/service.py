@@ -369,12 +369,11 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
         }
 
     # ── Retry loop ─────────────────────────────────────────────────────────────
-    api_key = os.environ["ANTHROPIC_API_KEY"]
+    from backend.core.config import settings
+    api_key = settings.ANTHROPIC_API_KEY
     extra_headers = {}
-    if api_key.startswith("sk-ant-api03-"):
-        wid = os.environ.get("ANTHROPIC_WORKSPACE_ID", "")
-        if wid:
-            extra_headers["anthropic-workspace-id"] = wid
+    if api_key.startswith("sk-ant-api03-") and settings.ANTHROPIC_WORKSPACE_ID:
+        extra_headers["anthropic-workspace-id"] = settings.ANTHROPIC_WORKSPACE_ID
     client = anthropic.Anthropic(api_key=api_key, default_headers=extra_headers, timeout=120.0)
     last_result = "triage_failed"
     last_detail = None

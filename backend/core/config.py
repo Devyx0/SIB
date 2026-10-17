@@ -44,6 +44,8 @@ class Settings(BaseSettings):
             raise ValueError("SUPABASE_JWKS_URL must be set")
         if not self.SUPABASE_ISSUER:
             raise ValueError("SUPABASE_ISSUER must be set")
+        if not self.ANTHROPIC_API_KEY:
+            raise ValueError("ANTHROPIC_API_KEY must be set")
         return self
 
     # Remote Supabase (required when DB_TARGET=remote)
@@ -53,6 +55,10 @@ class Settings(BaseSettings):
     DATABASE_URL: str = ""
     SERVICE_ROLE: str = ""
     SECRET_KEY: str = ""
+
+    # Anthropic — required at startup; prevents a silent triage_pending hang.
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_WORKSPACE_ID: str = ""
 
     TIMEZONE: str = "America/Toronto"
     TRIAGE_PROMPT_DIR: Path = _REPO_ROOT / "docs" / "client-ai-system"

@@ -1,24 +1,65 @@
-"""Business logic for the intake module — manual create."""
+"""Business logic for the intake module — manual create + match-only."""
 from __future__ import annotations
 
 import json
 
 from backend.core.security import CurrentUser
-from .address import match_address
-from .schemas import ManualCreateBody, ManualCreateResponse, access_label
+from .address import match_address, MatchResult
+from .schemas import (
+    CandidateBuilding, ManualCreateBody, ManualCreateResponse, MatchRequest, MatchResponse,
+    access_label, animals_db_value,
+)
+
+_RAW_TITLE_MAX = 80
 
 
 def _build_problems(body: ManualCreateBody) -> str:
     parts = [f"Problème : {body.problem}"]
     if body.access_details:
         parts.append(f"Précisions (accès) : {body.access_details}")
-    if body.has_animals and body.animal_details:
+    if body.animals == "oui" and body.animal_details:
         parts.append(f"Animaux : {body.animal_details}")
     if body.attention:
         parts.append(f"⚠ ATTENTION : {body.attention}")
     if body.phone_2:
         parts.append(f"Téléphone 2 : {body.phone_2}")
     return "\n".join(parts)
+
+
+def _raw_title(problem: str) -> str:
+    t = problem.strip()
+    return t[:_RAW_TITLE_MAX] if len(t) <= _RAW_TITLE_MAX else t[:_RAW_TITLE_MAX - 1] + "…"
+
+
+def match_only(conn, body: MatchRequest) -> MatchResponse:
+    """Match an address without writing anything to the DB."""
+    result: MatchResult = match_address(conn, body.civic, body.street, body.apartment)
+
+    building_adresse = None
+    if result.building_id is not None:
+        row = conn.execute(
+            "SELECT adresse FROM building WHERE building_id = %(id)s",
+            {"id": result.building_id},
+        ).fetchone()
+        if row:
+            building_adresse = row["adresse"]
+
+    candidate_buildings: list[CandidateBuilding] = []
+    if result.candidate_building_ids:
+        rows = conn.execute(
+            "SELECT building_id, adresse FROM building WHERE building_id = ANY(%(ids)s)",
+            {"ids": list(result.candidate_building_ids)},
+        ).fetchall()
+        candidate_buildings = [CandidateBuilding(building_id=r["building_id"], adresse=r["adresse"]) for r in rows]
+
+    return MatchResponse(
+        match_status=result.match_status,
+        building_id=result.building_id,
+        unit_id=result.unit_id,
+        building_adresse=building_adresse,
+        candidate_building_ids=list(result.candidate_building_ids),
+        candidate_buildings=candidate_buildings,
+    )
 
 
 def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCreateResponse:
@@ -34,7 +75,7 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
 
     problems_text = _build_problems(body)
     entry_perm = access_label(body.access)
-    animals_val = "Oui" if body.has_animals else None
+    animals_val = animals_db_value(body.animals)
 
     raw_caller_body = json.dumps({
         "entry_permission": entry_perm,
@@ -59,7 +100,7 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
             %(building_id)s, %(unit_id)s,
             %(caller_name)s, %(phone_1)s, %(caller_email)s,
             %(entry_permission)s, %(animals)s,
-            %(problems)s, 'Maintenance non-urgente',
+            %(problems)s, %(raw_title)s,
             %(attachment_url)s,
             %(employee_id)s,
             %(raw_caller_body)s,
@@ -76,6 +117,7 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
             "entry_permission": entry_perm,
             "animals":          animals_val,
             "problems":         problems_text,
+            "raw_title":        _raw_title(body.problem),
             "attachment_url":   body.attachment_url,
             "employee_id":      user.employee_id,
             "raw_caller_body":  raw_caller_body,
@@ -84,7 +126,6 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
 
     request_id = row["request_id"]
 
-    # Provenance row
     conn.execute(
         """
         INSERT INTO data_provenance

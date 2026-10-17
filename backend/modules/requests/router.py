@@ -129,11 +129,27 @@ def lookup_buildings(
 
 
 def _run_triage_background(request_id: int) -> None:
+    import logging
     from backend.core.db import get_legacy_conn
     from backend.triage.service import triage
+    log = logging.getLogger("backend.triage.bg")
     conn = get_legacy_conn()
     try:
         triage(conn, request_id)
+    except Exception as exc:
+        log.exception("Unhandled error in triage background for request %s", request_id)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE maintenance_request "
+                    "SET status = 'triage_failed', triage_started_at = NULL, "
+                    "    triage_summary = %s "
+                    "WHERE request_id = %s AND status = 'triage_pending'",
+                    (f"Erreur interne: {type(exc).__name__}: {exc}"[:500], request_id),
+                )
+            conn.commit()
+        except Exception:
+            log.exception("Failed to write triage_failed for request %s", request_id)
     finally:
         conn.close()
 
