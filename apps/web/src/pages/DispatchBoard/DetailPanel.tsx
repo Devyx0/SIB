@@ -8,7 +8,7 @@ import {
   triggerTriage, routeRequest,
 } from '../../api/client';
 import type { MeResponse } from '../../api/schema.d.ts';
-import { roleLabel, statusLabel, t } from '../../i18n';
+import { roleLabel, statusLabel, timeEstimateLabel, sourceCalendarLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import JustificationModal from '../../components/JustificationModal';
 import styles from './DetailPanel.module.css';
@@ -251,13 +251,13 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                 <dd>{data.subcontractor_name ?? '—'}</dd>
 
                 <dt>{t(lang, 'Estimation', 'Est. time')}</dt>
-                <dd>{data.time_estimate_bucket ?? '—'}</dd>
+                <dd>{timeEstimateLabel(lang, data.time_estimate_bucket)}</dd>
 
                 <dt>{t(lang, 'Coût estimé', 'Est. cost')}</dt>
                 <dd>{data.estimated_cost != null ? formatCost(data.estimated_cost, lang) : '—'}</dd>
 
                 <dt>Source</dt>
-                <dd>{data.source_calendar_label ?? data.source_calendar ?? '—'}</dd>
+                <dd>{sourceCalendarLabel(lang, data.source_calendar)}</dd>
 
                 <dt>{t(lang, 'Appelant', 'Caller')}</dt>
                 <dd>{data.caller_name ?? '—'}</dd>
@@ -272,10 +272,10 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                 <dd>{data.unit_label ?? '—'}</dd>
 
                 <dt>{t(lang, 'Accès', 'Access')}</dt>
-                <dd>{data.entry_permission ?? '—'}</dd>
+                <dd>{(data.raw_caller_body?.entry_permission ?? data.entry_permission) || '—'}</dd>
 
                 <dt>{t(lang, 'Animaux', 'Animals')}</dt>
-                <dd>{data.animals ?? '—'}</dd>
+                <dd>{(data.raw_caller_body?.animals ?? data.animals) || '—'}</dd>
               </dl>
 
               {data.problems && (
@@ -285,23 +285,51 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                 </section>
               )}
 
-              {/* Dual display: tenant's original values vs triage interpretation */}
-              {data.raw_caller_body && (
-                <section className={styles.followupSection} data-testid="dual-display">
-                  <h3 className={styles.followupHeading}>
-                    {t(lang, 'Valeurs déclarées par le locataire', 'Tenant-declared values')}
-                  </h3>
-                  <dl className={styles.dl}>
-                    <dt style={{ fontSize: 11 }}>{t(lang, 'Accès (déclaré)', 'Access (declared)')}</dt>
-                    <dd style={{ fontSize: 12 }}>{data.raw_caller_body.entry_permission ?? '—'}</dd>
-                    <dt style={{ fontSize: 11, color: 'var(--color-accent)' }}>{t(lang, 'Accès (IA)', 'Access (AI)')}</dt>
-                    <dd style={{ fontSize: 12 }}>{data.entry_permission ?? '—'}</dd>
+              {/* AI interpretation comparison — only when AI ran AND values differ from tenant's */}
+              {data.triage_model_version && data.raw_caller_body && (() => {
+                const accessDiffers = data.raw_caller_body.entry_permission !== data.entry_permission;
+                const animalsDiffers = data.raw_caller_body.animals !== data.animals;
+                if (!accessDiffers && !animalsDiffers) return null;
+                return (
+                  <section className={styles.followupSection} data-testid="dual-display">
+                    <h3 className={styles.followupHeading}>
+                      {t(lang, 'Interprétation IA', 'AI interpretation')}
+                    </h3>
+                    <dl className={styles.dl}>
+                      {accessDiffers && (
+                        <>
+                          <dt style={{ fontSize: 11 }}>{t(lang, 'Accès — déclaré par le locataire', 'Access — tenant declared')}</dt>
+                          <dd style={{ fontSize: 12 }}>{data.raw_caller_body.entry_permission ?? '—'}</dd>
+                          <dt style={{ fontSize: 11, color: 'var(--color-accent)' }}>{t(lang, 'Accès — interprétation IA', 'Access — AI interpretation')}</dt>
+                          <dd style={{ fontSize: 12 }}>{data.entry_permission ?? '—'}</dd>
+                        </>
+                      )}
+                      {animalsDiffers && (
+                        <>
+                          <dt style={{ fontSize: 11 }}>{t(lang, 'Animaux — déclaré par le locataire', 'Animals — tenant declared')}</dt>
+                          <dd style={{ fontSize: 12 }}>{data.raw_caller_body.animals ?? '—'}</dd>
+                          <dt style={{ fontSize: 11, color: 'var(--color-accent)' }}>{t(lang, 'Animaux — interprétation IA', 'Animals — AI interpretation')}</dt>
+                          <dd style={{ fontSize: 12 }}>{data.animals ?? '—'}</dd>
+                        </>
+                      )}
+                    </dl>
+                  </section>
+                );
+              })()}
 
-                    <dt style={{ fontSize: 11 }}>{t(lang, 'Animaux (déclaré)', 'Animals (declared)')}</dt>
-                    <dd style={{ fontSize: 12 }}>{data.raw_caller_body.animals ?? t(lang, 'Non', 'No')}</dd>
-                    <dt style={{ fontSize: 11, color: 'var(--color-accent)' }}>{t(lang, 'Animaux (IA)', 'Animals (AI)')}</dt>
-                    <dd style={{ fontSize: 12 }}>{data.animals ?? t(lang, 'Non', 'No')}</dd>
-                  </dl>
+              {/* AI section — triage summary and notes, coord/dir only */}
+              {isEditor && data.triage_model_version && (
+                <section className={styles.followupSection} data-testid="ai-section">
+                  <h3 className={styles.followupHeading}>{t(lang, 'Résumé IA', 'AI summary')}</h3>
+                  {data.triage_summary && (
+                    <p style={{ whiteSpace: 'pre-wrap', fontSize: 13, margin: '0 0 8px' }}>{data.triage_summary}</p>
+                  )}
+                  {data.other_notes && (
+                    <>
+                      <h4 style={{ fontSize: 12, fontWeight: 600, margin: '8px 0 2px' }}>{t(lang, 'Notes IA', 'AI notes')}</h4>
+                      <p style={{ whiteSpace: 'pre-wrap', fontSize: 12, margin: 0 }}>{data.other_notes}</p>
+                    </>
+                  )}
                 </section>
               )}
 
@@ -345,8 +373,8 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                 </section>
               )}
 
-              {/* Routing buttons — triaged but not yet routed */}
-              {isEditor && data.status === 'triaged' && data.source_calendar === null && (
+              {/* Routing buttons — available for all triaged calls (including re-route) */}
+              {isEditor && data.status === 'triaged' && (
                 <section className={styles.editSection} data-testid="routing-section">
                   <h3 className={styles.editSectionHeading}>{t(lang, 'Acheminer vers', 'Route to')}</h3>
                   <div className={styles.urgencyPills}>
@@ -354,7 +382,7 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                       className={styles.applyBtn}
                       data-testid="route-majordome"
                       onClick={() => applyAndRefresh(() =>
-                        routeRequest(requestId, { source_calendar: 'st_maj', expected_source_calendar: null })
+                        routeRequest(requestId, { source_calendar: 'st_maj', expected_source_calendar: data.source_calendar })
                       )}
                     >
                       {t(lang, 'Envoyer à Majordome', 'Send to Butler')}
@@ -363,7 +391,7 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                       className={styles.applyBtn}
                       data-testid="route-principal"
                       onClick={() => applyAndRefresh(() =>
-                        routeRequest(requestId, { source_calendar: 'main', expected_source_calendar: null })
+                        routeRequest(requestId, { source_calendar: 'main', expected_source_calendar: data.source_calendar })
                       )}
                     >
                       {t(lang, 'Garder sur Principal', 'Keep on Main')}

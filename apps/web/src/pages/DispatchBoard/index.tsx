@@ -127,7 +127,11 @@ export default function DispatchBoard({ lang, me }: Props) {
     ? undefined
     : is403
       ? t(lang, 'Accès refusé', 'Access denied')
-      : (error instanceof ApiError ? error.message : t(lang, 'Erreur', 'Error'));
+      : error instanceof ApiError && error.code === 'VALIDATION_FAILED' && error.message.includes('31 day')
+        ? t(lang, 'La plage de dates ne peut pas dépasser 31 jours', error.message)
+        : error instanceof ApiError && error.code === 'VALIDATION_FAILED' && error.message.includes('end_date')
+          ? t(lang, 'La date de fin ne peut pas précéder la date de début', error.message)
+          : (error instanceof ApiError ? error.message : t(lang, 'Erreur', 'Error'));
 
   const total = data?.total ?? 0;
 
@@ -175,6 +179,27 @@ export default function DispatchBoard({ lang, me }: Props) {
           : undefined}
         onToggleCols={() => setShowAllCols((b) => !b)}
       />
+
+      {(data?.unscheduled_items?.length ?? 0) > 0 && (
+        <div className={styles.tableWrap} data-testid="unscheduled-group">
+          <h2 style={{ fontSize: 13, fontWeight: 600, padding: '8px 12px 4px', margin: 0, background: 'var(--color-bg-alt, #f5f5f5)' }}>
+            {t(lang, `À planifier (${data!.unscheduled_items.length})`, `To schedule (${data!.unscheduled_items.length})`)}
+          </h2>
+          <RequestTable
+            lang={lang}
+            rows={data!.unscheduled_items}
+            selectedId={selectedId}
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSort={() => {}}
+            onSelect={setSelectedId}
+            isLoading={false}
+            isError={false}
+            total={data!.unscheduled_items.length}
+            showAllCols={showAllCols}
+          />
+        </div>
+      )}
 
       <div className={styles.tableWrap}>
         <RequestTable

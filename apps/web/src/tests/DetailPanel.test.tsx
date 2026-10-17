@@ -220,20 +220,20 @@ describe('DetailPanel', () => {
     });
   });
 
-  it('shows source_calendar_label instead of raw source_calendar', () => {
-    const req = { ...MOCK_REQUEST, source_calendar: 'st_maj', source_calendar_label: 'Majordome' };
+  it('shows French source calendar label, not raw code', () => {
+    const req = { ...MOCK_REQUEST, source_calendar: 'st_maj', source_calendar_label: 'Butler/Majordome' };
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
-    expect(screen.getByText('Majordome')).toBeTruthy();
+    expect(screen.getByText('Butler/Majordome')).toBeTruthy();
     expect(screen.queryByText('st_maj')).toBeNull();
   });
 
-  it('hides routing buttons when source_calendar already set', () => {
+  it('shows routing buttons even when source_calendar already set (re-route)', () => {
     const routed = { ...MOCK_REQUEST, status: 'triaged', source_calendar: 'main' };
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: routed, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
-    expect(screen.queryByTestId('routing-section')).toBeNull();
+    expect(screen.getByTestId('routing-section')).toBeTruthy();
   });
 
   it('routing button calls routeRequest with st_maj', async () => {
@@ -246,9 +246,10 @@ describe('DetailPanel', () => {
     await waitFor(() => expect(client.routeRequest).toHaveBeenCalledWith(1, { source_calendar: 'st_maj', expected_source_calendar: null }));
   });
 
-  it('shows dual display section when raw_caller_body is present', () => {
+  it('shows dual display section only when AI ran and fields differ', () => {
     const withRaw = {
       ...MOCK_REQUEST,
+      triage_model_version: 'gpt-4o-mini',
       raw_caller_body: { entry_permission: 'Accès autorisé (traitement prioritaire)', animals: null, problems: 'Fuite' },
       entry_permission: 'N/A Non applicable (exemple espace commun)',
     };
@@ -258,6 +259,18 @@ describe('DetailPanel', () => {
     expect(dd).toBeTruthy();
     expect(within(dd).getByText(/Accès autorisé/)).toBeTruthy();
     expect(within(dd).getByText(/N\/A Non applicable/)).toBeTruthy();
+  });
+
+  it('hides dual display when triage_model_version not set (no AI ran)', () => {
+    const withRaw = {
+      ...MOCK_REQUEST,
+      triage_model_version: null,
+      raw_caller_body: { entry_permission: 'Accès autorisé', animals: null, problems: 'Fuite' },
+      entry_permission: 'N/A Non applicable',
+    };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: withRaw, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
+    expect(screen.queryByTestId('dual-display')).toBeNull();
   });
 
   it('hides dual display when raw_caller_body is null', () => {

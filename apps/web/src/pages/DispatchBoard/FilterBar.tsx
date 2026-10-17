@@ -94,8 +94,10 @@ export default function FilterBar({
             disabled={!!dateNote}
             onChange={(e) => {
               const v = e.target.value;
-              onStartDate(v);
-              if (endDate && v > endDate) onEndDate(v);
+              if (!v || (/^\d{4}-\d{2}-\d{2}$/.test(v) && v >= '2020-01-01' && v <= '2099-12-31')) {
+                onStartDate(v);
+                if (v && endDate && v > endDate) onEndDate(v);
+              }
             }}
           />
         </div>
@@ -108,8 +110,10 @@ export default function FilterBar({
             disabled={!!dateNote}
             onChange={(e) => {
               const v = e.target.value;
-              onEndDate(v);
-              if (startDate && v < startDate) onStartDate(v);
+              if (!v || (/^\d{4}-\d{2}-\d{2}$/.test(v) && v >= '2020-01-01' && v <= '2099-12-31')) {
+                onEndDate(v);
+                if (v && startDate && v < startDate) onStartDate(v);
+              }
             }}
           />
         </div>

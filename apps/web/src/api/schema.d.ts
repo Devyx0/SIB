@@ -100,6 +100,7 @@ export interface RequestDetail extends ListRow {
   caller_tenant_id: number | null;
   raw_caller_body: { entry_permission: string | null; animals: string | null; problems: string | null } | null;
   problems: string | null;
+  triage_model_version: string | null;
 }
 
 export interface MeResponse {
@@ -111,6 +112,7 @@ export interface MeResponse {
 export interface ListResponse {
   total: number;
   items: ListRow[];
+  unscheduled_items: ListRow[];
 }
 
 export interface SectorLookup {
