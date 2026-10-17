@@ -3,9 +3,16 @@ DB connections.
   DBTransactionMiddleware — one pool connection per request; commits before response.
   get_db_conn()           — FastAPI dependency (pulls from request.state).
   get_legacy_conn()       — psycopg2, for frozen triage (context_builder uses psycopg2.extras).
+
+Pool note: ConnectionPool.getconn() is a blocking call. We run it via
+asyncio.to_thread() so it waits off the event-loop thread and the event loop
+can service other requests while this one waits for a pool slot. Without this,
+a full pool blocks the event loop and the existing holders can never finish,
+causing a permanent deadlock.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import psycopg2
@@ -40,7 +47,7 @@ def get_pool() -> ConnectionPool:
             )
         _pool = ConnectionPool(
             conninfo, open=True,
-            min_size=2, max_size=10, timeout=5.0,
+            min_size=2, max_size=10, timeout=30.0,
             kwargs={"row_factory": dict_row},
         )
     return _pool
@@ -52,14 +59,18 @@ class DBTransactionMiddleware(BaseHTTPMiddleware):
     request.state.db_conn, runs the handler, then commits before returning
     the buffered response to the client.
 
+    getconn() runs in a thread (asyncio.to_thread) so pool waits don't
+    block the event loop. putconn() is fast (no I/O) and runs inline.
+
     BaseHTTPMiddleware.call_next buffers the full response body before
     returning, so conn.commit() below runs BEFORE any bytes reach the client.
     A commit failure returns 500 — the handler's response is discarded.
     """
 
     async def dispatch(self, request: Request, call_next):
+        pool = get_pool()
         try:
-            conn_ctx = get_pool().connection()
+            conn = await asyncio.to_thread(pool.getconn)
         except PoolTimeout:
             rid = getattr(request.state, "request_id", None)
             logger.warning("Pool exhausted  req=%s  path=%s", rid, request.url.path)
@@ -72,7 +83,7 @@ class DBTransactionMiddleware(BaseHTTPMiddleware):
                     "details":    None,
                 }},
             )
-        with conn_ctx as conn:
+        try:
             request.state.db_conn = conn
             try:
                 response = await call_next(request)
@@ -101,6 +112,8 @@ class DBTransactionMiddleware(BaseHTTPMiddleware):
                     }},
                 )
             return response
+        finally:
+            pool.putconn(conn)
 
 
 def get_db_conn(request: Request):

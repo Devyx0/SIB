@@ -120,17 +120,14 @@ def test_commit_failure_is_500_not_2xx():
     fake_conn.execute.return_value = MagicMock(fetchone=MagicMock(return_value={"?column?": 1}))
     fake_conn.rollback = MagicMock()
 
-    fake_ctx = MagicMock()
-    fake_ctx.__enter__ = lambda s: fake_conn
-    fake_ctx.__exit__ = MagicMock(return_value=False)
-
     import backend.core.db as db_module
     original_get_pool = db_module.get_pool
     original_pool = db_module._pool
 
     def patched_get_pool():
         pool = MagicMock()
-        pool.connection.return_value = fake_ctx
+        pool.getconn.return_value = fake_conn  # middleware calls pool.getconn() now
+        pool.putconn = MagicMock()             # called in finally block
         return pool
 
     db_module.get_pool = patched_get_pool

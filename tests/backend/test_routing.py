@@ -139,6 +139,18 @@ def test_expected_calendar_matches_passes(ac, db_conn):
     assert r.status_code == 200
 
 
+def test_route_stale_when_expected_null_but_already_routed(ac, db_conn):
+    """Tab loaded call as unrouted (expected=null); meanwhile it was routed to st_maj.
+    Tab sends expected=null → must 409, not silently re-route."""
+    rid = _insert(db_conn, source_calendar="st_maj")  # already routed
+    r = ac(_user(_COORD, "coordinator")).post(
+        f"/api/v1/requests/{rid}/route",
+        json={"source_calendar": "main", "expected_source_calendar": None},
+    )
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "STALE_DATA"
+
+
 def test_technician_returns_403(ac, db_conn):
     rid = _insert(db_conn)
     r = ac(_user(_TECH, "technician")).post(
