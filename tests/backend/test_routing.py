@@ -48,7 +48,7 @@ def test_route_to_st_maj_returns_200(ac, db_conn):
     rid = _insert(db_conn)
     r = ac(_user(_COORD, "coordinator")).post(
         f"/api/v1/requests/{rid}/route",
-        json={"source_calendar": "st_maj"},
+        json={"source_calendar": "st_maj", "expected_source_calendar": None},
     )
     assert r.status_code == 200
     assert r.json()["source_calendar"] == "st_maj"
@@ -58,17 +58,37 @@ def test_route_to_main_returns_200(ac, db_conn):
     rid = _insert(db_conn)
     r = ac(_user(_COORD, "coordinator")).post(
         f"/api/v1/requests/{rid}/route",
-        json={"source_calendar": "main"},
+        json={"source_calendar": "main", "expected_source_calendar": None},
     )
     assert r.status_code == 200
     assert r.json()["source_calendar"] == "main"
+
+
+def test_expected_calendar_missing_returns_422(ac, db_conn):
+    """expected_source_calendar is now required — omitting it → 422."""
+    rid = _insert(db_conn)
+    r = ac(_user(_COORD, "coordinator")).post(
+        f"/api/v1/requests/{rid}/route",
+        json={"source_calendar": "st_maj"},
+    )
+    assert r.status_code == 422
+
+
+def test_expected_calendar_empty_string_returns_422(ac, db_conn):
+    """Empty string is not a valid calendar value — must 422, not slip through as stale."""
+    rid = _insert(db_conn)
+    r = ac(_user(_COORD, "coordinator")).post(
+        f"/api/v1/requests/{rid}/route",
+        json={"source_calendar": "st_maj", "expected_source_calendar": ""},
+    )
+    assert r.status_code == 422
 
 
 def test_route_writes_provenance(ac, db_conn):
     rid = _insert(db_conn, source_calendar=None)
     ac(_user(_COORD, "coordinator")).post(
         f"/api/v1/requests/{rid}/route",
-        json={"source_calendar": "st_maj"},
+        json={"source_calendar": "st_maj", "expected_source_calendar": None},
     )
     row = db_conn.execute(
         "SELECT target_column, previous_value, ingested_value FROM data_provenance WHERE target_pk = %s AND target_column = 'source_calendar'",
@@ -83,7 +103,7 @@ def test_closed_route_returns_409(ac, db_conn):
     rid = _insert(db_conn, status="closed")
     r = ac(_user(_COORD, "coordinator")).post(
         f"/api/v1/requests/{rid}/route",
-        json={"source_calendar": "st_maj"},
+        json={"source_calendar": "st_maj", "expected_source_calendar": None},
     )
     assert r.status_code == 409
     assert r.json()["error"]["code"] == "REQUEST_CLOSED"
@@ -94,7 +114,7 @@ def test_reroute_allowed(ac, db_conn):
     rid = _insert(db_conn, source_calendar="main")
     r = ac(_user(_COORD, "coordinator")).post(
         f"/api/v1/requests/{rid}/route",
-        json={"source_calendar": "st_maj"},
+        json={"source_calendar": "st_maj", "expected_source_calendar": "main"},
     )
     assert r.status_code == 200
 
@@ -123,7 +143,7 @@ def test_technician_returns_403(ac, db_conn):
     rid = _insert(db_conn)
     r = ac(_user(_TECH, "technician")).post(
         f"/api/v1/requests/{rid}/route",
-        json={"source_calendar": "st_maj"},
+        json={"source_calendar": "st_maj", "expected_source_calendar": None},
     )
     assert r.status_code == 403
 
@@ -132,7 +152,7 @@ def test_contractor_returns_403(ac, db_conn):
     rid = _insert(db_conn)
     r = ac(_user(_CONT, "contractor")).post(
         f"/api/v1/requests/{rid}/route",
-        json={"source_calendar": "st_maj"},
+        json={"source_calendar": "st_maj", "expected_source_calendar": None},
     )
     assert r.status_code == 403
 

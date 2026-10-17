@@ -10,7 +10,7 @@ import logging
 
 import psycopg2
 from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
+from psycopg_pool import ConnectionPool, PoolTimeout
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -38,7 +38,11 @@ def get_pool() -> ConnectionPool:
                 f" password={settings.DATABASE_PASSWORD}"
                 f" dbname=postgres sslmode=require"
             )
-        _pool = ConnectionPool(conninfo, open=True, kwargs={"row_factory": dict_row})
+        _pool = ConnectionPool(
+            conninfo, open=True,
+            min_size=2, max_size=10, timeout=5.0,
+            kwargs={"row_factory": dict_row},
+        )
     return _pool
 
 
@@ -54,7 +58,21 @@ class DBTransactionMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
-        with get_pool().connection() as conn:
+        try:
+            conn_ctx = get_pool().connection()
+        except PoolTimeout:
+            rid = getattr(request.state, "request_id", None)
+            logger.warning("Pool exhausted  req=%s  path=%s", rid, request.url.path)
+            return JSONResponse(
+                status_code=503,
+                content={"error": {
+                    "code":       "SERVICE_UNAVAILABLE",
+                    "message":    "Server is busy — please retry",
+                    "request_id": rid,
+                    "details":    None,
+                }},
+            )
+        with conn_ctx as conn:
             request.state.db_conn = conn
             try:
                 response = await call_next(request)

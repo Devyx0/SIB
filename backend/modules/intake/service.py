@@ -19,8 +19,6 @@ def _build_problems(body: ManualCreateBody) -> str:
         parts.append(f"Précisions (accès) : {body.access_details}")
     if body.animals == "oui" and body.animal_details:
         parts.append(f"Animaux : {body.animal_details}")
-    if body.attention:
-        parts.append(f"⚠ ATTENTION : {body.attention}")
     if body.phone_2:
         parts.append(f"Téléphone 2 : {body.phone_2}")
     return "\n".join(parts)
@@ -81,6 +79,7 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
         "entry_permission": entry_perm,
         "animals": animals_val,
         "problems": problems_text,
+        "attention": body.attention or None,
     })
 
     row = conn.execute(

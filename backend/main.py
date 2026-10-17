@@ -1,4 +1,8 @@
-"""FastAPI application factory."""
+"""FastAPI application factory.
+
+Dev server (with auto-reload):
+    uvicorn backend.main:app --reload
+"""
 from __future__ import annotations
 
 from fastapi import Depends, FastAPI

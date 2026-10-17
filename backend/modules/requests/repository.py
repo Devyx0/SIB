@@ -203,7 +203,7 @@ def get_request(
             mr.occupants_raw,
             mr.follow_up_expected,
             mr.unit_id,
-            mr.unit_label,
+            COALESCE(mr.unit_label, u.numero_appartement) AS unit_label,
             mr.project_id,
             mr.project_label,
             mr.html_link,
@@ -213,11 +213,13 @@ def get_request(
             mr.caller_email,
             mr.caller_tenant_id,
             mr.raw_caller_body,
-            mr.problems
+            mr.problems,
+            mr.triage_model_version
         FROM maintenance_request mr
         LEFT JOIN building  b ON b.building_id = mr.building_id
         LEFT JOIN sector    s ON s.sector_id   = mr.sector_id
         LEFT JOIN employee  e ON e.employee_id = mr.assigned_employee_id
+        LEFT JOIN unit      u ON u.unit_id     = mr.unit_id
         WHERE {where}
         """,
         params,
@@ -414,6 +416,67 @@ def get_triage_status(conn, request_id: int) -> dict | None:
         {"rid": request_id},
     ).fetchone()
     return dict(row) if row else None
+
+
+def list_routed_unscheduled(
+    conn,
+    *,
+    scope_sql: str,
+    scope_params: dict[str, Any],
+    building_id: int | None,
+    sector_id: int | None,
+    assigned_employee_id: int | None,
+    urgency: str | None,
+    source_calendar: str | None,
+    status: list[str],
+    q: str | None,
+) -> list[dict]:
+    """Routed calls with no start_date yet — shown as 'À planifier' group."""
+    conditions: list[str] = [
+        "mr.source_calendar IS NOT NULL",
+        "mr.start_date IS NULL",
+        "mr.status::text NOT IN ('closed', 'en_route')",
+    ]
+    params: dict[str, Any] = {**scope_params}
+    if building_id is not None:
+        conditions.append("mr.building_id = %(building_id)s")
+        params["building_id"] = building_id
+    if sector_id is not None:
+        conditions.append("mr.sector_id = %(sector_id)s")
+        params["sector_id"] = sector_id
+    if assigned_employee_id is not None:
+        conditions.append("mr.assigned_employee_id = %(assigned_employee_id)s")
+        params["assigned_employee_id"] = assigned_employee_id
+    if urgency is not None:
+        conditions.append("mr.urgency_tier::text = %(urgency)s")
+        params["urgency"] = urgency
+    if source_calendar is not None:
+        conditions.append("mr.source_calendar = %(source_calendar)s")
+        params["source_calendar"] = source_calendar
+    if status:
+        conditions.append("mr.status::text = ANY(%(status)s)")
+        params["status"] = status
+    if q is not None:
+        conditions.append("""(
+            unaccent(mr.asnu) ILIKE unaccent(%(q_pat)s)
+            OR unaccent(mr.raw_title) ILIKE unaccent(%(q_pat)s)
+            OR unaccent(b.adresse) ILIKE unaccent(%(q_pat)s)
+            OR unaccent(b.web_building_name) ILIKE unaccent(%(q_pat)s)
+            OR unaccent(e.nom_employe) ILIKE unaccent(%(q_pat)s)
+        )""")
+        params["q_pat"] = f"%{q}%"
+    where = " AND ".join(conditions)
+    if scope_sql:
+        where = f"({where}) {scope_sql}"
+    rows = conn.execute(
+        f"""
+        {_LIST_SELECT}
+        WHERE {where}
+        ORDER BY mr.submission_date ASC NULLS LAST, mr.request_id ASC
+        """,
+        params,
+    ).fetchall()
+    return [_add_label(dict(r)) for r in rows]
 
 
 def route_request(

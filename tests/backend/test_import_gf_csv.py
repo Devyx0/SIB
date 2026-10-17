@@ -69,7 +69,7 @@ def test_build_problems_includes_all_fields():
     assert "L'eau coule nonstop" in result
     assert "Appeler avant" in result
     assert "Chat" in result
-    assert "Attention particulière" in result
+    assert "Attention particulière" not in result  # ATTENTION goes to raw_caller_body, not problems
     assert "418-555-0002" in result
 
 
@@ -77,8 +77,8 @@ def test_animals_val_oui():
     assert _animals_val({_COL_ANIMAL: "Oui"}) == "Oui"
 
 
-def test_animals_val_non_returns_none():
-    assert _animals_val({_COL_ANIMAL: "Non"}) is None
+def test_animals_val_non_returns_string():
+    assert _animals_val({_COL_ANIMAL: "Non"}) == "Non"
 
 
 def test_animals_val_missing_returns_none():

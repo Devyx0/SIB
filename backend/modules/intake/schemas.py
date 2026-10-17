@@ -9,7 +9,7 @@ AnimalsChoice = Literal["oui", "non", "na"]
 
 _ANIMALS_LABELS: dict[str, str | None] = {
     "oui": "Oui",
-    "non": None,   # store NULL (matches existing convention)
+    "non": "Non",
     "na":  "N/A espace commun",
 }
 

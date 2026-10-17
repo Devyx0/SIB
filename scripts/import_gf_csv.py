@@ -71,7 +71,7 @@ _COL_ALLDEV = "Est-ce sur tous les appareils"
 _COL_REBOOT = "Avez-vous tenté de redémarrer les appareils?"
 _COL_ALLRM  = "Est-ce dans toutes les pièces?"
 _COL_ERRMSG = "Quel est le message d’erreur?"
-_COL_DESC   = "Décrivez le problème : donnez le plus de détails possible"
+_COL_DESC   = "Décrivez le problème : donnez le plus de détails possible"
 _COL_PHOTO  = "Joindre une photo (s’il y a lieu)"
 _COL_WPUSER = "Créé par (ID utilisateur)"
 _COL_TYPE   = "De quel type de demande s’agit-il?"
@@ -117,10 +117,6 @@ def _build_problems(row: dict) -> str:
     atype = row.get(_COL_ATYPE, "").strip()
     if atype:
         parts.append(f"Animaux (détails) : {atype}")
-    # ATTENTION flag (not written to other_notes — that's the AI field)
-    attn = row.get(_COL_ATTN, "").strip()
-    if attn:
-        parts.append(f"⚠ ATTENTION : {attn}")
     # Second contact
     other = row.get(_COL_OTHER, "").strip()
     other_email = row.get(_COL_OTHER_EMAIL, "").strip()
@@ -133,11 +129,23 @@ def _build_problems(row: dict) -> str:
     return "\n".join(parts)
 
 
+_RAW_TITLE_MAX = 80
+
+
+def _raw_title(text: str) -> str:
+    t = text.strip()
+    return t[:_RAW_TITLE_MAX] if len(t) <= _RAW_TITLE_MAX else t[:_RAW_TITLE_MAX - 1] + "…"
+
+
 def _animals_val(row: dict) -> str | None:
     val = row.get(_COL_ANIMAL, "").strip()
     if val == "Oui":
         return "Oui"
-    return None  # "Non" and "N/A" → NULL
+    if val == "Non":
+        return "Non"
+    if val == "N/A":
+        return "N/A espace commun"
+    return None
 
 
 def import_csv(conn, csv_path: Path, dry_run: bool = False) -> dict:
@@ -166,6 +174,7 @@ def import_csv(conn, csv_path: Path, dry_run: bool = False) -> dict:
         problems_text = _build_problems(row)
         animals_val = _animals_val(row)
         entry_perm = row.get(_COL_ACCESS, "").strip() or None
+        attn = row.get(_COL_ATTN, "").strip() or None
         attachment = row.get(_COL_PHOTO, "").strip() or None
         wp_user_raw = row.get(_COL_WPUSER, "").strip()
         wp_user = int(wp_user_raw) if wp_user_raw.isdigit() else None
@@ -185,6 +194,7 @@ def import_csv(conn, csv_path: Path, dry_run: bool = False) -> dict:
                 "entry_permission": entry_perm,
                 "animals": animals_val,
                 "problems": problems_text or None,
+                "attention": attn,
             })
             conn.execute(
                 """
@@ -202,7 +212,7 @@ def import_csv(conn, csv_path: Path, dry_run: bool = False) -> dict:
                     %(building_id)s, %(unit_id)s,
                     %(caller_name)s, %(phone1)s, %(email)s,
                     %(entry_perm)s, %(animals)s,
-                    %(problems)s, 'Maintenance non-urgente',
+                    %(problems)s, %(raw_title)s,
                     %(attachment)s, %(wp_user)s,
                     %(raw_caller_body)s,
                     NULL, NULL, %(submission_dt)s
@@ -219,6 +229,7 @@ def import_csv(conn, csv_path: Path, dry_run: bool = False) -> dict:
                     "entry_perm":      entry_perm,
                     "animals":         animals_val,
                     "problems":        problems_text or None,
+                    "raw_title":       _raw_title(row.get(_COL_DESC, "").strip() or problems_text or "Maintenance"),
                     "attachment":      attachment,
                     "wp_user":         wp_user,
                     "raw_caller_body": raw_caller_body,

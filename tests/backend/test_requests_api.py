@@ -105,7 +105,7 @@ def test_list_source_calendar_label_populated(ac):
     assert r.status_code == 200
     item = r.json()["items"][0]
     assert item["source_calendar"] == "main"
-    assert item["source_calendar_label"] == "Main calendar"
+    assert item["source_calendar_label"] == "Calendrier principal"
 
 
 def test_list_null_fields_present(ac):

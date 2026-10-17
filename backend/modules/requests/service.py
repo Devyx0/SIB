@@ -105,7 +105,25 @@ def list_requests(conn, params, user: CurrentUser) -> ListResponse:
         scope_sql=scope_sql,
         scope_params=scope_params,
     )
-    return ListResponse(total=total, items=[ListRow(**r) for r in rows])
+    unscheduled: list[dict] = []
+    if params.source_calendar != "unrouted":
+        unscheduled = repo.list_routed_unscheduled(
+            conn,
+            scope_sql=scope_sql,
+            scope_params=scope_params,
+            building_id=params.building_id,
+            sector_id=params.sector_id,
+            assigned_employee_id=params.assigned_employee_id,
+            urgency=params.urgency,
+            source_calendar=params.source_calendar,
+            status=params.status,
+            q=params.q,
+        )
+    return ListResponse(
+        total=total,
+        items=[ListRow(**r) for r in rows],
+        unscheduled_items=[ListRow(**r) for r in unscheduled],
+    )
 
 
 def get_request(conn, request_id: int, user: CurrentUser) -> RequestDetail:
@@ -312,7 +330,7 @@ def action_trigger_triage(conn, request_id: int) -> None:
 def action_route(conn, request_id: int, body: RouteBody, user: CurrentUser) -> RequestDetail:
     row = _lock_or_404(conn, request_id)
     _check_not_closed(row)
-    if body.expected_source_calendar is not None and row["source_calendar"] != body.expected_source_calendar:
+    if row["source_calendar"] != body.expected_source_calendar:
         raise StaleDataError()
     repo.route_request(conn,
         request_id=request_id,

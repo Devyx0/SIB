@@ -8,8 +8,17 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 SOURCE_CALENDAR_LABELS: dict[str, str] = {
-    "main":   "Main calendar",
+    "main":   "Calendrier principal",
     "st_maj": "Butler/Majordome",
+}
+
+TIME_ESTIMATE_LABELS: dict[str, str] = {
+    "UNDER_30_MIN":  "< 30 min",
+    "MIN30_TO_1H":   "30 min – 1h",
+    "H1_TO_2H":      "1h – 2h",
+    "H2_TO_4H":      "2h – 4h",
+    "HALF_DAY_PLUS": "Demi-journée+",
+    "TBD_ON_SITE":   "Soumission requise",
 }
 
 # Whitelisted sort-key → SQL expression (injected structurally, never as a value).
@@ -99,7 +108,7 @@ class AddLogBody(BaseModel):
 
 class RouteBody(BaseModel):
     source_calendar: Literal["main", "st_maj"]
-    expected_source_calendar: Optional[str] = None
+    expected_source_calendar: Optional[Literal["main", "st_maj"]]  # required; null = caller expected unrouted state
 
 
 class JustificationEntry(BaseModel):
@@ -176,11 +185,13 @@ class RequestDetail(ListRow):
     caller_tenant_id: Optional[int] = None
     raw_caller_body: Optional[dict] = None
     problems: Optional[str] = None
+    triage_model_version: Optional[str] = None
 
 
 class ListResponse(BaseModel):
     total: int
     items: list[ListRow]
+    unscheduled_items: list[ListRow] = Field(default_factory=list)
 
 
 class SectorLookup(BaseModel):
