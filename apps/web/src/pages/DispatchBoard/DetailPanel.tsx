@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRequest } from '../../hooks/useRequest';
 import {
@@ -8,17 +8,10 @@ import {
   triggerTriage, routeRequest,
 } from '../../api/client';
 import type { MeResponse } from '../../api/schema.d.ts';
-import { statusLabel, t } from '../../i18n';
+import { roleLabel, statusLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import JustificationModal from '../../components/JustificationModal';
 import styles from './DetailPanel.module.css';
-
-const ROLE_LABELS: Record<string, { fr: string; en: string }> = {
-  technician:  { fr: 'Technicien',    en: 'Technician' },
-  contractor:  { fr: 'Sous-traitant', en: 'Subcontractor' },
-  coordinator: { fr: 'Coordonnateur', en: 'Coordinator' },
-  director:    { fr: 'Directeur',     en: 'Director' },
-};
 
 const DECISION_LABELS: Record<string, { fr: string; en: string }> = {
   assign:     { fr: 'Assignation',     en: 'Assignment' },
@@ -30,10 +23,6 @@ const INPUT_LABELS: Record<string, { fr: string; en: string }> = {
   typed: { fr: 'Écrit',  en: 'Written' },
   voice: { fr: 'Dicté', en: 'Dictated' },
 };
-
-function roleLabel(lang: Lang, role: string): string {
-  return ROLE_LABELS[role]?.[lang] ?? role;
-}
 
 function decisionLabel(lang: Lang, type: string): string {
   return DECISION_LABELS[type]?.[lang] ?? type;
@@ -86,6 +75,8 @@ const URGENCY_OPTIONS: Array<{ value: string | null }> = [
 
 export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Props) {
   const [polling, setPolling] = useState(false);
+  const [triageTimeout, setTriageTimeout] = useState(false);
+  const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { data, isPending, isError, error } = useRequest(requestId, { refetchInterval: polling ? 2000 : false });
   const qc = useQueryClient();
   const isEditor = !!(me?.roles.includes('coordinator') || me?.roles.includes('director'));
@@ -116,9 +107,23 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
     if (data) setAssignEmpId(data.assigned_employee_id ?? null);
   }, [data?.request_id, data?.assigned_employee_id]);
 
-  // Poll while triage is in progress
+  // Poll while triage is in progress; stop after 3 minutes with retry option
   useEffect(() => {
-    setPolling(data?.status === 'triage_pending');
+    if (data?.status === 'triage_pending') {
+      setPolling(true);
+      setTriageTimeout(false);
+      pollingTimerRef.current = setTimeout(() => {
+        setPolling(false);
+        setTriageTimeout(true);
+      }, 3 * 60 * 1000);
+    } else {
+      setPolling(false);
+      setTriageTimeout(false);
+      if (pollingTimerRef.current) { clearTimeout(pollingTimerRef.current); pollingTimerRef.current = null; }
+    }
+    return () => {
+      if (pollingTimerRef.current) { clearTimeout(pollingTimerRef.current); pollingTimerRef.current = null; }
+    };
   }, [data?.status]);
 
   useEffect(() => {
@@ -252,8 +257,33 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                 <dd>{data.estimated_cost != null ? formatCost(data.estimated_cost, lang) : '—'}</dd>
 
                 <dt>Source</dt>
-                <dd>{data.source_calendar ?? '—'}</dd>
+                <dd>{data.source_calendar_label ?? data.source_calendar ?? '—'}</dd>
+
+                <dt>{t(lang, 'Appelant', 'Caller')}</dt>
+                <dd>{data.caller_name ?? '—'}</dd>
+
+                <dt>{t(lang, 'Téléphone', 'Phone')}</dt>
+                <dd>{data.caller_phone ?? '—'}</dd>
+
+                <dt>{t(lang, 'Courriel', 'Email')}</dt>
+                <dd>{data.caller_email ?? '—'}</dd>
+
+                <dt>{t(lang, 'Unité', 'Unit')}</dt>
+                <dd>{data.unit_label ?? '—'}</dd>
+
+                <dt>{t(lang, 'Accès', 'Access')}</dt>
+                <dd>{data.entry_permission ?? '—'}</dd>
+
+                <dt>{t(lang, 'Animaux', 'Animals')}</dt>
+                <dd>{data.animals ?? '—'}</dd>
               </dl>
+
+              {data.problems && (
+                <section className={styles.followupSection} data-testid="problems-section">
+                  <h3 className={styles.followupHeading}>{t(lang, 'Problème décrit', 'Reported problem')}</h3>
+                  <p style={{ whiteSpace: 'pre-wrap', fontSize: 13, margin: 0 }}>{data.problems}</p>
+                </section>
+              )}
 
               {/* Dual display: tenant's original values vs triage interpretation */}
               {data.raw_caller_body && (
@@ -279,7 +309,7 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
               {isEditor && (data.status === 'intake_received' || data.status === 'triage_failed' || data.status === 'triage_pending') && (
                 <section className={styles.editSection} data-testid="triage-section">
                   <h3 className={styles.editSectionHeading}>{t(lang, 'Triage automatique', 'Auto triage')}</h3>
-                  {data.status === 'triage_pending' ? (
+                  {data.status === 'triage_pending' && !triageTimeout ? (
                     <p className={styles.loading} data-testid="triage-pending-msg">
                       {t(lang, 'Triage en cours…', 'Triage in progress…')}
                     </p>
@@ -288,10 +318,16 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                       {data.status === 'triage_failed' && (
                         <p className={styles.error}>{t(lang, 'Triage échoué — réessayez.', 'Triage failed — retry.')}</p>
                       )}
+                      {triageTimeout && (
+                        <p className={styles.error} data-testid="triage-timeout-msg">
+                          {t(lang, 'Triage toujours en cours après 3 min — réessayez si nécessaire.', 'Triage still running after 3 min — retry if needed.')}
+                        </p>
+                      )}
                       <button
                         className={styles.applyBtn}
                         data-testid="triage-btn"
                         onClick={async () => {
+                          setTriageTimeout(false);
                           try {
                             await triggerTriage(requestId);
                             qc.invalidateQueries({ queryKey: ['request', requestId] });

@@ -99,6 +99,7 @@ export interface RequestDetail extends ListRow {
   caller_email: string | null;
   caller_tenant_id: number | null;
   raw_caller_body: { entry_permission: string | null; animals: string | null; problems: string | null } | null;
+  problems: string | null;
 }
 
 export interface MeResponse {

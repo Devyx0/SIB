@@ -123,9 +123,11 @@ export default function DispatchBoard({ lang, me }: Props) {
     error instanceof ApiError &&
     (error.code === 'PERMISSION_DENIED' || error.code === 'HTTP_403');
 
-  const errorMsg = is403
-    ? t(lang, 'Accès refusé', 'Access denied')
-    : undefined;
+  const errorMsg = !isError
+    ? undefined
+    : is403
+      ? t(lang, 'Accès refusé', 'Access denied')
+      : (error instanceof ApiError ? error.message : t(lang, 'Erreur', 'Error'));
 
   const total = data?.total ?? 0;
 
@@ -168,6 +170,9 @@ export default function DispatchBoard({ lang, me }: Props) {
         onAssignedEmployeeId={(v) =>
           setFilter('assigned_employee_id', v !== null ? String(v) : null)
         }
+        dateNote={sourceCalendar === 'unrouted'
+          ? t(lang, 'dates ignorées — 90 derniers jours', 'dates ignored — last 90 days')
+          : undefined}
         onToggleCols={() => setShowAllCols((b) => !b)}
       />
 

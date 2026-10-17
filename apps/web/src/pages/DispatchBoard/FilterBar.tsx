@@ -28,6 +28,7 @@ interface Props {
   onUrgency?: (v: string) => void;
   onAssignedEmployeeId?: (v: number | null) => void;
   onToggleCols?: () => void;
+  dateNote?: string;
 }
 
 export default function FilterBar({
@@ -36,6 +37,7 @@ export default function FilterBar({
   sectors = [], sectorId = null, urgency = '',
   employees = [], assignedEmployeeId = null,
   showAllCols = false,
+  dateNote,
   onStartDate, onEndDate, onStatus, onSourceCalendar, onQ,
   onSectorId = () => {},
   onUrgency = () => {},
@@ -89,6 +91,7 @@ export default function FilterBar({
             type="date"
             className={styles.input}
             value={startDate}
+            disabled={!!dateNote}
             onChange={(e) => {
               const v = e.target.value;
               onStartDate(v);
@@ -102,6 +105,7 @@ export default function FilterBar({
             type="date"
             className={styles.input}
             value={endDate}
+            disabled={!!dateNote}
             onChange={(e) => {
               const v = e.target.value;
               onEndDate(v);
@@ -109,6 +113,7 @@ export default function FilterBar({
             }}
           />
         </div>
+        {dateNote && <span className={styles.dateNote}>{dateNote}</span>}
 
         <div className={styles.fieldGroup}>
           <label className={styles.label}>{t(lang, 'Source', 'Source')}</label>

@@ -145,6 +145,32 @@ export function routeRequest(id: number, body: { source_calendar: string; expect
   return apiPost(`/api/v1/requests/${id}/route`, body);
 }
 
+export interface MatchAddressBody {
+  civic: string;
+  street: string;
+  apartment?: string;
+}
+
+export interface CandidateBuilding {
+  building_id: number;
+  adresse: string | null;
+}
+
+export interface MatchAddressResponse {
+  match_status: 'exact' | 'building_only' | 'ambiguous' | 'no_match' | 'garbled';
+  building_id: number | null;
+  unit_id: number | null;
+  building_adresse: string | null;
+  candidate_building_ids: number[];
+  candidate_buildings: CandidateBuilding[];
+}
+
+export function matchAddress(body: MatchAddressBody): Promise<MatchAddressResponse> {
+  return apiPost('/api/v1/intake/match', body);
+}
+
+export type AnimalsChoice = 'oui' | 'non' | 'na';
+
 export interface IntakeBody {
   caller_name: string;
   caller_email?: string;
@@ -155,7 +181,7 @@ export interface IntakeBody {
   city: string;
   access: 'yes' | 'tenant_required' | 'common_area' | 'unknown';
   access_details?: string;
-  has_animals?: boolean;
+  animals?: AnimalsChoice;
   animal_details?: string;
   problem: string;
   attention?: string;

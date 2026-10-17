@@ -191,3 +191,12 @@
   color: var(--color-accent);
   font-weight: 600;
 }
+
+.dateNote {
+  font-size: 11px;
+  color: var(--color-neutral-700);
+  align-self: flex-end;
+  padding-bottom: 6px;
+  white-space: nowrap;
+  font-style: italic;
+}

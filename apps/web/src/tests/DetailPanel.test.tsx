@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -207,6 +207,27 @@ describe('DetailPanel', () => {
     expect(screen.getByTestId('route-principal')).toBeTruthy();
   });
 
+  it('shows French role label for assignable technician in select', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([
+      { employee_id: 7, nom_employe: 'Pierre Ouvrier', role: 'technician' },
+    ]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+    await waitFor(() => {
+      const opt = Array.from(screen.getByRole('combobox').querySelectorAll('option'))
+        .find((o) => o.textContent?.includes('Pierre Ouvrier'));
+      expect(opt?.textContent).toContain('Technicien');
+    });
+  });
+
+  it('shows source_calendar_label instead of raw source_calendar', () => {
+    const req = { ...MOCK_REQUEST, source_calendar: 'st_maj', source_calendar_label: 'Majordome' };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
+    expect(screen.getByText('Majordome')).toBeTruthy();
+    expect(screen.queryByText('st_maj')).toBeNull();
+  });
+
   it('hides routing buttons when source_calendar already set', () => {
     const routed = { ...MOCK_REQUEST, status: 'triaged', source_calendar: 'main' };
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: routed, isPending: false, isError: false, error: null });
@@ -233,9 +254,10 @@ describe('DetailPanel', () => {
     };
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: withRaw, isPending: false, isError: false, error: null });
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
-    expect(screen.getByTestId('dual-display')).toBeTruthy();
-    expect(screen.getByText(/Accès autorisé/)).toBeTruthy();
-    expect(screen.getByText(/N\/A Non applicable/)).toBeTruthy();
+    const dd = screen.getByTestId('dual-display');
+    expect(dd).toBeTruthy();
+    expect(within(dd).getByText(/Accès autorisé/)).toBeTruthy();
+    expect(within(dd).getByText(/N\/A Non applicable/)).toBeTruthy();
   });
 
   it('hides dual display when raw_caller_body is null', () => {

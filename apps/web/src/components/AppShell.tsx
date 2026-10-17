@@ -1,6 +1,6 @@
 import type { MeResponse } from '../api/schema.d.ts';
 import type { Lang } from '../i18n';
-import { t } from '../i18n';
+import { roleLabel, t } from '../i18n';
 import styles from './AppShell.module.css';
 
 interface Props {
@@ -30,7 +30,7 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
           {me && (
             <div className={styles.userInfo}>
               <span className={styles.userName}>{me.nom_employe}</span>
-              <span className={styles.userRole}>{me.roles[0] ?? ''}</span>
+              <span className={styles.userRole}>{roleLabel(lang, me.roles[0] ?? '')}</span>
             </div>
           )}
 
