@@ -48,9 +48,6 @@ function formatDate(dateStr: string | null | undefined, lang: Lang): string {
     .format(new Date(y, m - 1, d));
 }
 
-function displayContact(v: string | null | undefined, sentinel: string): string | null {
-  return v && v !== sentinel ? v : null;
-}
 
 function formatCost(amount: number | string, lang: Lang): string {
   return new Intl.NumberFormat(lang === 'fr' ? 'fr-CA' : 'en-CA', {
@@ -269,10 +266,18 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                 <dd>{data.caller_name ?? '—'}</dd>
 
                 <dt>{t(lang, 'Téléphone', 'Phone')}</dt>
-                <dd>{displayContact(data.caller_phone, '(000) 000-0000') ?? '—'}</dd>
+                <dd data-testid="phone-display">
+                  {data.caller_phone_placeholder
+                    ? t(lang, 'non fourni', 'not provided')
+                    : (data.caller_phone ?? '—')}
+                </dd>
 
                 <dt>{t(lang, 'Courriel', 'Email')}</dt>
-                <dd>{displayContact(data.caller_email, 'info@sibelanger.com') ?? '—'}</dd>
+                <dd data-testid="email-display">
+                  {data.caller_email_placeholder
+                    ? t(lang, 'non fourni', 'not provided')
+                    : (data.caller_email ?? '—')}
+                </dd>
 
                 <dt>{t(lang, 'Unité', 'Unit')}</dt>
                 <dd>{data.unit_label ?? '—'}</dd>

@@ -191,4 +191,45 @@ describe('NouvelAppelModal', () => {
     await waitFor(() => screen.getByText(/Adresse trouvée exactement/));
     await waitFor(() => expect(screen.getByTestId('units-error')).toBeTruthy());
   });
+
+  it('unit option label uses civic en-dash apt format', async () => {
+    mockMatchAddress.mockResolvedValue({ ...EXACT_MATCH, match_status: 'building_only', unit_id: null });
+    mockFetchUnits.mockResolvedValue([{ unit_id: 100, numero_appartement: '5', rue: '3034, rue Lechasseur' }]);
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    await fillAndSubmitForm();
+    await waitFor(() => screen.getByText(/Bâtiment trouvé/));
+    await waitFor(() => {
+      const select = screen.getByTestId('unit-select');
+      const opt = Array.from(select.querySelectorAll('option')).find((o) => o.value === '100');
+      expect(opt?.textContent).toBe('3034 – 5');
+    });
+  });
+
+  it('units rendered in API order — frontend preserves backend numeric sort', async () => {
+    // Backend returns numerically sorted: 2 before 10. Frontend must not re-order.
+    mockMatchAddress.mockResolvedValue({ ...EXACT_MATCH, match_status: 'building_only', unit_id: null });
+    mockFetchUnits.mockResolvedValue([
+      { unit_id: 201, numero_appartement: '2', rue: '3034, rue Lechasseur' },
+      { unit_id: 200, numero_appartement: '10', rue: '3034, rue Lechasseur' },
+    ]);
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    await fillAndSubmitForm();
+    await waitFor(() => screen.getByText(/Bâtiment trouvé/));
+    await waitFor(() => {
+      const select = screen.getByTestId('unit-select');
+      const opts = Array.from(select.querySelectorAll('option')).filter((o) => o.value !== '');
+      expect(opts[0].textContent).toBe('3034 – 2');
+      expect(opts[1].textContent).toBe('3034 – 10');
+    });
+  });
+
+  it('shows Aucune unité message when building has no units', async () => {
+    mockMatchAddress.mockResolvedValue({ ...EXACT_MATCH, match_status: 'building_only', unit_id: null });
+    mockFetchUnits.mockResolvedValue([]);
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    await fillAndSubmitForm();
+    await waitFor(() => screen.getByText(/Bâtiment trouvé/));
+    await waitFor(() => expect(screen.getByTestId('no-units-msg')).toBeTruthy());
+    expect(screen.queryByTestId('unit-select')).toBeNull();
+  });
 });

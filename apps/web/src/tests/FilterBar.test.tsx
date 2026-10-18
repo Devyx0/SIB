@@ -61,25 +61,29 @@ describe('FilterBar', () => {
   });
 
   it('typing in AU never calls onStartDate (no cross-field clamping)', () => {
+    vi.useFakeTimers();
     const onStartDate = vi.fn();
     const onEndDate = vi.fn();
     render(<FilterBar {...defaultProps} onStartDate={onStartDate} onEndDate={onEndDate} />);
-    const auInput = screen.getAllByDisplayValue(defaultProps.endDate)[0];
-    // AU set to a date earlier than DU — old code would have clamped DU down
+    const auInput = screen.getByTestId('end-date-input');
     fireEvent.change(auInput, { target: { value: '2026-08-01' } });
+    act(() => { vi.advanceTimersByTime(500); });
     expect(onEndDate).toHaveBeenCalledWith('2026-08-01');
     expect(onStartDate).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it('typing in DU never calls onEndDate (no cross-field clamping)', () => {
+    vi.useFakeTimers();
     const onStartDate = vi.fn();
     const onEndDate = vi.fn();
     render(<FilterBar {...defaultProps} onStartDate={onStartDate} onEndDate={onEndDate} />);
-    const duInput = screen.getAllByDisplayValue(defaultProps.startDate)[0];
-    // DU set to a date later than AU — old code would have pushed AU forward
+    const duInput = screen.getByTestId('start-date-input');
     fireEvent.change(duInput, { target: { value: '2026-10-01' } });
+    act(() => { vi.advanceTimersByTime(500); });
     expect(onStartDate).toHaveBeenCalledWith('2026-10-01');
     expect(onEndDate).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it('shows error when end date is before start date', () => {
@@ -99,25 +103,43 @@ describe('FilterBar', () => {
     expect(screen.queryByTestId('date-range-error')).toBeNull();
   });
 
-  it('date input guard rejects partial year — onStartDate not called for invalid value', () => {
-    // The onChange guard requires /^\d{4}-\d{2}-\d{2}$/ and year 2020-2099.
-    // A browser-generated partial value like "0102-02-06" (bad year) or an
-    // empty intermediate value must not propagate.
+  it('partial date (empty string from browser) never propagates upstream', () => {
+    const onStartDate = vi.fn();
+    const onEndDate = vi.fn();
+    render(<FilterBar {...defaultProps} onStartDate={onStartDate} onEndDate={onEndDate} />);
+    // Browser emits '' for partial input — must NOT call upstream handlers
+    fireEvent.change(screen.getByTestId('start-date-input'), { target: { value: '' } });
+    fireEvent.change(screen.getByTestId('end-date-input'), { target: { value: '' } });
+    expect(onStartDate).not.toHaveBeenCalled();
+    expect(onEndDate).not.toHaveBeenCalled();
+  });
+
+  it('valid date is debounced — onStartDate not called immediately', () => {
+    vi.useFakeTimers();
     const onStartDate = vi.fn();
     render(<FilterBar {...defaultProps} onStartDate={onStartDate} />);
-    const input = screen.getAllByDisplayValue('2026-09-01')[0];
-
-    // Empty value (user clears the field) — allowed (clears the filter)
-    fireEvent.change(input, { target: { value: '' } });
-    expect(onStartDate).toHaveBeenCalledWith('');
-
-    // Partial / garbled year outside 2020-2099 — must NOT call onStartDate
-    onStartDate.mockClear();
-    fireEvent.change(input, { target: { value: '0102-02-06' } });
+    fireEvent.change(screen.getByTestId('start-date-input'), { target: { value: '2026-10-15' } });
     expect(onStartDate).not.toHaveBeenCalled();
-
-    // Valid value — must call onStartDate
-    fireEvent.change(input, { target: { value: '2026-10-15' } });
+    act(() => { vi.advanceTimersByTime(500); });
     expect(onStartDate).toHaveBeenCalledWith('2026-10-15');
+    vi.useRealTimers();
+  });
+
+  it('shows total count even when date range error is displayed', () => {
+    // Error state: end before start — but total=42 must still show
+    render(<FilterBar {...defaultProps} startDate="2026-09-20" endDate="2026-09-01" total={42} />);
+    expect(screen.getByTestId('date-range-error')).toBeTruthy();
+    expect(screen.getByText(/42 appels/i)).toBeTruthy();
+  });
+
+  it('date input rejects garbled year (2020–2099 guard) — onStartDate not called', () => {
+    vi.useFakeTimers();
+    const onStartDate = vi.fn();
+    render(<FilterBar {...defaultProps} onStartDate={onStartDate} />);
+    const input = screen.getByTestId('start-date-input');
+    fireEvent.change(input, { target: { value: '0102-02-06' } });
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(onStartDate).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });

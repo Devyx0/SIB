@@ -84,18 +84,21 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [unitsError, setUnitsError] = useState<string | null>(null);
+  const [unitsLoading, setUnitsLoading] = useState(false);
 
   // Load units when confirm building changes — unit reset is handled by picker onChange, not here,
   // so an exact-match pre-population of confirmUnitId is not wiped.
   useEffect(() => {
     if (confirmBuildingId != null) {
       setUnitsError(null);
+      setUnitsLoading(true);
       fetchUnits(confirmBuildingId)
-        .then(setConfirmUnits)
-        .catch(() => setUnitsError(t(lang, 'Erreur lors du chargement des unités.', 'Error loading units.')));
+        .then((units) => { setConfirmUnits(units); setUnitsLoading(false); })
+        .catch(() => { setUnitsError(t(lang, 'Erreur lors du chargement des unités.', 'Error loading units.')); setUnitsLoading(false); });
     } else {
       setConfirmUnits([]);
       setUnitsError(null);
+      setUnitsLoading(false);
     }
   }, [confirmBuildingId, lang]);
 
@@ -209,12 +212,12 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
     const u = confirmUnits.find((u) => u.unit_id === confirmUnitId);
     if (!u) return undefined;
     const civic = u.rue ? u.rue.split(',')[0].trim() : null;
-    return civic ? `${u.numero_appartement} (${civic})` : u.numero_appartement;
+    return civic ? `${civic} – ${u.numero_appartement}` : u.numero_appartement;
   })();
 
   function unitOptionLabel(u: UnitLookup): string {
     const civic = u.rue ? u.rue.split(',')[0].trim() : null;
-    return civic ? `${u.numero_appartement} (${civic})` : u.numero_appartement;
+    return civic ? `${civic} – ${u.numero_appartement}` : u.numero_appartement;
   }
 
   return (
@@ -366,13 +369,23 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                       <label htmlFor="confirm-unit" className={styles.label}>
                         {t(lang, 'Unité (optionnel)', 'Unit (optional)')}
                       </label>
-                      <select id="confirm-unit" className={styles.select} value={confirmUnitId ?? ''}
-                        onChange={(e) => setConfirmUnitId(e.target.value ? Number(e.target.value) : null)}>
-                        <option value="">— {t(lang, 'Aucune', 'None')} —</option>
-                        {confirmUnits.map((u) => (
-                          <option key={u.unit_id} value={u.unit_id}>{unitOptionLabel(u)}</option>
-                        ))}
-                      </select>
+                      {unitsLoading
+                        ? <p style={{ fontSize: 12, color: '#888', margin: 0 }}>{t(lang, 'Chargement…', 'Loading…')}</p>
+                        : !unitsError && confirmUnits.length === 0
+                          ? <p style={{ fontSize: 12, color: '#888', margin: 0 }} data-testid="no-units-msg">
+                              {t(lang, 'Aucune unité enregistrée pour ce bâtiment', 'No units registered for this building')}
+                            </p>
+                          : (
+                            <select id="confirm-unit" className={styles.select} value={confirmUnitId ?? ''}
+                              onChange={(e) => setConfirmUnitId(e.target.value ? Number(e.target.value) : null)}
+                              data-testid="unit-select">
+                              <option value="">— {t(lang, 'Aucune', 'None')} —</option>
+                              {confirmUnits.map((u) => (
+                                <option key={u.unit_id} value={u.unit_id}>{unitOptionLabel(u)}</option>
+                              ))}
+                            </select>
+                          )
+                      }
                     </div>
                   </div>
                 )}

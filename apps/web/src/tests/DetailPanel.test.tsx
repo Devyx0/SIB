@@ -352,18 +352,32 @@ describe('DetailPanel', () => {
     expect(section?.textContent ?? '').not.toContain('Should not appear');
   });
 
-  // Item 8: sentinel contact values show as '—'
-  it('displays — for sentinel phone (000) 000-0000', () => {
-    const req = { ...MOCK_REQUEST, caller_phone: '(000) 000-0000', caller_email: null };
+  // Item 3 (session 3): sentinel contacts normalised in API — panel shows "non fourni"
+  it('shows non fourni for placeholder phone (API returned null + placeholder flag)', () => {
+    const req = { ...MOCK_REQUEST, caller_phone: null, caller_phone_placeholder: true, caller_email: null, caller_email_placeholder: false };
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
-    wrap(<DetailPanel requestId={1} onClose={vi.fn()} />);
-    expect(screen.queryByText('(000) 000-0000')).toBeNull();
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" />);
+    expect(screen.getByTestId('phone-display').textContent).toBe('non fourni');
   });
 
-  it('displays — for sentinel email info@sibelanger.com', () => {
-    const req = { ...MOCK_REQUEST, caller_phone: null, caller_email: 'info@sibelanger.com' };
+  it('shows non fourni for placeholder email (API returned null + placeholder flag)', () => {
+    const req = { ...MOCK_REQUEST, caller_phone: null, caller_phone_placeholder: false, caller_email: null, caller_email_placeholder: true };
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
-    wrap(<DetailPanel requestId={1} onClose={vi.fn()} />);
-    expect(screen.queryByText('info@sibelanger.com')).toBeNull();
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" />);
+    expect(screen.getByTestId('email-display').textContent).toBe('non fourni');
+  });
+
+  it('shows — for null phone without placeholder flag', () => {
+    const req = { ...MOCK_REQUEST, caller_phone: null, caller_phone_placeholder: false };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" />);
+    expect(screen.getByTestId('phone-display').textContent).toBe('—');
+  });
+
+  it('shows actual email when not a placeholder', () => {
+    const req = { ...MOCK_REQUEST, caller_email: 'real@example.com', caller_email_placeholder: false };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" />);
+    expect(screen.getByTestId('email-display').textContent).toBe('real@example.com');
   });
 });

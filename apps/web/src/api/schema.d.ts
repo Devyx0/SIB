@@ -96,7 +96,9 @@ export interface RequestDetail extends ListRow {
   justification_log: JustificationEntry[];
   caller_name: string | null;
   caller_phone: string | null;
+  caller_phone_placeholder: boolean;
   caller_email: string | null;
+  caller_email_placeholder: boolean;
   caller_tenant_id: number | null;
   raw_caller_body: { entry_permission: string | null; animals: string | null; problems: string | null } | null;
   problems: string | null;

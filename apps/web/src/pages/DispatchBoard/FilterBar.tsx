@@ -47,12 +47,40 @@ export default function FilterBar({
   const [draft, setDraft] = useState(q);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Local draft state for date inputs — only propagate complete valid dates.
+  const [draftStart, setDraftStart] = useState(startDate);
+  const [draftEnd, setDraftEnd] = useState(endDate);
+  const startTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const endTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => { setDraft(q); }, [q]);
+  useEffect(() => { setDraftStart(startDate); }, [startDate]);
+  useEffect(() => { setDraftEnd(endDate); }, [endDate]);
 
   function handleSearch(v: string) {
     setDraft(v);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => onQ(v || null), 500);
+  }
+
+  function isCompleteDate(v: string): boolean {
+    return /^\d{4}-\d{2}-\d{2}$/.test(v) && v >= '2020-01-01' && v <= '2099-12-31';
+  }
+
+  function handleStartDate(v: string) {
+    setDraftStart(v);
+    if (startTimer.current) clearTimeout(startTimer.current);
+    if (isCompleteDate(v)) {
+      startTimer.current = setTimeout(() => onStartDate(v), 400);
+    }
+  }
+
+  function handleEndDate(v: string) {
+    setDraftEnd(v);
+    if (endTimer.current) clearTimeout(endTimer.current);
+    if (isCompleteDate(v)) {
+      endTimer.current = setTimeout(() => onEndDate(v), 400);
+    }
   }
 
   function toggleStatus(value: string) {
@@ -82,9 +110,9 @@ export default function FilterBar({
     : `${total} ${t(lang, 'appels', 'calls')}`;
 
   const dateRangeError = (() => {
-    if (!startDate || !endDate) return null;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return null;
-    const days = (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000;
+    if (!draftStart || !draftEnd) return null;
+    if (!isCompleteDate(draftStart) || !isCompleteDate(draftEnd)) return null;
+    const days = (new Date(draftEnd).getTime() - new Date(draftStart).getTime()) / 86400000;
     if (days < 0) return t(lang, 'La date de fin doit être après la date de début.', 'End date must be after start date.');
     if (days > 31) return t(lang, 'La plage de dates ne peut pas dépasser 31 jours.', 'Date range cannot exceed 31 days.');
     return null;
@@ -99,14 +127,10 @@ export default function FilterBar({
           <input
             type="date"
             className={styles.input}
-            value={startDate}
+            value={draftStart}
             disabled={!!dateNote}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (!v || (/^\d{4}-\d{2}-\d{2}$/.test(v) && v >= '2020-01-01' && v <= '2099-12-31')) {
-                onStartDate(v);
-              }
-            }}
+            data-testid="start-date-input"
+            onChange={(e) => handleStartDate(e.target.value)}
           />
         </div>
         <div className={styles.fieldGroup}>
@@ -114,14 +138,10 @@ export default function FilterBar({
           <input
             type="date"
             className={styles.input}
-            value={endDate}
+            value={draftEnd}
             disabled={!!dateNote}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (!v || (/^\d{4}-\d{2}-\d{2}$/.test(v) && v >= '2020-01-01' && v <= '2099-12-31')) {
-                onEndDate(v);
-              }
-            }}
+            data-testid="end-date-input"
+            onChange={(e) => handleEndDate(e.target.value)}
           />
         </div>
         {dateNote && <span className={styles.dateNote}>{dateNote}</span>}
