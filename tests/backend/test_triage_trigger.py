@@ -156,12 +156,13 @@ def test_background_runs_after_commit(app, db_conn):
 
     try:
         client.post(f"/api/v1/requests/{rid}/triage")
+        # Spy ran during the client.post() call, found the committed row via fresh psycopg2 conn
+        assert seen_rid == [rid], f"got {seen_rid}"
     finally:
         rtr._run_triage_background = original_bg
         app.dependency_overrides.clear()
-
-    # Spy ran during the client.post() call, found the committed row via fresh psycopg2 conn
-    assert seen_rid == [rid], f"got {seen_rid}"
+        db_conn.execute("DELETE FROM maintenance_request WHERE request_id = %s", [rid])
+        db_conn.commit()
 
 
 def test_exception_before_api_call_sets_triage_failed():
@@ -204,28 +205,41 @@ def test_exception_before_api_call_sets_triage_failed():
         conn.commit()
         raise KeyError("ANTHROPIC_API_KEY")
 
-    original = svc.triage
-    svc.triage = crashing_triage
     try:
-        rtr._run_triage_background(rid)
-    finally:
-        svc.triage = original
+        original = svc.triage
+        svc.triage = crashing_triage
+        try:
+            rtr._run_triage_background(rid)
+        finally:
+            svc.triage = original
 
-    # Verify via a fresh psycopg2 connection so there's no transaction-isolation ambiguity.
-    c_check = psycopg2.connect(
-        host=settings.LOCAL_DB_HOST, port=settings.LOCAL_DB_PORT,
-        user=settings.LOCAL_DB_USER, password=settings.LOCAL_DB_PASSWORD,
-        dbname=settings.LOCAL_DB_NAME,
-    )
-    c_check.cursor_factory = psycopg2.extras.RealDictCursor
-    try:
-        with c_check.cursor() as cur:
-            cur.execute("SELECT status FROM maintenance_request WHERE request_id = %s", [rid])
-            row = cur.fetchone()
+        # Verify via a fresh psycopg2 connection so there's no transaction-isolation ambiguity.
+        c_check = psycopg2.connect(
+            host=settings.LOCAL_DB_HOST, port=settings.LOCAL_DB_PORT,
+            user=settings.LOCAL_DB_USER, password=settings.LOCAL_DB_PASSWORD,
+            dbname=settings.LOCAL_DB_NAME,
+        )
+        c_check.cursor_factory = psycopg2.extras.RealDictCursor
+        try:
+            with c_check.cursor() as cur:
+                cur.execute("SELECT status FROM maintenance_request WHERE request_id = %s", [rid])
+                row = cur.fetchone()
+        finally:
+            c_check.close()
+        assert row["status"] == "triage_failed"
     finally:
-        c_check.close()
-
-    assert row["status"] == "triage_failed"
+        # Cleanup: row was committed via psycopg2; runs even if assertion fails.
+        c_cleanup = psycopg2.connect(
+            host=settings.LOCAL_DB_HOST, port=settings.LOCAL_DB_PORT,
+            user=settings.LOCAL_DB_USER, password=settings.LOCAL_DB_PASSWORD,
+            dbname=settings.LOCAL_DB_NAME,
+        )
+        try:
+            with c_cleanup.cursor() as cur:
+                cur.execute("DELETE FROM maintenance_request WHERE request_id = %s", [rid])
+            c_cleanup.commit()
+        finally:
+            c_cleanup.close()
 
 
 def test_provenance_skips_unchanged():
@@ -279,10 +293,14 @@ def test_timeout_sets_triage_failed(app, db_conn):
 
     rid = _insert_request(db_conn, "intake_received")
     db_conn.commit()
-    client.post(f"/api/v1/requests/{rid}/triage")
-    app.dependency_overrides.clear()
-
-    row = db_conn.execute(
-        "SELECT status FROM maintenance_request WHERE request_id = %s", [rid]
-    ).fetchone()
-    assert row["status"] == "triage_failed"
+    try:
+        client.post(f"/api/v1/requests/{rid}/triage")
+        row = db_conn.execute(
+            "SELECT status FROM maintenance_request WHERE request_id = %s", [rid]
+        ).fetchone()
+        assert row["status"] == "triage_failed"
+    finally:
+        # Cleanup: psycopg2 committed status updates; runs even if assertion fails.
+        app.dependency_overrides.clear()
+        db_conn.execute("DELETE FROM maintenance_request WHERE request_id = %s", [rid])
+        db_conn.commit()
