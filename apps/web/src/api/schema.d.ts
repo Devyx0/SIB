@@ -137,4 +137,5 @@ export interface EmployeeLookup {
 export interface UnitLookup {
   unit_id: number;
   numero_appartement: string;
+  rue: string | null;
 }

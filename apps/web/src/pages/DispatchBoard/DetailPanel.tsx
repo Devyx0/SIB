@@ -48,6 +48,10 @@ function formatDate(dateStr: string | null | undefined, lang: Lang): string {
     .format(new Date(y, m - 1, d));
 }
 
+function displayContact(v: string | null | undefined, sentinel: string): string | null {
+  return v && v !== sentinel ? v : null;
+}
+
 function formatCost(amount: number | string, lang: Lang): string {
   return new Intl.NumberFormat(lang === 'fr' ? 'fr-CA' : 'en-CA', {
     style: 'currency',
@@ -157,7 +161,9 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
     } catch (err) {
       if (err instanceof ApiError && err.code === 'STALE_DATA') {
         setStaleMsg(t(lang, 'La demande a été modifiée — rechargement…', 'Modified by another user — reloading…'));
+        qc.invalidateQueries({ queryKey: ['requests'] });
         qc.invalidateQueries({ queryKey: ['request', requestId] });
+        setTimeout(() => setStaleMsg(null), 3000);
       }
     }
   }
@@ -263,10 +269,10 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                 <dd>{data.caller_name ?? '—'}</dd>
 
                 <dt>{t(lang, 'Téléphone', 'Phone')}</dt>
-                <dd>{data.caller_phone ?? '—'}</dd>
+                <dd>{displayContact(data.caller_phone, '(000) 000-0000') ?? '—'}</dd>
 
                 <dt>{t(lang, 'Courriel', 'Email')}</dt>
-                <dd>{data.caller_email ?? '—'}</dd>
+                <dd>{displayContact(data.caller_email, 'info@sibelanger.com') ?? '—'}</dd>
 
                 <dt>{t(lang, 'Unité', 'Unit')}</dt>
                 <dd>{data.unit_label ?? '—'}</dd>
@@ -278,10 +284,10 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                 <dd>{(data.raw_caller_body?.animals ?? data.animals) || '—'}</dd>
               </dl>
 
-              {data.problems && (
+              {(data.raw_caller_body?.problems || data.problems) && (
                 <section className={styles.followupSection} data-testid="problems-section">
                   <h3 className={styles.followupHeading}>{t(lang, 'Problème décrit', 'Reported problem')}</h3>
-                  <p style={{ whiteSpace: 'pre-wrap', fontSize: 13, margin: 0 }}>{data.problems}</p>
+                  <p style={{ whiteSpace: 'pre-wrap', fontSize: 13, margin: 0 }}>{data.raw_caller_body?.problems ?? data.problems}</p>
                 </section>
               )}
 
@@ -289,13 +295,22 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
               {data.triage_model_version && data.raw_caller_body && (() => {
                 const accessDiffers = data.raw_caller_body.entry_permission !== data.entry_permission;
                 const animalsDiffers = data.raw_caller_body.animals !== data.animals;
-                if (!accessDiffers && !animalsDiffers) return null;
+                const problemsDiffer = !!data.problems && data.raw_caller_body?.problems !== data.problems;
+                if (!accessDiffers && !animalsDiffers && !problemsDiffer) return null;
                 return (
                   <section className={styles.followupSection} data-testid="dual-display">
                     <h3 className={styles.followupHeading}>
                       {t(lang, 'Interprétation IA', 'AI interpretation')}
                     </h3>
                     <dl className={styles.dl}>
+                      {problemsDiffer && (
+                        <>
+                          <dt style={{ fontSize: 11 }}>{t(lang, 'Problème — déclaré par le locataire', 'Problem — tenant declared')}</dt>
+                          <dd style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>{data.raw_caller_body?.problems ?? '—'}</dd>
+                          <dt style={{ fontSize: 11, color: 'var(--color-accent)' }}>{t(lang, 'Problème — interprétation IA', 'Problem — AI interpretation')}</dt>
+                          <dd style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>{data.problems ?? '—'}</dd>
+                        </>
+                      )}
                       {accessDiffers && (
                         <>
                           <dt style={{ fontSize: 11 }}>{t(lang, 'Accès — déclaré par le locataire', 'Access — tenant declared')}</dt>
@@ -321,8 +336,8 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
               {isEditor && data.triage_model_version && (
                 <section className={styles.followupSection} data-testid="ai-section">
                   <h3 className={styles.followupHeading}>{t(lang, 'Résumé IA', 'AI summary')}</h3>
-                  {data.triage_summary && (
-                    <p style={{ whiteSpace: 'pre-wrap', fontSize: 13, margin: '0 0 8px' }}>{data.triage_summary}</p>
+                  {data.problem_summary && (
+                    <p style={{ whiteSpace: 'pre-wrap', fontSize: 13, margin: '0 0 8px' }}>{data.problem_summary}</p>
                   )}
                   {data.other_notes && (
                     <>

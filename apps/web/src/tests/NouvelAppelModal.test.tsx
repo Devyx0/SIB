@@ -182,4 +182,13 @@ describe('NouvelAppelModal', () => {
     await userEvent.click(screen.getByText(/annuler/i));
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('shows units-error when fetchUnits rejects — never a silent empty list', async () => {
+    mockMatchAddress.mockResolvedValue(EXACT_MATCH);
+    mockFetchUnits.mockRejectedValue(new Error('Network error'));
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    await fillAndSubmitForm();
+    await waitFor(() => screen.getByText(/Adresse trouvée exactement/));
+    await waitFor(() => expect(screen.getByTestId('units-error')).toBeTruthy());
+  });
 });

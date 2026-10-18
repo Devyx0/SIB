@@ -83,16 +83,21 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
   // ── Status ──────────────────────────────────────────────────────────────
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [unitsError, setUnitsError] = useState<string | null>(null);
 
   // Load units when confirm building changes — unit reset is handled by picker onChange, not here,
   // so an exact-match pre-population of confirmUnitId is not wiped.
   useEffect(() => {
     if (confirmBuildingId != null) {
-      fetchUnits(confirmBuildingId).then(setConfirmUnits).catch(() => {});
+      setUnitsError(null);
+      fetchUnits(confirmBuildingId)
+        .then(setConfirmUnits)
+        .catch(() => setUnitsError(t(lang, 'Erreur lors du chargement des unités.', 'Error loading units.')));
     } else {
       setConfirmUnits([]);
+      setUnitsError(null);
     }
-  }, [confirmBuildingId]);
+  }, [confirmBuildingId, lang]);
 
   // Lazily load sectors when the no_match/garbled picker becomes visible
   useEffect(() => {
@@ -200,7 +205,17 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
 
   if (!open) return null;
 
-  const unitLabel = confirmUnits.find((u) => u.unit_id === confirmUnitId)?.numero_appartement;
+  const unitLabel = (() => {
+    const u = confirmUnits.find((u) => u.unit_id === confirmUnitId);
+    if (!u) return undefined;
+    const civic = u.rue ? u.rue.split(',')[0].trim() : null;
+    return civic ? `${u.numero_appartement} (${civic})` : u.numero_appartement;
+  })();
+
+  function unitOptionLabel(u: UnitLookup): string {
+    const civic = u.rue ? u.rue.split(',')[0].trim() : null;
+    return civic ? `${u.numero_appartement} (${civic})` : u.numero_appartement;
+  }
 
   return (
     <div className={styles.overlay} role="dialog" aria-modal aria-label={t(lang, 'Nouvel appel', 'New call')}>
@@ -355,7 +370,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                         onChange={(e) => setConfirmUnitId(e.target.value ? Number(e.target.value) : null)}>
                         <option value="">— {t(lang, 'Aucune', 'None')} —</option>
                         {confirmUnits.map((u) => (
-                          <option key={u.unit_id} value={u.unit_id}>{u.numero_appartement}</option>
+                          <option key={u.unit_id} value={u.unit_id}>{unitOptionLabel(u)}</option>
                         ))}
                       </select>
                     </div>
@@ -388,7 +403,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                           onChange={(e) => setConfirmUnitId(e.target.value ? Number(e.target.value) : null)}>
                           <option value="">— {t(lang, 'Aucune', 'None')} —</option>
                           {confirmUnits.map((u) => (
-                            <option key={u.unit_id} value={u.unit_id}>{u.numero_appartement}</option>
+                            <option key={u.unit_id} value={u.unit_id}>{unitOptionLabel(u)}</option>
                           ))}
                         </select>
                       </div>
@@ -436,7 +451,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                           onChange={(e) => setConfirmUnitId(e.target.value ? Number(e.target.value) : null)}>
                           <option value="">— {t(lang, 'Aucune', 'None')} —</option>
                           {confirmUnits.map((u) => (
-                            <option key={u.unit_id} value={u.unit_id}>{u.numero_appartement}</option>
+                            <option key={u.unit_id} value={u.unit_id}>{unitOptionLabel(u)}</option>
                           ))}
                         </select>
                       </div>
@@ -446,6 +461,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
               </div>
             )}
 
+            {unitsError && <p className={styles.errorMsg} data-testid="units-error">{unitsError}</p>}
             {errorMsg && <p className={styles.errorMsg} data-testid="error-msg">{errorMsg}</p>}
 
             <div className={styles.actions} style={{ marginTop: 12 }}>

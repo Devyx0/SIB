@@ -300,4 +300,70 @@ describe('DetailPanel', () => {
     // Reschedule date should reset to server value
     expect(rescheduleInput.value).toBe(MOCK_REQUEST.start_date);
   });
+
+  // Item 4: Problème décrit shows tenant's raw text, not AI rewrite
+  it('problems-section shows raw_caller_body.problems, not data.problems', () => {
+    const req = {
+      ...MOCK_REQUEST,
+      problems: 'AI rewritten version',
+      raw_caller_body: { problems: 'Original tenant text', entry_permission: null, animals: null },
+    };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} />);
+    const section = screen.getByTestId('problems-section');
+    expect(section.textContent).toContain('Original tenant text');
+    expect(section.textContent).not.toContain('AI rewritten version');
+  });
+
+  it('problems-section falls back to data.problems when raw_caller_body.problems is absent', () => {
+    const req = { ...MOCK_REQUEST, problems: 'Fallback text', raw_caller_body: null };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} />);
+    expect(screen.getByTestId('problems-section').textContent).toContain('Fallback text');
+  });
+
+  // Item 5: AI summary reads problem_summary, not triage_summary
+  it('ai-section shows problem_summary text', () => {
+    const req = {
+      ...MOCK_REQUEST,
+      triage_model_version: 'gpt-4',
+      problem_summary: 'Fuite sous le lavabo — < 30 min',
+      triage_summary: null,
+      other_notes: null,
+    };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+    const section = screen.getByTestId('ai-section');
+    expect(section.textContent).toContain('Fuite sous le lavabo — < 30 min');
+  });
+
+  it('ai-section does not show when triage_summary is set but problem_summary is null', () => {
+    const req = {
+      ...MOCK_REQUEST,
+      triage_model_version: 'gpt-4',
+      problem_summary: null,
+      triage_summary: 'Should not appear',
+      other_notes: null,
+    };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+    // ai-section still rendered (triage_model_version is set), but summary text absent
+    const section = screen.queryByTestId('ai-section');
+    expect(section?.textContent ?? '').not.toContain('Should not appear');
+  });
+
+  // Item 8: sentinel contact values show as '—'
+  it('displays — for sentinel phone (000) 000-0000', () => {
+    const req = { ...MOCK_REQUEST, caller_phone: '(000) 000-0000', caller_email: null };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} />);
+    expect(screen.queryByText('(000) 000-0000')).toBeNull();
+  });
+
+  it('displays — for sentinel email info@sibelanger.com', () => {
+    const req = { ...MOCK_REQUEST, caller_phone: null, caller_email: 'info@sibelanger.com' };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} />);
+    expect(screen.queryByText('info@sibelanger.com')).toBeNull();
+  });
 });

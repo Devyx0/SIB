@@ -61,7 +61,13 @@ export default function DispatchBoard({ lang, me }: Props) {
     assigned_employee_id: assignedEmployeeId,
   };
 
-  const { data, isPending, isError, error } = useRequests(params);
+  const isDateRangeValid = (() => {
+    if (!startDate || !endDate) return true;
+    const days = (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000;
+    return days >= 0 && days <= 31;
+  })();
+
+  const { data, isPending, isError, error } = useRequests(isDateRangeValid ? params : null);
 
   const { data: sectors } = useQuery({
     queryKey: ['sectors'],

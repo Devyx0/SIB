@@ -81,6 +81,15 @@ export default function FilterBar({
     ? `1 ${t(lang, 'appel', 'call')}`
     : `${total} ${t(lang, 'appels', 'calls')}`;
 
+  const dateRangeError = (() => {
+    if (!startDate || !endDate) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return null;
+    const days = (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000;
+    if (days < 0) return t(lang, 'La date de fin doit être après la date de début.', 'End date must be after start date.');
+    if (days > 31) return t(lang, 'La plage de dates ne peut pas dépasser 31 jours.', 'Date range cannot exceed 31 days.');
+    return null;
+  })();
+
   return (
     <div className={styles.bar}>
       {/* Row 1: date range, source, search, count, column toggle */}
@@ -96,7 +105,6 @@ export default function FilterBar({
               const v = e.target.value;
               if (!v || (/^\d{4}-\d{2}-\d{2}$/.test(v) && v >= '2020-01-01' && v <= '2099-12-31')) {
                 onStartDate(v);
-                if (v && endDate && v > endDate) onEndDate(v);
               }
             }}
           />
@@ -112,12 +120,12 @@ export default function FilterBar({
               const v = e.target.value;
               if (!v || (/^\d{4}-\d{2}-\d{2}$/.test(v) && v >= '2020-01-01' && v <= '2099-12-31')) {
                 onEndDate(v);
-                if (v && startDate && v < startDate) onStartDate(v);
               }
             }}
           />
         </div>
         {dateNote && <span className={styles.dateNote}>{dateNote}</span>}
+        {dateRangeError && <span className={styles.dateError} data-testid="date-range-error">{dateRangeError}</span>}
 
         <div className={styles.fieldGroup}>
           <label className={styles.label}>{t(lang, 'Source', 'Source')}</label>

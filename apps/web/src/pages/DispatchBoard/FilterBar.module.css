@@ -200,3 +200,11 @@
   white-space: nowrap;
   font-style: italic;
 }
+
+.dateError {
+  font-size: 11px;
+  color: #c0392b;
+  align-self: flex-end;
+  padding-bottom: 6px;
+  white-space: nowrap;
+}

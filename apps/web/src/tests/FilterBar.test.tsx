@@ -60,6 +60,45 @@ describe('FilterBar', () => {
     expect(onStatus).toHaveBeenCalledWith([]);
   });
 
+  it('typing in AU never calls onStartDate (no cross-field clamping)', () => {
+    const onStartDate = vi.fn();
+    const onEndDate = vi.fn();
+    render(<FilterBar {...defaultProps} onStartDate={onStartDate} onEndDate={onEndDate} />);
+    const auInput = screen.getAllByDisplayValue(defaultProps.endDate)[0];
+    // AU set to a date earlier than DU — old code would have clamped DU down
+    fireEvent.change(auInput, { target: { value: '2026-08-01' } });
+    expect(onEndDate).toHaveBeenCalledWith('2026-08-01');
+    expect(onStartDate).not.toHaveBeenCalled();
+  });
+
+  it('typing in DU never calls onEndDate (no cross-field clamping)', () => {
+    const onStartDate = vi.fn();
+    const onEndDate = vi.fn();
+    render(<FilterBar {...defaultProps} onStartDate={onStartDate} onEndDate={onEndDate} />);
+    const duInput = screen.getAllByDisplayValue(defaultProps.startDate)[0];
+    // DU set to a date later than AU — old code would have pushed AU forward
+    fireEvent.change(duInput, { target: { value: '2026-10-01' } });
+    expect(onStartDate).toHaveBeenCalledWith('2026-10-01');
+    expect(onEndDate).not.toHaveBeenCalled();
+  });
+
+  it('shows error when end date is before start date', () => {
+    render(<FilterBar {...defaultProps} startDate="2026-09-20" endDate="2026-09-01" />);
+    expect(screen.getByTestId('date-range-error')).toBeTruthy();
+    expect(screen.getByTestId('date-range-error').textContent).toMatch(/date de fin/i);
+  });
+
+  it('shows error when range exceeds 31 days', () => {
+    render(<FilterBar {...defaultProps} startDate="2026-09-01" endDate="2026-10-15" />);
+    expect(screen.getByTestId('date-range-error')).toBeTruthy();
+    expect(screen.getByTestId('date-range-error').textContent).toMatch(/31 jour/i);
+  });
+
+  it('shows no error for a valid 31-day range', () => {
+    render(<FilterBar {...defaultProps} startDate="2026-09-01" endDate="2026-10-02" />);
+    expect(screen.queryByTestId('date-range-error')).toBeNull();
+  });
+
   it('date input guard rejects partial year — onStartDate not called for invalid value', () => {
     // The onChange guard requires /^\d{4}-\d{2}-\d{2}$/ and year 2020-2099.
     // A browser-generated partial value like "0102-02-06" (bad year) or an
