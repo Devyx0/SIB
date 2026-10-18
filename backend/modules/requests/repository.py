@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 from decimal import Decimal
 from typing import Any
 
 from .schemas import SORT_SQL, SOURCE_CALENDAR_LABELS
+
+_SENTINEL_EMAIL = 'info@sibelanger.com'
+_SENTINEL_PHONE = '(000) 000-0000'
 
 _UPDATABLE_FIELDS: dict[str, str] = {
     "assigned_employee_id": "assigned_employee_id = %(v)s",
@@ -60,6 +64,16 @@ _LIST_SELECT = """
 
 def _add_label(d: dict) -> dict:
     d["source_calendar_label"] = SOURCE_CALENDAR_LABELS.get(d.get("source_calendar") or "")
+    return d
+
+
+def _normalise_contacts(d: dict) -> dict:
+    d["caller_email_placeholder"] = d.get("caller_email") == _SENTINEL_EMAIL
+    d["caller_phone_placeholder"] = d.get("caller_phone") == _SENTINEL_PHONE
+    if d["caller_email_placeholder"]:
+        d["caller_email"] = None
+    if d["caller_phone_placeholder"]:
+        d["caller_phone"] = None
     return d
 
 
@@ -228,7 +242,7 @@ def get_request(
     if row is None:
         return None
 
-    return _add_label(dict(row))
+    return _normalise_contacts(_add_label(dict(row)))
 
 
 def list_followup_entries(conn, request_id: int) -> list[dict]:
@@ -356,11 +370,21 @@ def list_justification_entries(conn, request_id: int) -> list[dict]:
 def list_units(conn, building_id: int) -> list[dict]:
     rows = conn.execute(
         """SELECT unit_id, rue, numero_appartement FROM unit
-           WHERE building_id = %(bid)s AND numero_appartement IS NOT NULL
-           ORDER BY numero_appartement""",
+           WHERE building_id = %(bid)s AND numero_appartement IS NOT NULL""",
         {"bid": building_id},
     ).fetchall()
-    return [dict(r) for r in rows]
+    units = [dict(r) for r in rows]
+
+    def _sort_key(u: dict) -> tuple:
+        try:
+            civic_num = int(u["rue"].split(",")[0].strip()) if u["rue"] else 10 ** 9
+        except (ValueError, AttributeError):
+            civic_num = 10 ** 9
+        digits = re.sub(r"\D", "", u["numero_appartement"] or "")
+        apt_num = int(digits) if digits else 10 ** 9
+        return (civic_num, apt_num, u["numero_appartement"] or "")
+
+    return sorted(units, key=_sort_key)
 
 
 def list_sectors(conn) -> list[dict]:

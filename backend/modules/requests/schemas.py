@@ -181,7 +181,9 @@ class RequestDetail(ListRow):
     # PII — null for tech/contractor unless they are the case-assigned employee
     caller_name: Optional[str] = None
     caller_phone: Optional[str] = None
+    caller_phone_placeholder: bool = False
     caller_email: Optional[str] = None
+    caller_email_placeholder: bool = False
     caller_tenant_id: Optional[int] = None
     raw_caller_body: Optional[dict] = None
     problems: Optional[str] = None
