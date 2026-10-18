@@ -1,14 +1,8 @@
 import { useRef, useState } from 'react';
 import type { Lang } from '../i18n';
 import { t } from '../i18n';
+import MicButton from './MicButton';
 import styles from './JustificationModal.module.css';
-
-// ponytail: any cast — SpeechRecognition browser types are not in standard TS lib
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const SpeechRecognitionAPI: any =
-  typeof window !== 'undefined'
-    ? ((window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition)
-    : undefined;
 
 interface Props {
   open: boolean;
@@ -19,10 +13,7 @@ interface Props {
 
 export default function JustificationModal({ open, onSave, onCancel, lang = 'fr' }: Props) {
   const [text, setText] = useState('');
-  const [listening, setListening] = useState(false);
   const inputMethodRef = useRef<'voice' | 'typed'>('typed');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null);
 
   if (!open) return null;
 
@@ -30,29 +21,6 @@ export default function JustificationModal({ open, onSave, onCancel, lang = 'fr'
     onSave(text.trim(), inputMethodRef.current);
     setText('');
     inputMethodRef.current = 'typed';
-  }
-
-  function startListening() {
-    if (!SpeechRecognitionAPI) return;
-    const rec = new SpeechRecognitionAPI();
-    rec.lang = 'fr-CA';
-    rec.continuous = false;
-    rec.interimResults = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onresult = (e: any) => {
-      const transcript = e.results[0][0].transcript;
-      setText((prev) => (prev ? `${prev} ${transcript}` : transcript));
-      inputMethodRef.current = 'voice';
-    };
-    rec.onend = () => setListening(false);
-    rec.onerror = () => setListening(false);
-    recognitionRef.current = rec;
-    rec.start();
-    setListening(true);
-  }
-
-  function stopListening() {
-    recognitionRef.current?.stop();
   }
 
   const canSave = text.trim().length >= 10;
@@ -76,17 +44,13 @@ export default function JustificationModal({ open, onSave, onCancel, lang = 'fr'
         />
 
         <div className={styles.actions}>
-          {SpeechRecognitionAPI && (
-            <button
-              type="button"
-              className={`${styles.micBtn} ${listening ? styles.micActive : ''}`}
-              onClick={listening ? stopListening : startListening}
-              aria-label={listening ? t(lang, 'Arrêter', 'Stop') : t(lang, 'Dicter', 'Dictate')}
-              data-testid="mic-btn"
-            >
-              {listening ? '⏹' : '🎤'}
-            </button>
-          )}
+          <MicButton
+            onTranscript={(transcript) => {
+              setText((prev) => (prev ? `${prev} ${transcript}` : transcript));
+              inputMethodRef.current = 'voice';
+            }}
+            lang={lang}
+          />
           <button type="button" className={styles.cancelBtn} onClick={onCancel}>
             {t(lang, 'Annuler', 'Cancel')}
           </button>
