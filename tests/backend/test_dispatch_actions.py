@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from backend.core.utils import today_local
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -432,7 +434,7 @@ def test_add_log_sets_initials_and_date(ac, test_request):
     r = c.post(f"/api/v1/requests/{test_request}/log", json={"entry_text": "Server-side field check."})
     assert r.status_code == 200
     entry = next(e for e in r.json()["followup_log"] if e["entry_text"] == "Server-side field check.")
-    assert entry["entry_date"] == str(date.today())
+    assert entry["entry_date"] == str(today_local())
     assert entry["entered_by_initials"]  # non-empty; derived from emp name server-side
 
 
