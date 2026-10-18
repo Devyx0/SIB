@@ -7,6 +7,7 @@ import {
   dispatchSetFollowUpDate, dispatchSetNextSteps, dispatchSetCost, dispatchAddLog,
   triggerTriage, routeRequest,
 } from '../../api/client';
+import TriageFeedbackWidget from '../../components/TriageFeedbackWidget';
 import type { MeResponse } from '../../api/schema.d.ts';
 import { roleLabel, statusLabel, timeEstimateLabel, sourceCalendarLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
@@ -350,6 +351,7 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                       <p style={{ whiteSpace: 'pre-wrap', fontSize: 12, margin: 0 }}>{data.other_notes}</p>
                     </>
                   )}
+                  <TriageFeedbackWidget requestId={requestId} lang={lang} />
                 </section>
               )}
 

@@ -1,5 +1,5 @@
-import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry } from './schema.d.ts';
-export type { JustificationEntry, BuildingLookup, UnitLookup };
+import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit } from './schema.d.ts';
+export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit };
 import { supabase } from '../lib/supabase';
 
 export class ApiError extends Error {
@@ -207,4 +207,12 @@ export function fetchBuildings(sectorId?: number): Promise<BuildingLookup[]> {
 
 export function fetchUnits(buildingId: number): Promise<UnitLookup[]> {
   return apiFetch(`/api/v1/lookup/units?building_id=${buildingId}`);
+}
+
+export function fetchFeedback(requestId: number): Promise<TriageFeedback> {
+  return apiFetch<TriageFeedback>(`/api/v1/requests/${requestId}/feedback`);
+}
+
+export function upsertFeedback(requestId: number, body: { level: string; reason?: string | null }): Promise<TriageFeedback> {
+  return apiPost<TriageFeedback>(`/api/v1/requests/${requestId}/feedback`, body);
 }

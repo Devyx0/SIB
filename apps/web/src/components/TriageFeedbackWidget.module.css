@@ -1,0 +1,101 @@
+.widget {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.heading {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--color-neutral-700);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.levelBtns {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.levelBtn {
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 10px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--color-neutral-700);
+  cursor: pointer;
+}
+
+.levelBtn:hover {
+  background: var(--color-accent-100);
+}
+
+.levelActive {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-accent-100);
+  font-weight: 600;
+}
+
+.reasonRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.textarea {
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--r-md);
+  padding: 8px 10px;
+  resize: vertical;
+  color: var(--color-text);
+  background: var(--color-surface);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.textarea:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+.saveBtn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--color-accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-md);
+  padding: 6px 14px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.saveBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.saveBtn:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+.error {
+  font-size: 12px;
+  color: var(--color-error, #c00);
+  margin: 0;
+}
+
+.savedNote {
+  font-size: 11px;
+  color: var(--color-neutral-700);
+  margin: 0;
+}

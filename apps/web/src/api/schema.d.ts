@@ -105,6 +105,30 @@ export interface RequestDetail extends ListRow {
   triage_model_version: string | null;
 }
 
+export interface TriageFeedbackEdit {
+  edited_at: string;
+  edited_by: number;
+  old_level: string;
+  new_level: string;
+  old_reason: string | null;
+  new_reason: string | null;
+  old_triage_output: Record<string, unknown>;
+  old_triage_model_version: string;
+}
+
+export interface TriageFeedback {
+  feedback_id: number;
+  request_id: number;
+  employee_id: number;
+  level: 'utile' | 'partiellement utile' | 'pas utile';
+  reason: string | null;
+  triage_output: Record<string, unknown>;
+  triage_model_version: string;
+  edit_history: TriageFeedbackEdit[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface MeResponse {
   employee_id: number;
   nom_employe: string;
