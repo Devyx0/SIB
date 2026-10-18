@@ -153,7 +153,7 @@ def match_address(conn, civic: str, street: str, apartment: str | None) -> Match
 
     if len(candidates) == 1:
         bldg = candidates[0]
-        unit_id = _match_unit(conn, bldg["building_id"], apartment)
+        unit_id = _match_unit(conn, bldg["building_id"], apartment, civic_set)
         if unit_id is not None:
             return MatchResult("exact", bldg["building_id"], unit_id, [])
         return MatchResult("building_only", bldg["building_id"], None, [])
@@ -175,16 +175,37 @@ def match_address(conn, civic: str, street: str, apartment: str | None) -> Match
     return MatchResult("ambiguous", None, None, candidate_ids)
 
 
-def _match_unit(conn, building_id: int, apartment: str | None) -> int | None:
+def _match_unit(conn, building_id: int, apartment: str | None,
+                civic_set: frozenset[int] = frozenset()) -> int | None:
     if not apartment:
         return None
-    row = conn.execute(
+    if civic_set:
+        # When we have a civic, prefer the unit whose rue starts with a matching number.
+        # If none match, return None (→ building_only) rather than guessing with LIMIT 1.
+        rows = conn.execute(
+            """
+            SELECT unit_id, rue FROM unit
+            WHERE building_id = %(building_id)s
+              AND LOWER(TRIM(numero_appartement)) = LOWER(TRIM(%(apt)s))
+              AND rue IS NOT NULL
+            """,
+            {"building_id": building_id, "apt": apartment},
+        ).fetchall()
+        for row in rows:
+            try:
+                rue_civic = int(row["rue"].split(",")[0].split("-")[0].strip())
+            except (ValueError, IndexError, AttributeError):
+                continue
+            if rue_civic in civic_set:
+                return row["unit_id"]
+        return None
+    # No civic given: only safe to assign a unit when exactly one matches.
+    rows = conn.execute(
         """
         SELECT unit_id FROM unit
         WHERE building_id = %(building_id)s
           AND LOWER(TRIM(numero_appartement)) = LOWER(TRIM(%(apt)s))
-        LIMIT 1
         """,
         {"building_id": building_id, "apt": apartment},
-    ).fetchone()
-    return row["unit_id"] if row else None
+    ).fetchall()
+    return rows[0]["unit_id"] if len(rows) == 1 else None

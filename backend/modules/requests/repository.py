@@ -355,7 +355,9 @@ def list_justification_entries(conn, request_id: int) -> list[dict]:
 
 def list_units(conn, building_id: int) -> list[dict]:
     rows = conn.execute(
-        "SELECT unit_id, numero_appartement FROM unit WHERE building_id = %(bid)s ORDER BY numero_appartement",
+        """SELECT unit_id, rue, numero_appartement FROM unit
+           WHERE building_id = %(bid)s AND numero_appartement IS NOT NULL
+           ORDER BY numero_appartement""",
         {"bid": building_id},
     ).fetchall()
     return [dict(r) for r in rows]

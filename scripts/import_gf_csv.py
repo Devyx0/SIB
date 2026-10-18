@@ -108,7 +108,7 @@ def _build_problems(row: dict) -> str:
             parts.append(f"{label} : {val}")
     desc = row.get(_COL_DESC, "").strip()
     if desc:
-        parts.append(f"Décrivez : {desc}")
+        parts.append(desc)
     # Précisions (access-related; not written to entry_permission to avoid appending free text)
     prec = row.get(_COL_PREC, "").strip()
     if prec:
@@ -289,30 +289,20 @@ def _write_provenance(conn, request_id: int, entry_id: str, filename: str, row: 
 
 
 def cleanup(conn) -> None:
-    # Child rows first (FK constraints); data_provenance has no FK so is left as audit trail.
-    triage_rows = conn.execute(
-        "DELETE FROM triage_log WHERE request_id IN "
-        "(SELECT request_id FROM maintenance_request WHERE external_source = 'gravity_forms')"
+    _GF = "(SELECT request_id FROM maintenance_request WHERE external_source = 'gravity_forms')"
+    triage_rows = conn.execute(f"DELETE FROM triage_log WHERE request_id IN {_GF}").rowcount
+    attach_rows = conn.execute(f"DELETE FROM maintenance_attachment WHERE request_id IN {_GF}").rowcount
+    flog = conn.execute(f"DELETE FROM maintenance_followup_entry WHERE request_id IN {_GF}").rowcount
+    jlog = conn.execute(f"DELETE FROM decision_justification_log WHERE request_id IN {_GF}").rowcount
+    prov = conn.execute(
+        f"DELETE FROM data_provenance WHERE target_table = 'maintenance_request' "
+        f"AND target_pk IN (SELECT request_id::text FROM maintenance_request WHERE external_source = 'gravity_forms')"
     ).rowcount
-    attach_rows = conn.execute(
-        "DELETE FROM maintenance_attachment WHERE request_id IN "
-        "(SELECT request_id FROM maintenance_request WHERE external_source = 'gravity_forms')"
-    ).rowcount
-    flog = conn.execute(
-        "DELETE FROM maintenance_followup_entry WHERE request_id IN "
-        "(SELECT request_id FROM maintenance_request WHERE external_source = 'gravity_forms')"
-    ).rowcount
-    jlog = conn.execute(
-        "DELETE FROM decision_justification_log WHERE request_id IN "
-        "(SELECT request_id FROM maintenance_request WHERE external_source = 'gravity_forms')"
-    ).rowcount
-    n = conn.execute(
-        "DELETE FROM maintenance_request WHERE external_source = 'gravity_forms'"
-    ).rowcount
+    n = conn.execute("DELETE FROM maintenance_request WHERE external_source = 'gravity_forms'").rowcount
     conn.commit()
     print(f"Deleted {n} gravity_forms request(s) — "
           f"{triage_rows} triage_log, {attach_rows} attachments, "
-          f"{flog} followup entries, {jlog} justification log rows.")
+          f"{flog} followup entries, {jlog} justification log rows, {prov} provenance rows.")
 
 
 if __name__ == "__main__":

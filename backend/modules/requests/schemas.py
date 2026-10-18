@@ -216,3 +216,4 @@ class EmployeeLookup(BaseModel):
 class UnitLookup(BaseModel):
     unit_id: int
     numero_appartement: str
+    rue: Optional[str] = None
