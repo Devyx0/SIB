@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useRequests } from '../../hooks/useRequests';
@@ -67,7 +67,11 @@ export default function DispatchBoard({ lang, me }: Props) {
     return days >= 0 && days <= 31;
   })();
 
-  const { data, isPending, isError, error } = useRequests(isDateRangeValid ? params : null);
+  // Keep last valid params so the table retains its data while the range error is shown.
+  const lastValidParamsRef = useRef(params);
+  if (isDateRangeValid) lastValidParamsRef.current = params;
+
+  const { data, isPending, isError, error } = useRequests(lastValidParamsRef.current);
 
   const { data: sectors } = useQuery({
     queryKey: ['sectors'],

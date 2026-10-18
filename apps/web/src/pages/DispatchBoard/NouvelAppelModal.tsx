@@ -156,9 +156,11 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
       });
       setMatchResult(result);
       if (result.match_status === 'exact') {
+        setUnitsLoading(true);
         setConfirmBuildingId(result.building_id);
         setConfirmUnitId(result.unit_id);
       } else if (result.match_status === 'building_only') {
+        setUnitsLoading(true);
         setConfirmBuildingId(result.building_id);
       } else {
         setConfirmBuildingId(null);
@@ -398,7 +400,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                         {t(lang, 'Sélectionner le bâtiment *', 'Select building *')}
                       </label>
                       <select id="confirm-building" className={styles.select} value={confirmBuildingId ?? ''}
-                        onChange={(e) => { setConfirmBuildingId(e.target.value ? Number(e.target.value) : null); setConfirmUnitId(null); }}>
+                        onChange={(e) => { const bid = e.target.value ? Number(e.target.value) : null; if (bid) setUnitsLoading(true); setConfirmBuildingId(bid); setConfirmUnitId(null); }}>
                         <option value="">— {t(lang, 'Choisir', 'Choose')} —</option>
                         {matchResult.candidate_buildings.map((b) => (
                           <option key={b.building_id} value={b.building_id}>
@@ -445,7 +447,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                       </label>
                       <select id="picker-building" className={styles.select} value={confirmBuildingId ?? ''}
                         disabled={pickerSectorId == null}
-                        onChange={(e) => { setConfirmBuildingId(e.target.value ? Number(e.target.value) : null); setConfirmUnitId(null); }}
+                        onChange={(e) => { const bid = e.target.value ? Number(e.target.value) : null; if (bid) setUnitsLoading(true); setConfirmBuildingId(bid); setConfirmUnitId(null); }}
                         data-testid="building-select">
                         <option value="">— {t(lang, 'Choisir', 'Choose')} —</option>
                         {pickerBuildings.map((b) => (

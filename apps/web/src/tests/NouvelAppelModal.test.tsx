@@ -7,7 +7,7 @@ import NouvelAppelModal from '../pages/DispatchBoard/NouvelAppelModal';
 const mockMatchAddress = vi.fn();
 const mockFetchSectors = vi.fn().mockResolvedValue([{ sector_id: 1, territoire: 'Secteur A', color_code: null }]);
 const mockFetchBuildings = vi.fn().mockResolvedValue([{ building_id: 10, adresse: '1580 Perigord', web_building_name: null, sector_id: 1 }]);
-const mockFetchUnits = vi.fn().mockResolvedValue([{ unit_id: 100, numero_appartement: '101' }]);
+const mockFetchUnits = vi.fn().mockResolvedValue([{ unit_id: 100, numero_appartement: '101', rue: '1580, rue Perigord' }]);
 const mockCreateManualRequest = vi.fn();
 
 vi.mock('../api/client', () => ({
@@ -55,7 +55,7 @@ describe('NouvelAppelModal', () => {
     vi.clearAllMocks();
     mockFetchSectors.mockResolvedValue([{ sector_id: 1, territoire: 'Secteur A', color_code: null }]);
     mockFetchBuildings.mockResolvedValue([{ building_id: 10, adresse: '1580 Perigord', web_building_name: null, sector_id: 1 }]);
-    mockFetchUnits.mockResolvedValue([{ unit_id: 100, numero_appartement: '101' }]);
+    mockFetchUnits.mockResolvedValue([{ unit_id: 100, numero_appartement: '101', rue: '1580, rue Perigord' }]);
   });
 
   it('renders nothing when closed', () => {
