@@ -232,4 +232,26 @@ describe('NouvelAppelModal', () => {
     await waitFor(() => expect(screen.getByTestId('no-units-msg')).toBeTruthy());
     expect(screen.queryByTestId('unit-select')).toBeNull();
   });
+
+  it('shows Aucune unité message via no_match path — real shape for bldg 152 ([])', async () => {
+    // Real API for 117 Ste-Anne: no_match → manual picker → building 152 → []
+    mockMatchAddress.mockResolvedValue(NO_MATCH);
+    mockFetchSectors.mockResolvedValue([{ sector_id: 3, territoire: 'Vieux-Québec', color_code: null }]);
+    mockFetchBuildings.mockResolvedValue([
+      { building_id: 152, adresse: '117 Ste-Anne', web_building_name: null, sector_id: 3 },
+    ]);
+    mockFetchUnits.mockResolvedValue([]); // real API shape: bare []
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    await fillAndSubmitForm({ civic: '117', street: 'Ste-Anne' });
+    await waitFor(() => screen.getByText(/Adresse introuvable/));
+    // Select sector
+    const sectorSelect = screen.getByRole('combobox', { name: /secteur/i });
+    await userEvent.selectOptions(sectorSelect, '3');
+    // Building list loads; select building 152
+    const buildingSelect = await screen.findByTestId('building-select');
+    await userEvent.selectOptions(buildingSelect, '152');
+    // After fetch completes with [], message must appear
+    await waitFor(() => expect(screen.getByTestId('no-units-msg')).toBeTruthy());
+    expect(screen.queryByTestId('unit-select')).toBeNull();
+  });
 });

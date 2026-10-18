@@ -414,13 +414,21 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                         <label htmlFor="confirm-unit" className={styles.label}>
                           {t(lang, 'Unité (optionnel)', 'Unit (optional)')}
                         </label>
-                        <select id="confirm-unit" className={styles.select} value={confirmUnitId ?? ''}
-                          onChange={(e) => setConfirmUnitId(e.target.value ? Number(e.target.value) : null)}>
-                          <option value="">— {t(lang, 'Aucune', 'None')} —</option>
-                          {confirmUnits.map((u) => (
-                            <option key={u.unit_id} value={u.unit_id}>{unitOptionLabel(u)}</option>
-                          ))}
-                        </select>
+                        {unitsLoading
+                          ? <p style={{ fontSize: 12, color: '#888', margin: 0 }}>{t(lang, 'Chargement…', 'Loading…')}</p>
+                          : !unitsError && confirmUnits.length === 0
+                            ? <p style={{ fontSize: 12, color: '#888', margin: 0 }} data-testid="no-units-msg">
+                                {t(lang, 'Aucune unité enregistrée pour ce bâtiment', 'No units registered for this building')}
+                              </p>
+                            : <select id="confirm-unit" className={styles.select} value={confirmUnitId ?? ''}
+                                onChange={(e) => setConfirmUnitId(e.target.value ? Number(e.target.value) : null)}
+                                data-testid="unit-select">
+                                <option value="">— {t(lang, 'Aucune', 'None')} —</option>
+                                {confirmUnits.map((u) => (
+                                  <option key={u.unit_id} value={u.unit_id}>{unitOptionLabel(u)}</option>
+                                ))}
+                              </select>
+                        }
                       </div>
                     )}
                   </div>
@@ -462,13 +470,21 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                         <label htmlFor="confirm-unit" className={styles.label}>
                           {t(lang, 'Unité (optionnel)', 'Unit (optional)')}
                         </label>
-                        <select id="confirm-unit" className={styles.select} value={confirmUnitId ?? ''}
-                          onChange={(e) => setConfirmUnitId(e.target.value ? Number(e.target.value) : null)}>
-                          <option value="">— {t(lang, 'Aucune', 'None')} —</option>
-                          {confirmUnits.map((u) => (
-                            <option key={u.unit_id} value={u.unit_id}>{unitOptionLabel(u)}</option>
-                          ))}
-                        </select>
+                        {unitsLoading
+                          ? <p style={{ fontSize: 12, color: '#888', margin: 0 }}>{t(lang, 'Chargement…', 'Loading…')}</p>
+                          : !unitsError && confirmUnits.length === 0
+                            ? <p style={{ fontSize: 12, color: '#888', margin: 0 }} data-testid="no-units-msg">
+                                {t(lang, 'Aucune unité enregistrée pour ce bâtiment', 'No units registered for this building')}
+                              </p>
+                            : <select id="confirm-unit" className={styles.select} value={confirmUnitId ?? ''}
+                                onChange={(e) => setConfirmUnitId(e.target.value ? Number(e.target.value) : null)}
+                                data-testid="unit-select">
+                                <option value="">— {t(lang, 'Aucune', 'None')} —</option>
+                                {confirmUnits.map((u) => (
+                                  <option key={u.unit_id} value={u.unit_id}>{unitOptionLabel(u)}</option>
+                                ))}
+                              </select>
+                        }
                       </div>
                     )}
                   </div>

@@ -64,10 +64,12 @@ export default function FilterBar({
   }
 
   function isCompleteDate(v: string): boolean {
-    return /^\d{4}-\d{2}-\d{2}$/.test(v) && v >= '2020-01-01' && v <= '2099-12-31';
+    return /^\d{4}-\d{2}-\d{2}$/.test(v) && v >= '2000-01-01' && v <= '2100-12-31';
   }
 
   function handleStartDate(v: string) {
+    // Complete-format dates with years outside [2000, 2100] are ignored entirely — no state change.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v) && !isCompleteDate(v)) return;
     setDraftStart(v);
     if (startTimer.current) clearTimeout(startTimer.current);
     if (isCompleteDate(v)) {
@@ -76,6 +78,7 @@ export default function FilterBar({
   }
 
   function handleEndDate(v: string) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v) && !isCompleteDate(v)) return;
     setDraftEnd(v);
     if (endTimer.current) clearTimeout(endTimer.current);
     if (isCompleteDate(v)) {

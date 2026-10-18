@@ -132,14 +132,29 @@ describe('FilterBar', () => {
     expect(screen.getByText(/42 appels/i)).toBeTruthy();
   });
 
-  it('date input rejects garbled year (2020–2099 guard) — onStartDate not called', () => {
+  it('implausible year (0009) — onStartDate not called and draft state unchanged', () => {
     vi.useFakeTimers();
     const onStartDate = vi.fn();
     render(<FilterBar {...defaultProps} onStartDate={onStartDate} />);
-    const input = screen.getByTestId('start-date-input');
-    fireEvent.change(input, { target: { value: '0102-02-06' } });
+    const input = screen.getByTestId('start-date-input') as HTMLInputElement;
+    // Baseline: input reflects the defaultProps startDate
+    expect(input.value).toBe('2026-09-01');
+    // Browser emits complete-format date with implausible year
+    fireEvent.change(input, { target: { value: '0009-11-20' } });
     act(() => { vi.advanceTimersByTime(500); });
     expect(onStartDate).not.toHaveBeenCalled();
+    // Draft must not have changed — controlled value stays at previous date
+    expect(input.value).toBe('2026-09-01');
+    vi.useRealTimers();
+  });
+
+  it('year 2000 is accepted (lower bound is inclusive)', () => {
+    vi.useFakeTimers();
+    const onStartDate = vi.fn();
+    render(<FilterBar {...defaultProps} onStartDate={onStartDate} />);
+    fireEvent.change(screen.getByTestId('start-date-input'), { target: { value: '2000-01-15' } });
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(onStartDate).toHaveBeenCalledWith('2000-01-15');
     vi.useRealTimers();
   });
 });
