@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import DetailPanel from '../pages/DispatchBoard/DetailPanel';
+import { JustificationProvider } from '../components/Justification';
+import type { MeResponse, RequestDetail } from '../api/schema.d.ts';
 import { ApiError } from '../api/client';
 import * as client from '../api/client';
 
@@ -21,7 +23,18 @@ const MOCK_REQUEST = {
 
 function wrap(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={qc}>
+      <JustificationProvider lang="fr">{ui}</JustificationProvider>
+    </QueryClientProvider>,
+  );
+}
+
+/** Answer the justification prompt by typing (jsdom has no speech engine). */
+async function justifyWith(text = 'Technicien le plus proche du secteur') {
+  await waitFor(() => expect(screen.getByTestId('justification-dialog')).toBeTruthy());
+  fireEvent.change(screen.getByTestId('justification-text'), { target: { value: text } });
+  await userEvent.click(screen.getByTestId('justification-confirm'));
 }
 
 describe('DetailPanel', () => {
@@ -112,18 +125,23 @@ describe('DetailPanel', () => {
     const invalidate = vi.spyOn(qc, 'invalidateQueries');
     render(
       <QueryClientProvider client={qc}>
-        <DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />
+        <JustificationProvider lang="fr">
+          <DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />
+        </JustificationProvider>
       </QueryClientProvider>
     );
-    // Wait for employee options to load then pick one — dispatches immediately
-    // (no justification modal since its removal).
+    // Pick an employee → the justification prompt opens → confirm → dispatch.
     await waitFor(() => expect(screen.getByRole('combobox').querySelectorAll('option').length).toBeGreaterThan(1));
     await userEvent.selectOptions(screen.getByRole('combobox'), '14');
+    expect(client.dispatchAssign).not.toHaveBeenCalled();
+    await justifyWith();
     await waitFor(() =>
       expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['requests'] }))
     );
-    expect(vi.mocked(client.dispatchAssign)).toHaveBeenCalledWith(1,
-      expect.not.objectContaining({ justification: expect.anything() }));
+    expect(vi.mocked(client.dispatchAssign)).toHaveBeenCalledWith(1, expect.objectContaining({
+      employee_id: 14,
+      justification: { text: 'Technicien le plus proche du secteur.', input_method: 'typed' },
+    }));
   });
 
   it('renders both Estimation (time bucket) and Coût estimé (cost) rows', () => {
@@ -243,7 +261,11 @@ describe('DetailPanel', () => {
     vi.spyOn(client, 'routeRequest').mockResolvedValue({ ...triaged, source_calendar: 'st_maj' } as any);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
     await userEvent.click(screen.getByTestId('route-majordome'));
-    await waitFor(() => expect(client.routeRequest).toHaveBeenCalledWith(1, { source_calendar: 'st_maj', expected_source_calendar: null }));
+    await justifyWith('Petit travail pour le majordome');
+    await waitFor(() => expect(client.routeRequest).toHaveBeenCalledWith(1, {
+      source_calendar: 'st_maj', expected_source_calendar: null,
+      justification: { text: 'Petit travail pour le majordome.', input_method: 'typed' },
+    }));
   });
 
   it('shows dual display section only when AI ran and fields differ', () => {
@@ -279,7 +301,7 @@ describe('DetailPanel', () => {
     expect(screen.queryByTestId('dual-display')).toBeNull();
   });
 
-  it('Appliquer dispatches the reschedule directly, without justification', async () => {
+  it('Appliquer asks for a justification, then dispatches the reschedule with it', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     const reschedule = vi.spyOn(client, 'dispatchReschedule').mockResolvedValue(MOCK_REQUEST as any);
@@ -290,12 +312,13 @@ describe('DetailPanel', () => {
 
     const applyBtns = screen.getAllByRole('button', { name: /appliquer/i });
     await userEvent.click(applyBtns[0]);
+    expect(reschedule).not.toHaveBeenCalled();
+    await justifyWith('Locataire demande une date plus tard');
 
     await waitFor(() => expect(reschedule).toHaveBeenCalledWith(1, expect.objectContaining({
       start_date: '2026-11-01',
+      justification: { text: 'Locataire demande une date plus tard.', input_method: 'typed' },
     })));
-    expect(reschedule).toHaveBeenCalledWith(1,
-      expect.not.objectContaining({ justification: expect.anything() }));
   });
 
   // Item 4: Problème décrit shows tenant's raw text, not AI rewrite
@@ -440,6 +463,88 @@ describe('en route assignment lock (fix 2026-10-19)', () => {
       expect(screen.getByTestId('assign-select').querySelectorAll('option').length).toBeGreaterThan(1)
     );
     await userEvent.selectOptions(screen.getByTestId('assign-select'), '14');
+    await justifyWith();
     await waitFor(() => expect(screen.getByText(EN_ROUTE_MSG)).toBeTruthy());
+  });
+});
+
+describe('decision justification (system-wide)', () => {
+  const coord = { employee_id: 4, nom_employe: 'Coord', roles: ['coordinator'] } as unknown as MeResponse;
+  const ok = MOCK_REQUEST as unknown as RequestDetail;
+
+  it('cancelling the prompt dispatches nothing and restores the assignee', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([
+      { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' },
+    ]);
+    const assign = vi.spyOn(client, 'dispatchAssign').mockResolvedValue(ok);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('assign-select').querySelectorAll('option').length).toBeGreaterThan(1)
+    );
+    await userEvent.selectOptions(screen.getByTestId('assign-select'), '14');
+    await waitFor(() => expect(screen.getByTestId('justification-dialog')).toBeTruthy());
+    expect(screen.getByTestId('justification-dialog').textContent).toContain('Jean Tech');
+    await userEvent.click(screen.getByRole('button', { name: 'Annuler' }));
+    await waitFor(() => expect(screen.queryByTestId('justification-dialog')).toBeNull());
+    expect(assign).not.toHaveBeenCalled();
+    expect((screen.getByTestId('assign-select') as HTMLSelectElement).value).toBe('');
+  });
+
+  it('confirm stays disabled under 10 characters', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
+    await userEvent.click(screen.getByRole('button', { name: 'AJD' }));
+    await waitFor(() => expect(screen.getByTestId('justification-dialog')).toBeTruthy());
+    const confirm = screen.getByTestId('justification-confirm') as HTMLButtonElement;
+    fireEvent.change(screen.getByTestId('justification-text'), { target: { value: 'trop court' .slice(0, 9) } });
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('justification-text'), { target: { value: 'Dégât d’eau actif' } });
+    expect(confirm.disabled).toBe(false);
+  });
+
+  it('urgency, follow-up, next steps and cost all send the justification', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    const urgency = vi.spyOn(client, 'dispatchSetUrgency').mockResolvedValue(ok);
+    const follow = vi.spyOn(client, 'dispatchSetFollowUpDate').mockResolvedValue(ok);
+    const steps = vi.spyOn(client, 'dispatchSetNextSteps').mockResolvedValue(ok);
+    const cost = vi.spyOn(client, 'dispatchSetCost').mockResolvedValue(ok);
+    const { container } = wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
+    const expected = expect.objectContaining({ justification: expect.objectContaining({ input_method: 'typed' }) });
+
+    await userEvent.click(screen.getByRole('button', { name: 'AJD' }));
+    await justifyWith('Dégât d’eau actif chez le locataire');
+    await waitFor(() => expect(urgency).toHaveBeenCalledWith(1, expected));
+
+    const dates = container.querySelectorAll('input[type="date"]');
+    fireEvent.change(dates[1], { target: { value: '2026-11-03' } });
+    const apply = () => screen.getAllByRole('button', { name: /appliquer/i });
+    await userEvent.click(apply()[1]);
+    await justifyWith('Rappeler après la visite du plombier');
+    await waitFor(() => expect(follow).toHaveBeenCalledWith(1, expected));
+
+    fireEvent.change(container.querySelector('textarea:not([data-testid="log-text"])')!, { target: { value: 'Commander la pièce' } });
+    await userEvent.click(apply()[2]);
+    await justifyWith('Pièce introuvable sur place');
+    await waitFor(() => expect(steps).toHaveBeenCalledWith(1, expected));
+
+    fireEvent.change(container.querySelector('input[type="number"]')!, { target: { value: '250' } });
+    await userEvent.click(apply()[3]);
+    await justifyWith('Soumission du plombier reçue');
+    await waitFor(() => expect(cost).toHaveBeenCalledWith(1, expect.objectContaining({
+      estimated_cost: 250, justification: expect.anything(),
+    })));
+  });
+
+  it('choosing the current value does not open the prompt', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: { ...MOCK_REQUEST, urgency_tier: 'AJD' }, isPending: false, isError: false, error: null,
+    });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
+    await userEvent.click(screen.getByRole('button', { name: 'AJD' }));
+    expect(screen.queryByTestId('justification-dialog')).toBeNull();
   });
 });

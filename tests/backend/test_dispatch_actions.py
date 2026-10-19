@@ -26,6 +26,8 @@ _SECTOR = 1
 _DATE_A = str(date.today() + timedelta(days=5))
 _DATE_B = str(date.today() + timedelta(days=10))
 
+_JUST = {"text": "Justification de test valide", "input_method": "typed"}
+
 
 def _user(employee_id: int, *roles: str) -> CurrentUser:
     return CurrentUser(employee_id=employee_id, roles=frozenset(roles))
@@ -85,9 +87,9 @@ def test_assign_success(ac, test_request):
     assert r.json()["assigned_employee_id"] == _TECH
 
 
-def test_assign_without_justification_succeeds_no_log(ac, db_conn, test_request):
-    # Justification is optional — the modal was removed; omitting it assigns
-    # without writing a decision_justification_log row.
+def test_assign_without_justification_422_no_change(ac, db_conn, test_request):
+    # Justification is required on every dispatcher decision — omitting it is
+    # rejected before anything is written.
     c = ac(_user(_COORD, "coordinator"))
     r = c.post(f"/api/v1/requests/{test_request}/assign", json={
         "employee_id": _TECH,
@@ -95,8 +97,12 @@ def test_assign_without_justification_succeeds_no_log(ac, db_conn, test_request)
         "current_start_date": _DATE_A,
         "current_urgency_tier": None,
     })
-    assert r.status_code == 200
-    assert r.json()["assigned_employee_id"] == _TECH
+    assert r.status_code == 422
+    assigned = db_conn.execute(
+        "SELECT assigned_employee_id FROM maintenance_request WHERE request_id = %s",
+        [test_request],
+    ).fetchone()["assigned_employee_id"]
+    assert assigned is None
     n = db_conn.execute(
         "SELECT count(*) AS n FROM decision_justification_log WHERE request_id = %s",
         [test_request],
@@ -178,7 +184,7 @@ def test_assign_technician_403(ac, test_request):
     assert r.status_code == 403
 
 
-def test_assign_no_justification_422(ac, test_request):
+def test_assign_short_justification_422(ac, test_request):
     c = ac(_user(_COORD, "coordinator"))
     r = c.post(f"/api/v1/requests/{test_request}/assign", json={
         "employee_id": _TECH,
@@ -309,13 +315,14 @@ def test_set_urgency_technician_403(ac, test_request):
     assert r.status_code == 403
 
 
-# ── unjustified edits ─────────────────────────────────────────────────────────
+# ── follow-up date / next steps / cost ────────────────────────────────────────
 
 def test_set_follow_up_date_success(ac, test_request):
     c = ac(_user(_COORD, "coordinator"))
     r = c.post(f"/api/v1/requests/{test_request}/follow-up-date", json={
         "next_follow_up_date": _DATE_B,
         "current_next_follow_up_date": None,
+        "justification": _JUST,
     })
     assert r.status_code == 200
     assert r.json()["next_follow_up_date"] == _DATE_B
@@ -326,6 +333,7 @@ def test_set_follow_up_date_closed_409(ac, closed_request):
     r = c.post(f"/api/v1/requests/{closed_request}/follow-up-date", json={
         "next_follow_up_date": _DATE_B,
         "current_next_follow_up_date": None,
+        "justification": _JUST,
     })
     assert r.status_code == 409
 
@@ -335,6 +343,7 @@ def test_set_next_steps_success(ac, test_request):
     r = c.post(f"/api/v1/requests/{test_request}/next-steps", json={
         "next_steps": "Order part then schedule return visit",
         "current_next_steps": None,
+        "justification": _JUST,
     })
     assert r.status_code == 200
     assert r.json()["next_steps"] == "Order part then schedule return visit"
@@ -345,6 +354,7 @@ def test_set_cost_success(ac, test_request):
     r = c.post(f"/api/v1/requests/{test_request}/cost", json={
         "estimated_cost": "350.00",
         "current_estimated_cost": None,
+        "justification": _JUST,
     })
     assert r.status_code == 200
     assert float(r.json()["estimated_cost"]) == 350.0
@@ -355,15 +365,17 @@ def test_set_cost_negative_422(ac, test_request):
     r = c.post(f"/api/v1/requests/{test_request}/cost", json={
         "estimated_cost": "-10",
         "current_estimated_cost": None,
+        "justification": _JUST,
     })
     assert r.status_code == 422
 
 
-def test_unjustified_edits_write_provenance(ac, db_conn, test_request):
+def test_next_steps_writes_provenance(ac, db_conn, test_request):
     c = ac(_user(_COORD, "coordinator"))
     c.post(f"/api/v1/requests/{test_request}/next-steps", json={
         "next_steps": "Call tenant tomorrow",
         "current_next_steps": None,
+        "justification": _JUST,
     })
     row = db_conn.execute(
         "SELECT source_type, employee_id, target_column, previous_value, ingested_value "
@@ -515,6 +527,7 @@ def test_set_follow_up_date_stores_provenance(ac, db_conn, test_request):
     c.post(f"/api/v1/requests/{test_request}/follow-up-date", json={
         "next_follow_up_date": _DATE_B,
         "current_next_follow_up_date": None,
+        "justification": _JUST,
     })
     row = db_conn.execute(
         "SELECT source_type, employee_id, target_column FROM data_provenance "
@@ -531,6 +544,7 @@ def test_set_cost_stores_provenance(ac, db_conn, test_request):
     c.post(f"/api/v1/requests/{test_request}/cost", json={
         "estimated_cost": "500.00",
         "current_estimated_cost": None,
+        "justification": _JUST,
     })
     row = db_conn.execute(
         "SELECT source_type, employee_id, target_column FROM data_provenance "
@@ -703,20 +717,78 @@ def test_route_stores_justification(ac, db_conn, test_request):
     assert rows[0]["after_value"] == {"source_calendar": "st_maj"}
 
 
-def test_cost_without_justification_still_succeeds(ac, db_conn, test_request):
-    """Backward compatible: the field stays optional server-side."""
-    c = ac(_user(_COORD, "coordinator"))
-    r = c.post(f"/api/v1/requests/{test_request}/cost", json={
+# Valid body (minus justification) for each of the seven decision endpoints,
+# against the test_request fixture's initial state.
+_DECISIONS = {
+    "assign": ("assign", {
+        "employee_id": _TECH, "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A, "current_urgency_tier": None,
+    }),
+    "reschedule": ("reschedule", {
+        "start_date": _DATE_B, "current_start_date": _DATE_A,
+        "current_assigned_employee_id": None, "current_urgency_tier": None,
+    }),
+    "urgency": ("urgency", {
+        "urgency_tier": "AJD", "current_urgency_tier": None,
+        "current_assigned_employee_id": None, "current_start_date": _DATE_A,
+    }),
+    "follow-up-date": ("follow_up_date", {
+        "next_follow_up_date": _DATE_B, "current_next_follow_up_date": None,
+    }),
+    "next-steps": ("next_steps", {
+        "next_steps": "Commander la pièce", "current_next_steps": None,
+    }),
+    "cost": ("cost", {
         "estimated_cost": 90, "current_estimated_cost": None,
-    })
-    assert r.status_code == 200
-    assert _justification_rows(db_conn, test_request) == []
+    }),
+    "route": ("route", {
+        "source_calendar": "st_maj", "expected_source_calendar": None,
+    }),
+}
 
 
-def test_short_justification_on_next_steps_422(ac, test_request):
+@pytest.fixture
+def unrouted_request(db_conn, test_request):
+    db_conn.execute(
+        "UPDATE maintenance_request SET source_calendar = NULL WHERE request_id = %s", [test_request],
+    )
+    return test_request
+
+
+@pytest.mark.parametrize("endpoint", list(_DECISIONS))
+def test_decision_without_justification_422(ac, db_conn, unrouted_request, endpoint):
+    """The rule can't be bypassed by calling the API directly."""
+    _, body = _DECISIONS[endpoint]
     c = ac(_user(_COORD, "coordinator"))
-    r = c.post(f"/api/v1/requests/{test_request}/next-steps", json={
-        "next_steps": "x", "current_next_steps": None,
-        "justification": {"text": "court", "input_method": "typed"},
+    r = c.post(f"/api/v1/requests/{unrouted_request}/{endpoint}", json=body)
+    assert r.status_code == 422
+    assert _justification_rows(db_conn, unrouted_request) == []
+
+
+@pytest.mark.parametrize("endpoint", list(_DECISIONS))
+def test_decision_with_null_justification_422(ac, unrouted_request, endpoint):
+    _, body = _DECISIONS[endpoint]
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{unrouted_request}/{endpoint}", json={**body, "justification": None})
+    assert r.status_code == 422
+
+
+@pytest.mark.parametrize("endpoint", list(_DECISIONS))
+def test_decision_short_justification_422(ac, unrouted_request, endpoint):
+    _, body = _DECISIONS[endpoint]
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{unrouted_request}/{endpoint}", json={
+        **body, "justification": {"text": "court", "input_method": "typed"},
     })
     assert r.status_code == 422
+
+
+@pytest.mark.parametrize("endpoint", list(_DECISIONS))
+def test_decision_writes_exactly_one_justification(ac, db_conn, unrouted_request, endpoint):
+    decision_type, body = _DECISIONS[endpoint]
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{unrouted_request}/{endpoint}", json={**body, "justification": _JUST})
+    assert r.status_code == 200, r.text
+    rows = _justification_rows(db_conn, unrouted_request)
+    assert [row["decision_type"] for row in rows] == [decision_type]
+    assert rows[0]["justification_text"] == _JUST["text"]

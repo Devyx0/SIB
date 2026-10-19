@@ -8,6 +8,8 @@ import {
   triggerTriage, routeRequest,
 } from '../../api/client';
 import TriageFeedbackWidget from '../../components/TriageFeedbackWidget';
+import { useJustify, type JustifyRequest } from '../../components/Justification';
+import type { Justification } from '../../api/client';
 import {
   DecisionHistorySection, FollowupLogSection, VisitsSection,
 } from '../../components/RequestSections';
@@ -153,35 +155,136 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
     }
   }
 
+  // Every dispatcher decision is justified (voice or typed) before it is
+  // saved; cancelling the prompt leaves the call untouched.
+  const justify = useJustify();
+  async function decide(
+    req: JustifyRequest,
+    run: (j: Justification) => Promise<unknown>,
+    onCancel?: () => void,
+  ) {
+    const j = await justify(req);
+    if (!j) { onCancel?.(); return; }
+    await applyAndRefresh(() => run(j));
+  }
+
+  const NONE = t(lang, 'Aucun', 'None');
+  const employeeName = (id: number | null) =>
+    id == null
+      ? t(lang, 'Non assigné', 'Unassigned')
+      : (employees ?? []).find((e) => e.employee_id === id)?.nom_employe ?? `#${id}`;
+  const clip = (v: string | null | undefined) => (v && v.length > 60 ? `${v.slice(0, 57)}…` : v || NONE);
+
   function doAssign(employeeId: number | null) {
-    if (!data) return;
-    applyAndRefresh(() => dispatchAssign(requestId, {
-      employee_id: employeeId,
-      current_assigned_employee_id: data.assigned_employee_id,
-      current_start_date: data.start_date,
-      current_urgency_tier: data.urgency_tier,
-    }));
+    if (!data || employeeId === data.assigned_employee_id) return;
+    decide(
+      {
+        decision: t(lang, 'Assignation', 'Assignment'),
+        before: data.assigned_employee_name ?? employeeName(data.assigned_employee_id),
+        after: employeeName(employeeId),
+      },
+      (justification) => dispatchAssign(requestId, {
+        employee_id: employeeId,
+        current_assigned_employee_id: data.assigned_employee_id,
+        current_start_date: data.start_date,
+        current_urgency_tier: data.urgency_tier,
+        justification,
+      }),
+      () => setAssignEmpId(data.assigned_employee_id ?? null),
+    );
   }
 
   function doReschedule(date: string) {
-    if (!data) return;
-    applyAndRefresh(() => dispatchReschedule(requestId, {
-      start_date: date,
-      current_start_date: data.start_date,
-      current_assigned_employee_id: data.assigned_employee_id,
-      current_urgency_tier: data.urgency_tier,
-    }));
+    if (!data || date === data.start_date) return;
+    decide(
+      { decision: t(lang, 'Reprogrammation', 'Reschedule'), before: data.start_date, after: date },
+      (justification) => dispatchReschedule(requestId, {
+        start_date: date,
+        current_start_date: data.start_date,
+        current_assigned_employee_id: data.assigned_employee_id,
+        current_urgency_tier: data.urgency_tier,
+        justification,
+      }),
+    );
   }
 
   function doSetUrgency(tier: string | null) {
+    if (!data || tier === data.urgency_tier) return;
+    decide(
+      {
+        decision: t(lang, 'Urgence', 'Urgency'),
+        before: data.urgency_tier ?? t(lang, 'Aucune', 'None'),
+        after: tier ?? t(lang, 'Aucune', 'None'),
+      },
+      (justification) => dispatchSetUrgency(requestId, {
+        urgency_tier: tier as 'AJD' | 'ajd' | null,
+        current_urgency_tier: data.urgency_tier,
+        current_assigned_employee_id: data.assigned_employee_id,
+        current_start_date: data.start_date,
+        weather_evaluation_id: null,
+        justification,
+      }),
+    );
+  }
+
+  function doRoute(target: 'main' | 'st_maj') {
+    if (!data || target === data.source_calendar) return;
+    decide(
+      {
+        decision: t(lang, 'Acheminement', 'Routing'),
+        before: sourceCalendarLabel(lang, data.source_calendar),
+        after: sourceCalendarLabel(lang, target),
+      },
+      (justification) => routeRequest(requestId, {
+        source_calendar: target, expected_source_calendar: data.source_calendar, justification,
+      }),
+    );
+  }
+
+  function doFollowUpDate() {
     if (!data) return;
-    applyAndRefresh(() => dispatchSetUrgency(requestId, {
-      urgency_tier: tier as 'AJD' | 'ajd' | null,
-      current_urgency_tier: data.urgency_tier,
-      current_assigned_employee_id: data.assigned_employee_id,
-      current_start_date: data.start_date,
-      weather_evaluation_id: null,
-    }));
+    const next = followUpDate ?? data.next_follow_up_date;
+    if (next === data.next_follow_up_date) return;
+    decide(
+      { decision: t(lang, 'Prochain suivi', 'Next follow-up'), before: data.next_follow_up_date ?? NONE, after: next || NONE },
+      (justification) => dispatchSetFollowUpDate(requestId, {
+        next_follow_up_date: next || null,
+        current_next_follow_up_date: data.next_follow_up_date,
+        justification,
+      }),
+    );
+  }
+
+  function doNextSteps() {
+    if (!data) return;
+    const next = nextSteps ?? data.next_steps;
+    if ((next ?? '') === (data.next_steps ?? '')) return;
+    decide(
+      { decision: t(lang, 'Prochaines étapes', 'Next steps'), before: clip(data.next_steps), after: clip(next) },
+      (justification) => dispatchSetNextSteps(requestId, {
+        next_steps: next || null,
+        current_next_steps: data.next_steps,
+        justification,
+      }),
+    );
+  }
+
+  function doCost() {
+    if (!data) return;
+    const next = cost !== null && cost !== '' ? Number(cost) : cost === '' ? null : data.estimated_cost;
+    if (next === data.estimated_cost || (next != null && data.estimated_cost != null && Number(next) === Number(data.estimated_cost))) return;
+    decide(
+      {
+        decision: t(lang, 'Coût estimé', 'Estimated cost'),
+        before: data.estimated_cost != null ? formatCost(data.estimated_cost, lang) : NONE,
+        after: next != null ? formatCost(next, lang) : NONE,
+      },
+      (justification) => dispatchSetCost(requestId, {
+        estimated_cost: next,
+        current_estimated_cost: data.estimated_cost,
+        justification,
+      }),
+    );
   }
 
   // Detect ineligible (coordinator/director) current assignee for item 8
@@ -449,18 +552,14 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                         <button
                           className={styles.applyBtn}
                           data-testid="route-majordome"
-                          onClick={() => applyAndRefresh(() =>
-                            routeRequest(requestId, { source_calendar: 'st_maj', expected_source_calendar: data.source_calendar })
-                          )}
+                          onClick={() => doRoute('st_maj')}
                         >
                           {t(lang, 'Envoyer à Majordome', 'Send to Butler')}
                         </button>
                         <button
                           className={styles.applyBtn}
                           data-testid="route-principal"
-                          onClick={() => applyAndRefresh(() =>
-                            routeRequest(requestId, { source_calendar: 'main', expected_source_calendar: data.source_calendar })
-                          )}
+                          onClick={() => doRoute('main')}
                         >
                           {t(lang, 'Garder sur Principal', 'Keep on Main')}
                         </button>
@@ -568,10 +667,7 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                         <button
                           className={styles.applyBtn}
                           disabled={isClosed}
-                          onClick={() => applyAndRefresh(() => dispatchSetFollowUpDate(requestId, {
-                            next_follow_up_date: followUpDate ?? data.next_follow_up_date,
-                            current_next_follow_up_date: data.next_follow_up_date,
-                          }))}
+                          onClick={doFollowUpDate}
                         >
                           {t(lang, 'Appliquer', 'Apply')}
                         </button>
@@ -590,10 +686,7 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                         <button
                           className={styles.applyBtn}
                           disabled={isClosed}
-                          onClick={() => applyAndRefresh(() => dispatchSetNextSteps(requestId, {
-                            next_steps: nextSteps ?? data.next_steps,
-                            current_next_steps: data.next_steps,
-                          }))}
+                          onClick={doNextSteps}
                         >
                           {t(lang, 'Appliquer', 'Apply')}
                         </button>
@@ -614,10 +707,7 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                         <button
                           className={styles.applyBtn}
                           disabled={isClosed}
-                          onClick={() => applyAndRefresh(() => dispatchSetCost(requestId, {
-                            estimated_cost: cost !== null && cost !== '' ? Number(cost) : null,
-                            current_estimated_cost: data.estimated_cost,
-                          }))}
+                          onClick={doCost}
                         >
                           {t(lang, 'Appliquer', 'Apply')}
                         </button>

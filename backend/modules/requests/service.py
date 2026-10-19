@@ -213,6 +213,16 @@ def _norm_urgency(v: Any) -> str | None:
 
 # ── Dispatch actions ───────────────────────────────────────────────────────────
 
+def _write_justification(conn, request_id: int, user: CurrentUser, body, *,
+                         decision_type: str, before_value: dict, after_value: dict) -> None:
+    """Log the decision's justification — required on every dispatcher decision."""
+    repo.write_justification(conn,
+        request_id=request_id, employee_id=user.employee_id, decision_type=decision_type,
+        before_value=before_value, after_value=after_value,
+        text=body.justification.text, input_method=body.justification.input_method,
+    )
+
+
 def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) -> RequestDetail:
     row = _lock_or_404(conn, request_id)
     _check_not_closed(row)
@@ -228,13 +238,10 @@ def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) ->
         raise ValidationFailed("Employee must be an active technician or contractor")
 
     repo.update_field(conn, request_id, "assigned_employee_id", body.employee_id)
-    if body.justification is not None:
-        repo.write_justification(conn,
-            request_id=request_id, employee_id=user.employee_id, decision_type="assign",
-            before_value={"assigned_employee_id": row["assigned_employee_id"]},
-            after_value={"assigned_employee_id": body.employee_id},
-            text=body.justification.text, input_method=body.justification.input_method,
-        )
+    _write_justification(conn, request_id, user, body, decision_type="assign",
+        before_value={"assigned_employee_id": row["assigned_employee_id"]},
+        after_value={"assigned_employee_id": body.employee_id},
+    )
     repo.write_provenance(conn,
         target_table="maintenance_request", target_pk=str(request_id),
         target_column="assigned_employee_id", employee_id=user.employee_id,
@@ -253,13 +260,10 @@ def action_reschedule(conn, request_id: int, body: RescheduleBody, user: Current
         raise StaleDataError()
 
     repo.update_field(conn, request_id, "start_date", body.start_date)
-    if body.justification is not None:
-        repo.write_justification(conn,
-            request_id=request_id, employee_id=user.employee_id, decision_type="reschedule",
-            before_value={"start_date": _to_str(row["start_date"])},
-            after_value={"start_date": str(body.start_date)},
-            text=body.justification.text, input_method=body.justification.input_method,
-        )
+    _write_justification(conn, request_id, user, body, decision_type="reschedule",
+        before_value={"start_date": _to_str(row["start_date"])},
+        after_value={"start_date": str(body.start_date)},
+    )
     repo.write_provenance(conn,
         target_table="maintenance_request", target_pk=str(request_id),
         target_column="start_date", employee_id=user.employee_id,
@@ -291,31 +295,16 @@ def action_set_urgency(conn, request_id: int, body: SetUrgencyBody, user: Curren
             }
 
     repo.update_field(conn, request_id, "urgency_tier", body.urgency_tier)
-    if body.justification is not None:
-        repo.write_justification(conn,
-            request_id=request_id, employee_id=user.employee_id, decision_type="urgency",
-            before_value={"urgency_tier": row["urgency_tier"]},
-            after_value=after_value,
-            text=body.justification.text, input_method=body.justification.input_method,
-        )
+    _write_justification(conn, request_id, user, body, decision_type="urgency",
+        before_value={"urgency_tier": row["urgency_tier"]},
+        after_value=after_value,
+    )
     repo.write_provenance(conn,
         target_table="maintenance_request", target_pk=str(request_id),
         target_column="urgency_tier", employee_id=user.employee_id,
         previous_value=row["urgency_tier"], new_value=body.urgency_tier,
     )
     return _after_action(conn, request_id, user)
-
-
-def _write_optional_justification(conn, request_id: int, user: CurrentUser, body, *,
-                                  decision_type: str, before_value: dict, after_value: dict) -> None:
-    """Log the decision's justification when the caller sent one."""
-    if body.justification is None:
-        return
-    repo.write_justification(conn,
-        request_id=request_id, employee_id=user.employee_id, decision_type=decision_type,
-        before_value=before_value, after_value=after_value,
-        text=body.justification.text, input_method=body.justification.input_method,
-    )
 
 
 def action_set_follow_up_date(conn, request_id: int, body: SetFollowUpDateBody, user: CurrentUser) -> RequestDetail:
@@ -325,7 +314,7 @@ def action_set_follow_up_date(conn, request_id: int, body: SetFollowUpDateBody, 
         raise StaleDataError()
 
     repo.update_field(conn, request_id, "next_follow_up_date", body.next_follow_up_date)
-    _write_optional_justification(conn, request_id, user, body, decision_type="follow_up_date",
+    _write_justification(conn, request_id, user, body, decision_type="follow_up_date",
         before_value={"next_follow_up_date": _to_str(row["next_follow_up_date"])},
         after_value={"next_follow_up_date": _to_str(body.next_follow_up_date)},
     )
@@ -345,7 +334,7 @@ def action_set_next_steps(conn, request_id: int, body: SetNextStepsBody, user: C
         raise StaleDataError()
 
     repo.update_field(conn, request_id, "next_steps", body.next_steps)
-    _write_optional_justification(conn, request_id, user, body, decision_type="next_steps",
+    _write_justification(conn, request_id, user, body, decision_type="next_steps",
         before_value={"next_steps": row["next_steps"]},
         after_value={"next_steps": body.next_steps},
     )
@@ -367,7 +356,7 @@ def action_set_cost(conn, request_id: int, body: SetCostBody, user: CurrentUser)
         raise StaleDataError()
 
     repo.update_field(conn, request_id, "estimated_cost", body.estimated_cost)
-    _write_optional_justification(conn, request_id, user, body, decision_type="cost",
+    _write_justification(conn, request_id, user, body, decision_type="cost",
         before_value={"estimated_cost": _to_str(current_db)},
         after_value={"estimated_cost": _to_str(body.estimated_cost)},
     )
@@ -611,7 +600,7 @@ def action_route(conn, request_id: int, body: RouteBody, user: CurrentUser) -> R
         old_source_calendar=row["source_calendar"],
         employee_id=user.employee_id,
     )
-    _write_optional_justification(conn, request_id, user, body, decision_type="route",
+    _write_justification(conn, request_id, user, body, decision_type="route",
         before_value={"source_calendar": row["source_calendar"]},
         after_value={"source_calendar": body.source_calendar},
     )
