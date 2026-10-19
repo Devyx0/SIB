@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRequest } from '../../hooks/useRequest';
-import { goEnRoute, ApiError } from '../../api/client';
+import { goEnRoute, ApiError, GENERIC_ERROR_FR } from '../../api/client';
 import type { MeResponse, RequestDetail } from '../../api/schema.d.ts';
 import type { Lang } from '../../i18n';
 import { t, statusLabel } from '../../i18n';
@@ -69,7 +69,7 @@ export default function TechCallView({ lang, me, onSignOut }: Props) {
         const d = e.details as { open_request_title?: string | null } | null;
         setEnRouteError(d?.open_request_title ? `${e.message} (${d.open_request_title})` : e.message);
       } else {
-        setEnRouteError(String(e));
+        setEnRouteError(GENERIC_ERROR_FR);
       }
     } finally {
       setBusy(false);

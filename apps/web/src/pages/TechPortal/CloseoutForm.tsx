@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRequest } from '../../hooks/useRequest';
-import { uploadPhoto, closeoutRequest, ApiError } from '../../api/client';
+import { uploadPhoto, closeoutRequest, ApiError, GENERIC_ERROR_FR } from '../../api/client';
 import type { MeResponse } from '../../api/schema.d.ts';
 import type { Lang } from '../../i18n';
 import { t, closeoutOutcomeLabel } from '../../i18n';
@@ -76,7 +76,7 @@ export default function CloseoutForm({ lang, me, onSignOut }: Props) {
       const { attachment_id } = await uploadPhoto(req.request_id, file);
       setPhotos((p) => [...p, { attachment_id, objectUrl: URL.createObjectURL(file) }]);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : String(err));
+      setError(err instanceof ApiError ? err.message : GENERIC_ERROR_FR);
     } finally {
       setBusy(false);
     }
@@ -103,7 +103,7 @@ export default function CloseoutForm({ lang, me, onSignOut }: Props) {
       qc.invalidateQueries({ queryKey: ['request', req.request_id] });
       navigate('/tech');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : String(err));
+      setError(err instanceof ApiError ? err.message : GENERIC_ERROR_FR);
     } finally {
       setBusy(false);
     }

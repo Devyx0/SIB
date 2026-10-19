@@ -2,6 +2,9 @@ import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, Buildin
 export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation };
 import { supabase } from '../lib/supabase';
 
+// The portal never shows English generic errors — unknown failures map to this.
+export const GENERIC_ERROR_FR = 'Une erreur est survenue — réessayez';
+
 export class ApiError extends Error {
   constructor(
     public readonly code: string,
@@ -51,7 +54,7 @@ async function request<T>(path: string, method: string, body?: unknown): Promise
 
   if (!res.ok) {
     let code = `HTTP_${res.status}`;
-    let message = res.statusText;
+    let message = GENERIC_ERROR_FR;
     let traceId: string | undefined;
     let details: unknown;
     try {
@@ -126,7 +129,7 @@ export async function uploadPhoto(id: number, file: File): Promise<{ attachment_
   if (session?.access_token) headers['authorization'] = `Bearer ${session.access_token}`;
   const res = await fetch(`/api/v1/requests/${id}/photos`, { method: 'POST', headers, body: file });
   if (!res.ok) {
-    let message = res.statusText;
+    let message = GENERIC_ERROR_FR;
     try { message = (await res.json())?.error?.message ?? message; } catch { /* ignore */ }
     throw new ApiError(`HTTP_${res.status}`, message);
   }
