@@ -34,6 +34,7 @@ from .schemas import (
     SetUrgencyBody,
     SortKey,
     StatusValue,
+    TriageTriggerBody,
     UnitLookup,
 )
 
@@ -154,14 +155,14 @@ def lookup_buildings(
     return [BuildingLookup(**r) for r in repo.list_buildings(conn, sector_id)]
 
 
-def _run_triage_background(request_id: int) -> None:
+def _run_triage_background(request_id: int, lang: str = "fr") -> None:
     import logging
     from backend.core.db import get_legacy_conn
     from backend.triage.service import triage
     log = logging.getLogger("backend.triage.bg")
     conn = get_legacy_conn()
     try:
-        triage(conn, request_id)
+        triage(conn, request_id, lang=lang)
     except Exception as exc:
         log.exception("Unhandled error in triage background for request %s", request_id)
         try:
@@ -184,11 +185,12 @@ def _run_triage_background(request_id: int) -> None:
 def request_trigger_triage(
     request_id: int,
     background_tasks: BackgroundTasks,
+    body: TriageTriggerBody = TriageTriggerBody(),
     user: CurrentUser = _COORD_DIR,
     conn=Depends(get_db_conn),
 ) -> dict:
     service.action_trigger_triage(conn, request_id)
-    background_tasks.add_task(_run_triage_background, request_id)
+    background_tasks.add_task(_run_triage_background, request_id, body.lang)
     return {"request_id": request_id, "status": "triage_pending"}
 
 

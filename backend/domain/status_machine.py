@@ -10,8 +10,7 @@ Source annotations
   proposed      — no writer exists yet; will need a coordinator endpoint
   unreachable   — in the enum but no code can reach it under current rules
 
-F1 finding: triage/service.py never writes triage_clarify or triage_proposal.
-  triage_clarify  is mentioned in the docstring as a future structural-blocker path.
+F1 finding: triage/service.py writes triage_clarify when a housing unit has no active lease.
   triage_proposal is blocked by rule 37 (dispatcher-suggestion feature deferred).
 
 See docs/status-machine-proposal.md for the 0002 migration proposal
@@ -35,7 +34,7 @@ _TRANSITIONS: dict[str, frozenset[str]] = {
     # (triage/service.py:221) sets status unconditionally — it would overwrite
     # en_route. The en-route endpoint returns 409 « Triage en cours » instead.
     "triage_pending":  frozenset({"triaged", "triage_failed",
-                                  "triage_clarify"}),  # triage_clarify: proposed path, no writer yet
+                                  "triage_clarify"}),  # no active lease: triage/service.py
 
     # ── Coordinator / technician actions ──────────────────────────────────────
     "triage_clarify":  frozenset({"intake_received", "en_route"}),  # proposed: coordinator resets blocked row

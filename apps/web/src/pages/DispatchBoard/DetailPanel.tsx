@@ -5,7 +5,7 @@ import {
   ApiError, fetchEmployees,
   dispatchAssign, dispatchReschedule, dispatchSetUrgency,
   dispatchSetFollowUpDate, dispatchSetNextSteps, dispatchSetCost, dispatchAddLog,
-  triggerTriage, routeRequest,
+  triggerTriage,
 } from '../../api/client';
 import TriageFeedbackWidget from '../../components/TriageFeedbackWidget';
 import {
@@ -209,7 +209,7 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                 <dd className={styles.mono}>{data.asnu ?? '—'}</dd>
 
                 <dt>{t(lang, 'Urgence', 'Urgency')}</dt>
-                <dd>{data.urgency_tier ?? '—'}</dd>
+                <dd>{data.urgency_tier ?? t(lang, 'non urgente', 'not urgent')}</dd>
 
                 <dt>{t(lang, 'Statut', 'Status')}</dt>
                 <dd>{statusLabel(lang, data.status)}</dd>
@@ -385,7 +385,7 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                         onClick={async () => {
                           setTriageTimeout(false);
                           try {
-                            await triggerTriage(requestId);
+                            await triggerTriage(requestId, { lang });
                             qc.invalidateQueries({ queryKey: ['request', requestId] });
                             setPolling(true);
                           } catch (err) {
@@ -398,33 +398,6 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                       </button>
                     </>
                   )}
-                </section>
-              )}
-
-              {/* Routing buttons — available for all triaged calls (including re-route) */}
-              {isEditor && data.status === 'triaged' && (
-                <section className={styles.editSection} data-testid="routing-section">
-                  <h3 className={styles.editSectionHeading}>{t(lang, 'Acheminer vers', 'Route to')}</h3>
-                  <div className={styles.urgencyPills}>
-                    <button
-                      className={styles.applyBtn}
-                      data-testid="route-majordome"
-                      onClick={() => applyAndRefresh(() =>
-                        routeRequest(requestId, { source_calendar: 'st_maj', expected_source_calendar: data.source_calendar })
-                      )}
-                    >
-                      {t(lang, 'Envoyer à Majordome', 'Send to Butler')}
-                    </button>
-                    <button
-                      className={styles.applyBtn}
-                      data-testid="route-principal"
-                      onClick={() => applyAndRefresh(() =>
-                        routeRequest(requestId, { source_calendar: 'main', expected_source_calendar: data.source_calendar })
-                      )}
-                    >
-                      {t(lang, 'Garder sur Principal', 'Keep on Main')}
-                    </button>
-                  </div>
                 </section>
               )}
 

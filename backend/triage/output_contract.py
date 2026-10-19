@@ -22,7 +22,7 @@ OUTPUT_SCHEMA = {
     "problems": "list[str]",
     "entry_permission": "str | null",
     "animals": "str | null",
-    "urgency_tier": "AJD | null",
+    "urgency_tier": "AJD | ajd | null",
     "heating_failure": "bool | null",
     "complexity_tier": "C1|C2|C3|C4",
     "congestion_level": "N1|N2|N3|N4|N5",
@@ -72,6 +72,50 @@ _PARKING_BAY = re.compile(r"\b(stationnement|borne|espace)\s+$", re.IGNORECASE)
 # "voir fiche Chamonix 1175" — model citing a technical sheet by building number
 _FICHE_REF = re.compile(r"\bfiche\b", re.IGNORECASE)
 
+# Rule 28: title prefix must match urgency_tier. Rule 37: no employee initials in prose.
+_URGENCY_VALUES = frozenset({None, "AJD", "ajd"})
+_TITLE_AJD = re.compile(r"AJD\b")
+_TITLE_ajd = re.compile(r"ajd\b")
+_INITIALS = re.compile(r"\b[A-Z]{2,4}\b")
+# Operational tokens that are not employee initials.
+_INITIALS_OK = frozenset({
+    "AJD", "ASNU", "SDB", "WC", "AC", "BBQ", "LED", "PVC", "TAL", "CVAC",
+    "NB", "OK", "GFCI", "AMP", "USB", "TV", "HD", "NIP",
+    # Roman numerals / street tokens that appear in Québec addresses
+    "II", "III", "IV", "VI", "VII", "VIII", "IX", "XI", "XII", "XIII",
+})
+
+
+_PEST_TEXT = re.compile(
+    r"extermin|coquerelle|punais|fourmi|gu[eê]pe|vermine|souris|rat\b",
+    re.IGNORECASE,
+)
+_PLUMBING_TEXT = re.compile(r"plomberie|plombier|colonne d'eau|refoulement", re.IGNORECASE)
+
+
+def _vendor_kind(name: str) -> str | None:
+    n = name or ""
+    if not n.strip():
+        return None
+    if re.search(r"body\s*gym", n, re.IGNORECASE):
+        return "body_gym"
+    if re.search(r"duclos", n, re.IGNORECASE):
+        return "duclos"
+    if re.search(r"[eé]ric", n, re.IGNORECASE):
+        return "eric"
+    if re.search(r"fortin", n, re.IGNORECASE):
+        return "fortin"
+    return "other"
+
+
+def _title_urgency(title: str | None) -> str | None:
+    t = (title or "").lstrip()
+    if _TITLE_AJD.match(t):
+        return "AJD"
+    if _TITLE_ajd.match(t):
+        return "ajd"
+    return None
+
 
 def _text_fields(parsed: dict) -> list[str]:
     out = []
@@ -97,7 +141,14 @@ def parse_response(raw: str) -> dict:
         raise ValidationError(f"JSON parse failed: {exc}") from exc
 
 
-def validate(parsed: dict, conn, request_id: int) -> tuple[str, str | None]:
+def validate(
+    parsed: dict,
+    conn,
+    request_id: int,
+    *,
+    expected_congestion: str | None = None,
+    required_notes: list[str] | None = None,
+) -> tuple[str, str | None]:
     """
     Run all gates in order. Returns (result, detail).
     result: 'accepted' | 'rejected_<gate>' | 'error'
@@ -106,6 +157,12 @@ def validate(parsed: dict, conn, request_id: int) -> tuple[str, str | None]:
     # Gate 1 — no assignee field (rule 20/37)
     if any("assign" in k.lower() for k in parsed):
         return "rejected_no_assignee_field", "Response contains an assignee field"
+
+    urgency = parsed.get("urgency_tier")
+    if urgency not in _URGENCY_VALUES:
+        return "rejected_invalid_urgency", f"urgency_tier must be AJD, ajd, or null, got {urgency!r}"
+    if _title_urgency(parsed.get("title")) != urgency:
+        return "rejected_urgency_title", "title urgency prefix does not match urgency_tier"
 
     text_fields = _text_fields(parsed)
 
@@ -154,46 +211,155 @@ def validate(parsed: dict, conn, request_id: int) -> tuple[str, str | None]:
                     continue  # physical parking bay label (e.g. "stationnement A5")
             return "rejected_internal_vocabulary", f"Internal vocabulary {tok!r} in text"
 
-    # Gate 6 — routing_rule consistent with subcontractor_name (rule 6b)
+    # Gate 5b — no employee initials in prose (rule 37)
+    for t in text_fields:
+        for m in _INITIALS.finditer(t):
+            if m.group() not in _INITIALS_OK:
+                return "rejected_assignee_initials", f"Employee-style initials {m.group()!r} in text"
+
+    # Gate 6 — exclusive vendors match the routing rule (skill §10)
     routing = parsed.get("routing_rule", "")
     sub = parsed.get("subcontractor_name") or ""
-    if routing == "A2":
-        if not re.search(r"body\s*gym|gym", sub, re.IGNORECASE):
-            return "rejected_routing_inconsistent", f"A2 requires Body Gym, got {sub!r}"
-    elif routing in ("A3", "A3b"):
-        if not sub or re.search(r"body\s*gym", sub, re.IGNORECASE):
-            return "rejected_routing_inconsistent", f"{routing} requires non-Body-Gym subcontractor, got {sub!r}"
-    elif routing == "A1":
-        # A1 = C1 tasks (key deposits, simple checks) — no external vendor plausible
-        if sub and not sub.lower().startswith("non"):
-            return "rejected_routing_inconsistent", f"A1 expects no subcontractor, got {sub!r}"
-    # A0 + subcontractor is valid: guide defines A0 as coordinator for subcontractor work
-    # (section 6b: "coordination d'un sous-traitant (Body Gym, Duclos, Fortin, Éric…)")
+    kind = _vendor_kind(sub)
+    blob = " ".join(text_fields)
+    if routing == "A2" and kind != "body_gym":
+        return "rejected_routing_inconsistent", f"A2 requires Body Gym, got {sub!r}"
+    if routing == "A3" and kind != "duclos":
+        return "rejected_routing_inconsistent", f"A3 (certain replacement) requires Duclos, got {sub!r}"
+    if routing == "A3b" and kind is not None:
+        return "rejected_routing_inconsistent", f"A3b diagnoses first — no subcontractor, got {sub!r}"
+    if routing == "A4" and _PEST_TEXT.search(blob) and kind != "eric":
+        return "rejected_routing_inconsistent", f"A4 extermination requires Éric, got {sub!r}"
+    if (
+        parsed.get("complexity_tier") == "C4"
+        and _PLUMBING_TEXT.search(blob)
+        and kind != "fortin"
+    ):
+        return "rejected_routing_inconsistent", f"C4 plumbing requires Fortin, got {sub!r}"
+    if kind == "body_gym" and routing != "A2":
+        return "rejected_routing_inconsistent", f"Body Gym is A2 only, got {routing}"
+    if kind == "duclos" and routing != "A3":
+        return "rejected_routing_inconsistent", f"Duclos is A3 only, got {routing}"
+    if kind == "eric" and routing != "A4":
+        return "rejected_routing_inconsistent", f"Éric is A4 only, got {routing}"
+    if routing == "A1" and kind is not None:
+        return "rejected_routing_inconsistent", f"A1 expects no subcontractor, got {sub!r}"
 
-    # Gate 7 — addition verdict must reference a non-closed request (rule 12)
-    if parsed.get("verdict") == "addition":
+    if expected_congestion and parsed.get("congestion_level") != expected_congestion:
+        return (
+            "rejected_congestion",
+            f"congestion_level must be {expected_congestion}, got {parsed.get('congestion_level')!r}",
+        )
+
+    if required_notes:
+        notes = parsed.get("other_notes") or ""
+        missing = [p for p in required_notes if p not in notes]
+        if missing:
+            return "rejected_rentroll", f"other_notes missing {missing!r}"
+
+    # Gate 7 — duplicate / addition must cite an open same-unit call (rule 12)
+    verdict = parsed.get("verdict")
+    if verdict == "single":
+        if parsed.get("duplicate_of_request_id") is not None or parsed.get("addition_to_request_id") is not None:
+            return "rejected_invalid_verdict_refs", "single verdict must not set duplicate/addition refs"
+    elif verdict == "duplicate":
+        ref_id = parsed.get("duplicate_of_request_id")
+        if not isinstance(ref_id, int):
+            return "rejected_invalid_duplicate_ref", "duplicate_of_request_id missing or not an integer"
+        if ref_id == request_id:
+            return "rejected_invalid_duplicate_ref", "duplicate_of_request_id references the request itself"
+        title = parsed.get("title") or ""
+        if not re.search(r"DOUBLON\s+POTENTIEL", title, re.IGNORECASE):
+            return "rejected_missing_doublon_mark", "duplicate title must contain DOUBLON POTENTIEL"
+        if conn is not None:
+            ok, detail = _check_dup_add_ref(
+                conn, request_id, ref_id, expect_same_problem=True, parsed=parsed,
+            )
+            if not ok:
+                return "rejected_invalid_duplicate_ref", detail
+    elif verdict == "addition":
         ref_id = parsed.get("addition_to_request_id")
         if not isinstance(ref_id, int):
             return "rejected_invalid_addition_ref", "addition_to_request_id missing or not an integer"
         if ref_id == request_id:
             return "rejected_invalid_addition_ref", "addition_to_request_id references the request itself"
         if conn is not None:
-            try:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT status FROM maintenance_request WHERE request_id = %s",
-                        (ref_id,),
-                    )
-                    row = cur.fetchone()
-                if row is None:
-                    return "rejected_invalid_addition_ref", f"addition_to_request_id {ref_id} not found"
-                status = row[0] if isinstance(row, tuple) else row["status"]
-                if status == "closed":
-                    return "rejected_invalid_addition_ref", f"addition_to_request_id {ref_id} is closed"
-            except Exception as exc:
-                return "error", f"DB lookup failed: {exc}"
+            ok, detail = _check_dup_add_ref(
+                conn, request_id, ref_id, expect_same_problem=False, parsed=parsed,
+            )
+            if not ok:
+                return "rejected_invalid_addition_ref", detail
+    else:
+        return "rejected_invalid_verdict", f"verdict must be single|duplicate|addition, got {verdict!r}"
 
     return "accepted", None
+
+
+def _check_dup_add_ref(
+    conn, request_id: int, ref_id: int, *, expect_same_problem: bool, parsed: dict,
+) -> tuple[bool, str | None]:
+    """Same unit, not closed; same_problem for duplicate, different for addition."""
+    from .context_builder import problem_text, same_problem
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT request_id, unit_id, status::text AS status,
+                       raw_title, problems, problem_summary
+                FROM maintenance_request WHERE request_id = %s
+                """,
+                (request_id,),
+            )
+            cur_row = cur.fetchone()
+            cur.execute(
+                """
+                SELECT request_id, unit_id, status::text AS status,
+                       raw_title, problems, problem_summary
+                FROM maintenance_request WHERE request_id = %s
+                """,
+                (ref_id,),
+            )
+            ref_row = cur.fetchone()
+    except Exception as exc:
+        return False, f"DB lookup failed: {exc}"
+
+    if cur_row is None:
+        return False, f"request {request_id} not found"
+    if ref_row is None:
+        return False, f"referenced request {ref_id} not found"
+
+    def _get(row, key, idx):
+        if isinstance(row, dict):
+            return row.get(key)
+        return row[idx]
+
+    cur_unit = _get(cur_row, "unit_id", 1)
+    ref_unit = _get(ref_row, "unit_id", 1)
+    ref_status = _get(ref_row, "status", 2)
+    if ref_status == "closed":
+        return False, f"referenced request {ref_id} is closed"
+    if cur_unit is not None and ref_unit is not None and cur_unit != ref_unit:
+        return False, f"referenced request {ref_id} is not the same unit"
+
+    # Prefer model title/problems for the incoming call; DB for the open peer.
+    incoming = problem_text({
+        "title": parsed.get("title"),
+        "problems": parsed.get("problems"),
+        "raw_title": _get(cur_row, "raw_title", 3),
+        "problem_summary": _get(cur_row, "problem_summary", 5),
+    })
+    peer = problem_text({
+        "raw_title": _get(ref_row, "raw_title", 3),
+        "problems": _get(ref_row, "problems", 4),
+        "problem_summary": _get(ref_row, "problem_summary", 5),
+    })
+    is_same = same_problem(incoming, peer)
+    if expect_same_problem and not is_same:
+        return False, f"duplicate requires same problem as #{ref_id}"
+    if not expect_same_problem and is_same:
+        return False, f"addition requires a different problem than #{ref_id}"
+    return True, None
 
 
 if __name__ == "__main__":

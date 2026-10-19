@@ -150,6 +150,11 @@ class AddLogBody(BaseModel):
     entry_text: str = Field(..., min_length=1)
 
 
+class TriageTriggerBody(BaseModel):
+    """Optional UI language for AI-written text fields (title, problems, notes)."""
+    lang: Literal["fr", "en"] = "fr"
+
+
 class RouteBody(BaseModel):
     source_calendar: Literal["main", "st_maj"]
     expected_source_calendar: Optional[Literal["main", "st_maj"]]  # required; null = caller expected unrouted state

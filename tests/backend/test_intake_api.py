@@ -83,10 +83,12 @@ def test_coordinator_can_create(ac, db_conn):
     assert body["building_id"] == loc["building_id"]
     assert body["unit_id"] == loc["unit_id"]
     row = db_conn.execute(
-        "SELECT sector_id, status FROM maintenance_request WHERE request_id = %s",
+        "SELECT sector_id, status, source_calendar FROM maintenance_request WHERE request_id = %s",
         [body["request_id"]],
     ).fetchone()
     assert row["sector_id"] == loc["sector_id"]
+    # 1580 Perigord is Sainte-Foy → Main calendar (not Majordome / Lévis)
+    assert row["source_calendar"] == "main"
 
 
 def test_director_can_create(ac, db_conn):
@@ -172,6 +174,24 @@ def test_manual_create_writes_raw_caller_body(ac, db_conn):
     assert "problems" in body
     assert "entry_permission" in body
     assert "animals" in body
+
+
+def test_manual_create_uses_today_as_start_date(ac, db_conn, monkeypatch):
+    """Board date = day the call came in (America/Toronto), not null / not next Saturday."""
+    from datetime import date
+    from backend.core import utils as core_utils
+    monkeypatch.setattr(core_utils, "today_local", lambda: date(2026, 10, 19))
+    loc = _perigord(db_conn)
+    _ensure_coord_sector(db_conn, loc["sector_id"])
+    r = ac(_user(_COORD, "coordinator")).post("/api/v1/intake", json=_valid_body(db_conn))
+    assert r.status_code == 201
+    rid = r.json()["request_id"]
+    row = db_conn.execute(
+        "SELECT start_date, source_calendar FROM maintenance_request WHERE request_id = %s",
+        [rid],
+    ).fetchone()
+    assert row["start_date"] == date(2026, 10, 19)
+    assert row["source_calendar"] in ("main", "st_maj")
 
 
 def test_animals_bundled_in_problems(ac, db_conn):

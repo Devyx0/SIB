@@ -142,6 +142,11 @@ def apply_triage_escalation(parsed: dict, request_id: int) -> None:
         if _RANK.get(ev.suggested_tier, 0) <= _RANK.get(parsed.get("urgency_tier"), 0):
             return
         parsed["urgency_tier"] = ev.suggested_tier
+        title = (parsed.get("title") or "").lstrip()
+        if ev.suggested_tier == "AJD" and not title.startswith("AJD"):
+            parsed["title"] = f"AJD {title}".strip()
+        elif ev.suggested_tier == "ajd" and not title.startswith(("AJD", "ajd")):
+            parsed["title"] = f"ajd {title}".strip()
         note = (
             f"Escalade météo automatique : minimum prévu sur 24 h de {ev.min_forecast_temp_24h_c:g} °C"
             f" (palier {_BAND_FR.get(ev.band_name, ev.band_name)}) —"

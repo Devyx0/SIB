@@ -229,7 +229,11 @@ export default function DispatchBoard({ lang, me }: Props) {
       {(data?.unscheduled_items?.length ?? 0) > 0 && (
         <div className={styles.tableWrap} data-testid="unscheduled-group">
           <h2 className={styles.groupHeading}>
-            {t(lang, `À planifier (${data!.unscheduled_items.length})`, `To schedule (${data!.unscheduled_items.length})`)}
+            {t(
+              lang,
+              `À traiter — sans date (${data!.unscheduled_items.length})`,
+              `Needs attention — no date yet (${data!.unscheduled_items.length})`,
+            )}
           </h2>
           <RequestTable
             lang={lang}

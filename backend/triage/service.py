@@ -9,7 +9,7 @@ Status machine:
 triage_clarify vs triage_failed:
     triage_failed  = transient error (API down, model produced invalid JSON, gate rejection).
                      The retry loop picks these up automatically.
-    triage_clarify = structural blocker (unit unresolvable, address ambiguous). Retrying
+    triage_clarify = structural blocker (no active lease, unit unresolvable). Retrying
                      produces the same result every time. The row stays triage_clarify until
                      a coordinator resolves the ambiguity and resets it to intake_received.
                      This function explicitly skips triage_clarify rows.
@@ -75,16 +75,30 @@ def _format_context(ctx: dict) -> str:
     if req.get("ft_link"):
         parts.append(f"Fiche technique : {req['ft_link']}")
 
-    # Unit
+    # Unit + RRIA cross-checks (rule 21)
     parts.append("\n## Unité")
     unit = ctx.get("unit")
-    if unit is None:
-        parts.append("⚠ Aucun bail actif trouvé — contexte locataire indisponible.")
+    rr = ctx.get("rentroll") or {}
+    if rr.get("lease_missing"):
+        parts.append("⚠ Aucun bail actif — triage bloqué, clarification humaine.")
+    elif unit is None:
+        parts.append("Pas d'unité de logement — bail non applicable.")
     else:
         parts.append(f"Adresse : {unit.get('rue', '')} app. {unit.get('numero_appartement', '')} ({unit.get('grandeur', '')})")
-        parts.append(f"Bail : {_d(unit.get('debut_bail'))} → {_d(unit.get('fin_bail'))}")
-        if unit.get("droit_animaux"):
-            parts.append(f"Animaux autorisés : {unit['droit_animaux']}")
+        bail = f"Bail : {_d(unit.get('debut_bail'))} → {_d(unit.get('fin_bail'))}"
+        if not unit.get("debut_bail"):
+            bail += " (début inconnu)"
+        if rr.get("recent_move_in"):
+            bail += " (emménagement récent)"
+        parts.append(bail)
+        if rr.get("langue_en"):
+            parts.append("Langue du bail : anglais")
+        if unit.get("droit_animaux") is True:
+            parts.append("Animaux autorisés au bail : oui")
+        elif unit.get("droit_animaux") is False:
+            parts.append("Animaux autorisés au bail : non")
+        if rr.get("vacant"):
+            parts.append("LOGEMENT VACANT — accès libre")
         for o in unit.get("occupants", []):
             line = o.get("nom_complet", "?")
             if o.get("telephone"):
@@ -94,6 +108,14 @@ def _format_context(ctx: dict) -> str:
             if o.get("capacite"):
                 line += f"  [{o['capacite']}]"
             parts.append(f"  - {line}")
+        if rr.get("pet_mismatch"):
+            parts.append("ÉCART ANIMAUX : déclaration Gravity non autorisée au bail.")
+        if rr.get("caller_mismatch"):
+            parts.append("RÉQUÉRANT ABSENT des titulaires du bail.")
+        required = rr.get("required_notes") or []
+        if required:
+            quoted = ", ".join(f"« {p} »" for p in required)
+            parts.append(f"other_notes DOIT contenir chacune de ces mentions : {quoted}.")
 
     # Building
     parts.append("\n## Immeuble")
@@ -111,14 +133,33 @@ def _format_context(ctx: dict) -> str:
             ft_str = json.dumps(ft, ensure_ascii=False) if isinstance(ft, dict) else str(ft)
             parts.append(f"Fiche technique :\n{ft_str[:2000]}")
 
-    # Duplicates
+    # Duplicates — open same-unit only; labelled same vs different problem (rule 12)
     dups = ctx.get("duplicates", [])
-    parts.append(f"\n## Doublons potentiels ({len(dups)})")
-    if dups:
-        for d in dups:
-            parts.append(f"- #{d['request_id']} [{_d(d.get('start_date'))}] {d.get('raw_title', '')} — {d.get('status', '')}")
-    else:
-        parts.append("(aucun dans la fenêtre −90j → +45j)")
+    same = [d for d in dups if d.get("problem_relation") == "same_problem"]
+    diff = [d for d in dups if d.get("problem_relation") != "same_problem"]
+    parts.append(
+        f"\n## Doublons / ajouts potentiels ({len(dups)} ouverts, même unité, −90j → +45j)"
+    )
+    parts.append(
+        "Même problème → verdict duplicate (+ DOUBLON POTENTIEL dans le titre). "
+        "Problème différent → verdict addition. Sinon → single."
+    )
+    if same:
+        parts.append(f"### Même problème ({len(same)}) — candidats duplicate")
+        for d in same:
+            parts.append(
+                f"- #{d['request_id']} [{_d(d.get('start_date'))}] "
+                f"{d.get('raw_title', '')} — {d.get('status', '')}"
+            )
+    if diff:
+        parts.append(f"### Problème différent ({len(diff)}) — candidats addition")
+        for d in diff:
+            parts.append(
+                f"- #{d['request_id']} [{_d(d.get('start_date'))}] "
+                f"{d.get('raw_title', '')} — {d.get('status', '')}"
+            )
+    if not dups:
+        parts.append("(aucun appel ouvert dans la fenêtre)")
 
     # Synergy
     syn = ctx.get("synergy", {})
@@ -130,20 +171,71 @@ def _format_context(ctx: dict) -> str:
     if scope == "saturated":
         parts.append(f"Inventaire dense ({total} demandes). Regroupements disponibles — consulter le tableau de bord.")
     else:
-        for s in syn.get("items", []):
-            parts.append(f"- #{s['request_id']} [{_d(s.get('start_date'))}] {s.get('raw_title', '')} [{s.get('status', '')}]")
+        items = syn.get("items") or []
+        cap = syn.get("link_cap") or 5
+        linked, compact = items[:cap], items[cap:]
+        if linked:
+            parts.append(f"Liens (maximum {cap}) :")
+            for s in linked:
+                sat = " — samedi, pas un argument de date" if s.get("saturday_landing") else ""
+                parts.append(
+                    f"- #{s['request_id']} [{_d(s.get('start_date'))}] "
+                    f"{s.get('raw_title', '')} [{s.get('status', '')}]{sat}"
+                )
+        if compact:
+            parts.append(f"Compact sans lien ({len(compact)}) :")
+            for s in compact:
+                sat = " — samedi" if s.get("saturday_landing") else ""
+                parts.append(
+                    f"- #{s['request_id']} [{_d(s.get('start_date'))}] "
+                    f"{s.get('raw_title', '')}{sat}"
+                )
         if scope == "pest":
             for wc in syn.get("warranty_cases", []):
                 parts.append(f"  Garantie active : case #{wc['case_id']} {wc.get('pest_type', '')} — expire {_d(wc.get('warranty_expiry_date'))}")
-        if not syn.get("items"):
+        if not items:
             parts.append("(aucune synergy dans la fenêtre)")
 
-    # History
-    hist = ctx.get("history", [])
-    parts.append(f"\n## Historique de l'unité ({len(hist)} demandes, −6mo → +21j)")
-    for h in hist[:20]:
-        parts.append(f"- #{h['request_id']} [{_d(h.get('start_date'))}] {h.get('raw_title', '')} — {h.get('complexity_tier', '?')}/{h.get('congestion_level', '?')}")
-    if not hist:
+    # Congestion — computed, the model must copy it (skill's frozen N5 is not live).
+    cg = ctx.get("congestion") or {}
+    if cg.get("level"):
+        parts.append(
+            f"\n## Embourbement\n"
+            f"État actuel : {cg['level']} — {cg.get('label', '')} "
+            f"({cg.get('open_count', 0)} appels ouverts dans le territoire). "
+            f"Ignore la ligne figée « État actuel : N5 » du skill. "
+            f"congestion_level DOIT être exactement \"{cg['level']}\"."
+        )
+    hist = ctx.get("history") or {}
+    if isinstance(hist, list):  # older shape
+        hist = {"unit": hist, "building": [], "unit_omitted": 0, "building_omitted": 0, "scope": "unit"}
+    unit_h = hist.get("unit") or []
+    bldg_h = hist.get("building") or []
+    parts.append(
+        f"\n## Historique (−6 mois → +21 j, portée {hist.get('scope', 'unit')})"
+    )
+
+    def _hist_line(h: dict) -> str:
+        cal = h.get("source_calendar") or "—"
+        return (
+            f"- #{h['request_id']} [{_d(h.get('start_date'))}] "
+            f"[{cal}] {h.get('raw_title', '')} — "
+            f"{h.get('complexity_tier', '?')}/{h.get('congestion_level', '?')}"
+        )
+
+    if unit_h:
+        parts.append(f"### Unité ({len(unit_h)})")
+        for h in unit_h:
+            parts.append(_hist_line(h))
+        if hist.get("unit_omitted"):
+            parts.append(f"… et {hist['unit_omitted']} autres appels d'unité non listés")
+    if bldg_h:
+        parts.append(f"### Immeuble ({len(bldg_h)})")
+        for h in bldg_h:
+            parts.append(_hist_line(h))
+        if hist.get("building_omitted"):
+            parts.append(f"… et {hist['building_omitted']} autres appels d'immeuble non listés")
+    if not unit_h and not bldg_h:
         parts.append("(aucun historique)")
 
     # Photos
@@ -221,6 +313,10 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
     if parsed.get("problems"):
         problems_text = "\n".join(f"- {p}" for p in parsed["problems"])
 
+    # Cardinal rule 35: rive-sud (Lévis) → Majordome calendar; else Main.
+    from .calendar_route import infer_source_calendar_from_cur
+    cal = infer_source_calendar_from_cur(cur, request_id)
+
     cur.execute(
         """
         UPDATE maintenance_request SET
@@ -242,6 +338,7 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
             other_notes             = %(other_notes)s,
             duplicate_of_request_id = %(dup_id)s,
             addition_to_request_id  = %(add_id)s,
+            source_calendar         = %(source_calendar)s,
             triage_model_version    = %(model_version)s,
             triage_started_at       = NULL
         WHERE request_id = %(request_id)s
@@ -265,6 +362,7 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
             "other_notes":        parsed.get("other_notes"),
             "dup_id":             parsed.get("duplicate_of_request_id"),
             "add_id":             parsed.get("addition_to_request_id"),
+            "source_calendar":    cal,
             "model_version":      model_version,
             "request_id":         request_id,
         },
@@ -278,6 +376,25 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
         return
     if old_row is not None:
         _write_triage_provenance(cur, request_id, parsed, model_version, old_row)
+
+
+def _mark_clarify(cur, request_id: int, reason: str) -> None:
+    """No active lease on a housing unit. Stays blocked until a coordinator resets it."""
+    cur.execute(
+        """
+        UPDATE maintenance_request
+        SET status = 'triage_clarify',
+            triage_started_at = NULL,
+            triage_summary = %s
+        WHERE request_id = %s AND status = 'triage_pending'
+        """,
+        (reason, request_id),
+    )
+    if cur.rowcount == 0:
+        logger.warning(
+            "triage clarify for request %s discarded: status is no longer triage_pending",
+            request_id,
+        )
 
 
 def _mark_failed(cur, request_id: int) -> None:
@@ -319,7 +436,8 @@ def _log_attempt(cur, request_id: int, *, model_version: str, context_sent: dict
 # ── Main entry point ───────────────────────────────────────────────────────────
 
 def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
-           model: str | None = None, dry_run: bool = False) -> dict:
+           model: str | None = None, dry_run: bool = False,
+           lang: str = "fr") -> dict:
     """
     Run AI triage for a single request.
 
@@ -380,8 +498,19 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
     # ── Build context ──────────────────────────────────────────────────────────
     ctx = assemble(conn, request_id)
     user_message = _format_context(ctx)
-    system_blocks = build_system_prompt()
-    model_version = f"{model}|docs-{DOCUMENTS_HASH[:8]}"
+    output_lang = "en" if (lang or "fr").lower().startswith("en") else "fr"
+    system_blocks = build_system_prompt(lang=output_lang)
+    model_version = f"{model}|docs-{DOCUMENTS_HASH[:8]}|{output_lang}"
+
+    rr = ctx.get("rentroll") or {}
+    if rr.get("lease_missing"):
+        if dry_run:
+            conn.rollback()
+        else:
+            with conn.cursor() as cur:
+                _mark_clarify(cur, request_id, "Aucun bail actif pour cette unité")
+            conn.commit()
+        return {"result": "triage_clarify", "reason": "no active lease"}
 
     if dry_run:
         conn.rollback()
@@ -422,7 +551,12 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
             output_tokens = response.usage.output_tokens
 
             parsed = parse_response(raw_response)
-            val_result, val_detail = validate(parsed, conn, request_id)
+            expected_n = (ctx.get("congestion") or {}).get("level")
+            val_result, val_detail = validate(
+                parsed, conn, request_id,
+                expected_congestion=expected_n,
+                required_notes=rr.get("required_notes") or None,
+            )
 
             if val_result == "accepted":
                 # Weather floor for "no heat" calls (art. 1864-1865 C.c.Q.).

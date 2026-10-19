@@ -134,6 +134,12 @@ describe('DetailPanel', () => {
     expect(screen.getByText(/350/)).toBeTruthy();      // Coût estimé row — formatted CAD
   });
 
+  it('shows not urgent when urgency_tier is null', () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="en" me={null} />);
+    expect(screen.getByText('not urgent')).toBeTruthy();
+  });
+
   it('disables edit controls (except log) when status is closed', async () => {
     const closedReq = { ...MOCK_REQUEST, status: 'closed' };
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: closedReq, isPending: false, isError: false, error: null });
@@ -195,16 +201,17 @@ describe('DetailPanel', () => {
     vi.spyOn(client, 'triggerTriage').mockResolvedValue({ request_id: 1, status: 'triage_pending' });
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
     await userEvent.click(screen.getByTestId('triage-btn'));
-    await waitFor(() => expect(client.triggerTriage).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(client.triggerTriage).toHaveBeenCalledWith(1, { lang: 'fr' }));
   });
 
-  it('shows routing buttons when status triaged and source_calendar null', () => {
-    const triaged = { ...MOCK_REQUEST, status: 'triaged', source_calendar: null };
+  it('does not show calendar route override buttons (auto from secteur)', () => {
+    const triaged = { ...MOCK_REQUEST, status: 'triaged', source_calendar: 'main' };
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: triaged, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
-    expect(screen.getByTestId('route-majordome')).toBeTruthy();
-    expect(screen.getByTestId('route-principal')).toBeTruthy();
+    expect(screen.queryByTestId('routing-section')).toBeNull();
+    expect(screen.queryByTestId('route-majordome')).toBeNull();
+    expect(screen.queryByTestId('route-principal')).toBeNull();
   });
 
   it('shows French role label for assignable technician in select', async () => {
@@ -226,24 +233,6 @@ describe('DetailPanel', () => {
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
     expect(screen.getByText('Butler/Majordome')).toBeTruthy();
     expect(screen.queryByText('st_maj')).toBeNull();
-  });
-
-  it('shows routing buttons even when source_calendar already set (re-route)', () => {
-    const routed = { ...MOCK_REQUEST, status: 'triaged', source_calendar: 'main' };
-    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: routed, isPending: false, isError: false, error: null });
-    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
-    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
-    expect(screen.getByTestId('routing-section')).toBeTruthy();
-  });
-
-  it('routing button calls routeRequest with st_maj', async () => {
-    const triaged = { ...MOCK_REQUEST, status: 'triaged', source_calendar: null };
-    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: triaged, isPending: false, isError: false, error: null });
-    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
-    vi.spyOn(client, 'routeRequest').mockResolvedValue({ ...triaged, source_calendar: 'st_maj' } as any);
-    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
-    await userEvent.click(screen.getByTestId('route-majordome'));
-    await waitFor(() => expect(client.routeRequest).toHaveBeenCalledWith(1, { source_calendar: 'st_maj', expected_source_calendar: null }));
   });
 
   it('shows dual display section only when AI ran and fields differ', () => {

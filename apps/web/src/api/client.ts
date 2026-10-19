@@ -219,8 +219,11 @@ export function dispatchAddLog(id: number, body: { entry_text: string }): Promis
   return apiPost(`/api/v1/requests/${id}/log`, body);
 }
 
-export function triggerTriage(id: number): Promise<{ request_id: number; status: string }> {
-  return apiPost(`/api/v1/requests/${id}/triage`, {});
+export function triggerTriage(
+  id: number,
+  opts?: { lang?: 'fr' | 'en' },
+): Promise<{ request_id: number; status: string }> {
+  return apiPost(`/api/v1/requests/${id}/triage`, { lang: opts?.lang ?? 'fr' });
 }
 
 export function routeRequest(id: number, body: { source_calendar: string; expected_source_calendar: string | null }): Promise<RequestDetail> {
@@ -271,6 +274,7 @@ export interface IntakeBody {
   secondary_name?: string;
   secondary_email?: string;
   attention?: string;
+  ui_lang?: 'fr' | 'en';
 }
 
 export interface IntakeResponse {

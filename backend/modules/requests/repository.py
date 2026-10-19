@@ -74,7 +74,15 @@ _LIST_SELECT = """
 
 
 def _add_label(d: dict) -> dict:
-    d["source_calendar_label"] = SOURCE_CALENDAR_LABELS.get(d.get("source_calendar") or "")
+    cal = d.get("source_calendar")
+    if not cal:
+        from backend.triage.calendar_route import source_calendar_for_sector
+        cal = source_calendar_for_sector(
+            territoire=d.get("territoire"),
+            color_code=d.get("color_code"),
+        )
+        d["source_calendar"] = cal
+    d["source_calendar_label"] = SOURCE_CALENDAR_LABELS.get(cal or "")
     return d
 
 
@@ -760,9 +768,12 @@ def list_routed_unscheduled(
     status: list[str],
     q: str | None,
 ) -> list[dict]:
-    """Routed calls with no start_date yet — shown as 'À planifier' group."""
+    """Open calls with no start_date — coordinator inbox ('À planifier').
+
+    Includes newly created / triage-pending rows (start_date NULL) so they are
+    visible on the default date-filtered board, not only under « À router ».
+    """
     conditions: list[str] = [
-        "mr.source_calendar IS NOT NULL",
         "mr.start_date IS NULL",
         "mr.status::text NOT IN ('closed', 'en_route')",
     ]

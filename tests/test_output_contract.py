@@ -46,6 +46,17 @@ def test_internal_vocab():                    chk({**_BASE, "other_notes": "Appl
 def test_routing_a2_no_gym():                 chk({**_BASE, "routing_rule": "A2", "subcontractor_name": "Duclos"}, "rejected_routing_inconsistent")
 def test_routing_a3_no_sub():                 chk({**_BASE, "routing_rule": "A3", "subcontractor_name": None}, "rejected_routing_inconsistent")
 def test_routing_a3_body_gym():               chk({**_BASE, "routing_rule": "A3", "subcontractor_name": "Body Gym"}, "rejected_routing_inconsistent")
+def test_routing_a3_duclos():                 chk({**_BASE, "routing_rule": "A3", "subcontractor_name": "Duclos"}, "accepted")
+def test_routing_a3b_no_duclos():             chk({**_BASE, "routing_rule": "A3b", "subcontractor_name": None}, "accepted")
+def test_routing_a3b_rejects_duclos():        chk({**_BASE, "routing_rule": "A3b", "subcontractor_name": "Duclos"}, "rejected_routing_inconsistent")
+def test_extermination_requires_eric():
+    chk({**_BASE, "routing_rule": "A4", "problems": ["Fourmis partout"], "subcontractor_name": None}, "rejected_routing_inconsistent")
+def test_extermination_eric_ok():
+    chk({**_BASE, "routing_rule": "A4", "problems": ["Fourmis partout"], "subcontractor_name": "Éric"}, "accepted")
+def test_c4_plumbing_requires_fortin():
+    chk({**_BASE, "complexity_tier": "C4", "routing_rule": "A0", "problems": ["Colonne de plomberie bouchée"], "subcontractor_name": None}, "rejected_routing_inconsistent")
+def test_c4_plumbing_fortin_ok():
+    chk({**_BASE, "complexity_tier": "C4", "routing_rule": "A0", "problems": ["Colonne de plomberie bouchée"], "subcontractor_name": "Fortin"}, "accepted")
 def test_a0_with_subcontractor():             chk({**_BASE, "routing_rule": "A0", "subcontractor_name": "H2Pro (piscine)"}, "accepted")
 def test_a1_with_subcontractor():             chk({**_BASE, "routing_rule": "A1", "subcontractor_name": "H2Pro"}, "rejected_routing_inconsistent")
 def test_addition_missing_ref():              chk({**_BASE, "verdict": "addition", "addition_to_request_id": None}, "rejected_invalid_addition_ref")
@@ -55,3 +66,24 @@ def test_parking_borne_a5_notes():            chk({**_BASE, "other_notes": "Clé
 def test_a5_sector_label_still_fires():       chk({**_BASE, "other_notes": "Périmètre A5 rive-sud — immeuble attitré"}, "rejected_internal_vocabulary")
 def test_fiche_ref_before_digit():            chk({**_BASE, "other_notes": "Boîte à clé : voir fiche Chamonix 1175 pour accès"}, "accepted")
 def test_fiche_ref_after_digit():             chk({**_BASE, "other_notes": "Fiche Sully 7885 (boîte à clé dans la fiche)"}, "accepted")
+def test_ajd_title_matches():                 chk({**_BASE, "urgency_tier": "ajd", "title": "ajd 125-103 Cèdres: Fourmis"}, "accepted")
+def test_AJD_title_matches():                 chk({**_BASE, "urgency_tier": "AJD", "title": "AJD 3048-2 Châtelets: Goutte d'eau dans le mur"}, "accepted")
+def test_urgency_title_mismatch():            chk({**_BASE, "urgency_tier": "AJD", "title": "Robinet qui fuit"}, "rejected_urgency_title")
+def test_ajd_not_uppercase_prefix():          chk({**_BASE, "urgency_tier": "ajd", "title": "AJD 125-103: Fourmis"}, "rejected_urgency_title")
+def test_invalid_urgency_value():             chk({**_BASE, "urgency_tier": "URGENT"}, "rejected_invalid_urgency")
+def test_employee_initials_rejected():        chk({**_BASE, "other_notes": "À voir avec CHGE demain"}, "rejected_assignee_initials")
+def test_sdb_is_not_initials():               chk({**_BASE, "problems": ["Ventilateur SDB à réinstaller"]}, "accepted")
+def test_duplicate_missing_mark():
+    chk(
+        {**_BASE, "verdict": "duplicate", "duplicate_of_request_id": 99,
+         "title": "103 Cedres: Fuite"},
+        "rejected_missing_doublon_mark",
+    )
+def test_single_must_not_set_refs():
+    chk({**_BASE, "duplicate_of_request_id": 99}, "rejected_invalid_verdict_refs")
+def test_duplicate_missing_ref():
+    chk(
+        {**_BASE, "verdict": "duplicate", "duplicate_of_request_id": None,
+         "title": "103: DOUBLON POTENTIEL — Fuite"},
+        "rejected_invalid_duplicate_ref",
+    )

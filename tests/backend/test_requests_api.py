@@ -734,3 +734,29 @@ def test_list_only_one_date_is_422(ac):
     r = c.get(f"/api/v1/requests?start_date={_START}")
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "VALIDATION_FAILED"
+
+
+def test_list_undated_open_calls_appear_in_unscheduled(ac, db_conn):
+    """Intake/triage rows with no start_date must surface in unscheduled_items
+    on the default date-filtered board — otherwise coordinators never see them.
+    """
+    from datetime import date
+    today = date.today()
+    start = today.replace(day=1).isoformat()
+    end = today.isoformat()
+    rid = db_conn.execute(
+        """
+        INSERT INTO maintenance_request
+            (status, start_date, source_calendar, submission_date, raw_title)
+        VALUES ('intake_received', NULL, 'main', NOW(), 'Undated inbox test')
+        RETURNING request_id
+        """,
+    ).fetchone()["request_id"]
+    c = ac(_user(_COORD_EMP, "coordinator"))
+    r = c.get(f"/api/v1/requests?start_date={start}&end_date={end}&limit=50")
+    assert r.status_code == 200
+    body = r.json()
+    main_ids = [i["request_id"] for i in body["items"]]
+    unsch_ids = [i["request_id"] for i in body["unscheduled_items"]]
+    assert rid not in main_ids
+    assert rid in unsch_ids

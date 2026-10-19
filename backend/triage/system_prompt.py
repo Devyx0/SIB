@@ -28,7 +28,7 @@ Return ONLY valid JSON matching this schema. No prose, no explanation.
   "problems": [string, ...],
   "entry_permission": string | null,
   "animals": string | null,
-  "urgency_tier": "AJD" | null,
+  "urgency_tier": "AJD" | "ajd" | null,
   "heating_failure": true | false | null,
   "complexity_tier": "C1" | "C2" | "C3" | "C4",
   "congestion_level": "N1" | "N2" | "N3" | "N4" | "N5",
@@ -42,13 +42,32 @@ Return ONLY valid JSON matching this schema. No prose, no explanation.
   "other_notes": string | null
 }
 
-There is NO assignee field. Do not include one.
+There is NO assignee field. Do not include one. Never write employee initials (2–4 capital letters, e.g. CHGE) in title, problems, entry_permission, animals, or other_notes. Vendor names (Duclos, Body Gym, Fortin, Éric) go in subcontractor_name only.
+urgency_tier is exactly "AJD" (do today: active water including hidden leaks, backflow, no heat or hot water, person stuck, alarm/fire, lock not working, dead fridge, electrical or structural danger), "ajd" (priority, not necessarily today: contained slow leak, mould, non-critical appliance, any vermin, AC in a heatwave), or null (not urgent). The title must start with the same token ("AJD " or "ajd ") or with neither when null.
 Routing codes (A0, A1, A2, A3, A3b, A4, A5) belong ONLY in the routing_rule field. NEVER write them in title, problems, entry_permission, other_notes, or any other text field — use plain operational language instead.
 Access codes and combinations are FORBIDDEN in all text fields. When a keybox, door code, NIP, or combination appears in the source request, reference the device by label only (e.g. "keybox H", "clavier principal") — never include the digit sequence.
-When routing a door or window problem to a specialist for unknown-cause diagnosis, always name the specialist in subcontractor_name (e.g. Duclos for doors/windows). Never leave subcontractor_name null for this routing.
+Exclusive vendors: A2 subcontractor_name is Body Gym. A3 (certain door/window replacement) is Duclos. A3b (unknown cause — diagnose first) leaves subcontractor_name null and must not name Duclos. A4 extermination names Éric. C4 plumbing names Fortin. Do not put those vendors on any other routing_rule.
 When noting in other_notes why urgency was adjusted or how the work category informs routing, describe the work in plain operational terms (e.g. "intercom en partie commune", "employé affecté à l'immeuble") — never use a routing code as a category label.
 When noting which geographic sector or territory an immeuble belongs to, or which dedicated worker covers it, use place names only (e.g. "Ste-Foy", "Rive-Sud", "secteur Châtelets", "Lévis-Ouest") — never use an internal designation as a geographic label in any text field.
+When the user message lists required other_notes phrases (ÉCART ANIMAUX, RÉQUÉRANT ABSENT, emménagement récent, bail anglais, LOGEMENT VACANT), other_notes must contain each phrase verbatim. Mention the lease language only when it is English.
 heating_failure: true ONLY when the tenant reports no or insufficient heating of the dwelling itself (heating is a lessor obligation, art. 1864-1865 C.c.Q.). false when the heating mention is clearly something else (pool heater, thermostat stuck hot, summer-mode notice, routine maintenance). null when unclear — never guess.\
+"""
+
+_LANG_EN = """\
+## Output language
+
+The skill and guide above are in French — follow their rules exactly.
+Write ALL human-readable JSON string fields in English: title, problems, entry_permission, animals, other_notes.
+Keep proper nouns and place names as-is (addresses, Ste-Foy, Duclos, etc.).
+Enum / code fields stay exactly as specified (AJD, ajd, C1–C4, A0–A5, YES/NO/CONDITIONAL, time buckets, etc.).
+subcontractor_name: keep the vendor's real name; do not translate brand names.\
+"""
+
+_LANG_FR = """\
+## Langue de sortie
+
+Rédige TOUS les champs texte lisibles du JSON en français : title, problems, entry_permission, animals, other_notes.
+Les codes / enums restent tels que spécifiés (AJD, ajd, C1–C4, A0–A5, etc.).\
 """
 
 
@@ -62,14 +81,16 @@ def _load_documents() -> str:
 DOCUMENTS_HASH: str = hashlib.sha256((_load_documents() + _OUTPUT_CONTRACT).encode()).hexdigest()
 
 
-def build_system_prompt() -> list[dict]:
+def build_system_prompt(*, lang: str = "fr") -> list[dict]:
     """
     Returns the system prompt as Anthropic content blocks for messages.create(system=...).
 
     Block 0 — skill + guide, cache_control='ephemeral': cached across calls.
     Block 1 — output contract, no cache_control: uncached, updated independently.
+    Block 2 — output language (fr|en), uncached.
     """
     docs = _load_documents()
+    lang_block = _LANG_EN if (lang or "fr").lower().startswith("en") else _LANG_FR
     return [
         {
             "type": "text",
@@ -79,6 +100,10 @@ def build_system_prompt() -> list[dict]:
         {
             "type": "text",
             "text": _OUTPUT_CONTRACT,
+        },
+        {
+            "type": "text",
+            "text": lang_block,
         },
     ]
 

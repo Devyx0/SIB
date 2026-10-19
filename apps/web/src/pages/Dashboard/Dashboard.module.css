@@ -113,6 +113,13 @@
   color: var(--color-neutral-700);
 }
 
+/* urgency_tier enum is case-sensitive: AJD vs ajd — don't uppercase the label */
+.table th.urgencyCase {
+  text-transform: none;
+  letter-spacing: 0;
+  font-variant: normal;
+}
+
 .table tbody tr {
   cursor: pointer;
 }

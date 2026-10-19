@@ -131,8 +131,8 @@ export default function Dashboard({ lang = 'fr' }: { lang?: Lang }) {
               <tr>
                 <th>{t(lang, 'Territoire', 'Territory')}</th>
                 <th className={styles.num}>{t(lang, 'Actifs', 'Active')}</th>
-                <th className={styles.num}>AJD</th>
-                <th className={styles.num}>ajd</th>
+                <th className={`${styles.num} ${styles.urgencyCase}`}>AJD</th>
+                <th className={`${styles.num} ${styles.urgencyCase}`}>ajd</th>
                 <th
                   className={styles.num}
                   title={untriagedTip}
@@ -145,8 +145,8 @@ export default function Dashboard({ lang = 'fr' }: { lang?: Lang }) {
             <tbody>
               {data.by_territory.length === 0 ? (
                 <tr>
-                  <td colSpan={5}>
-                    <span data-testid="territory-empty">0</span>
+                  <td colSpan={5} data-testid="territory-empty">
+                    {t(lang, 'Aucun appel actif', 'No active calls')}
                   </td>
                 </tr>
               ) : (

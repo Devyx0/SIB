@@ -116,9 +116,17 @@ def main() -> None:
                 "SELECT auth_user_id FROM employee WHERE employee_id = %s",
                 [emp_id],
             ).fetchone()
-            if row and row["auth_user_id"]:
-                print(f"  employee {emp_id} ({email}): already linked — skipped")
-                continue
+            linked = row["auth_user_id"] if row else None
+            # After a remote→local data dump, auth_user_id often points at a
+            # remote UUID that does not exist in local auth.users — treat as unlinked.
+            if linked is not None:
+                alive = conn.execute(
+                    "SELECT 1 FROM auth.users WHERE id = %s", [linked]
+                ).fetchone()
+                if alive:
+                    print(f"  employee {emp_id} ({email}): already linked — skipped")
+                    continue
+                print(f"  employee {emp_id} ({email}): orphan auth_user_id — relinking")
 
             if email in existing:
                 uid = existing[email]
@@ -133,8 +141,52 @@ def main() -> None:
             )
             conn.commit()
             print(f"    employee {emp_id}: linked → {uid}")
+
+        # Canonical local logins (docs / .env.example) — always pin to a role match.
+        _pin_canonical(conn, existing)
     finally:
         conn.close()
+
+
+def _pin_canonical(conn: psycopg.Connection, existing: dict[str, str]) -> None:
+    """Keep coordinator@/director@/technician@/contractor@sib.local usable after dumps."""
+    pins = [
+        ("coordinator@sib.local", "coordinator"),
+        ("director@sib.local", "director"),
+        ("technician@sib.local", "technician"),
+        ("contractor@sib.local", "contractor"),
+    ]
+    for email, role in pins:
+        uid = existing.get(email)
+        if not uid:
+            print(f"  {email}: no auth user — skip pin")
+            continue
+        already = conn.execute(
+            "SELECT employee_id FROM employee WHERE auth_user_id = %s", [uid]
+        ).fetchone()
+        if already:
+            print(f"  {email}: already pinned to employee {already['employee_id']}")
+            continue
+        emp = conn.execute(
+            """
+            SELECT e.employee_id FROM employee e
+            JOIN employee_role er ON er.employee_id = e.employee_id
+            WHERE e.is_active AND er.role = %s
+            ORDER BY e.employee_id
+            LIMIT 1
+            """,
+            [role],
+        ).fetchone()
+        if not emp:
+            print(f"  {email}: no {role} employee to pin")
+            continue
+        conn.execute(
+            "UPDATE employee SET auth_user_id = %s WHERE employee_id = %s",
+            [uid, emp["employee_id"]],
+        )
+        conn.commit()
+        print(f"  {email}: pinned → employee {emp['employee_id']} ({role})")
+
 
 
 if __name__ == "__main__":

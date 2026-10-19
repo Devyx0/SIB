@@ -1,4 +1,4 @@
-"""GET /api/v1/analytics/utilization — app closeouts via closed_at, not import sentinel."""
+"""GET /api/v1/analytics/utilization — closed via closed_at, else start_date for imports."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -61,23 +61,26 @@ def test_utilization_rejects_over_31_days(ac):
     assert r.status_code in (400, 422)
 
 
-def test_sentinel_closed_not_counted(ac, db_conn, building):
-    """Import-style closed (status=closed, closed_at NULL) must not count as calls_closed."""
+def test_import_closed_counts_via_start_date(ac, db_conn, building):
+    """Gravity/import closed rows (closed_at NULL) count via start_date."""
     today = today_local()
+    before = db_conn.execute(
+        "SELECT count(*)::int AS n FROM maintenance_request "
+        "WHERE assigned_employee_id = %(e)s AND status::text = 'closed' "
+        "AND start_date BETWEEN %(a)s AND %(b)s AND closed_at IS NULL",
+        {"e": _TECH, "a": today - timedelta(days=6), "b": today},
+    ).fetchone()["n"]
     db_conn.execute(
         "INSERT INTO maintenance_request (status, building_id, sector_id, assigned_employee_id, "
         "raw_title, start_date, closed_at) "
-        "VALUES ('closed', %(b)s, %(s)s, %(e)s, 'Sentinel closed', %(d)s, NULL)",
+        "VALUES ('closed', %(b)s, %(s)s, %(e)s, 'Import closed', %(d)s, NULL)",
         {"b": building["building_id"], "s": building["sector_id"], "e": _TECH, "d": today},
     )
     r = ac(_user(_COORD, "coordinator")).get(f"/api/v1/analytics/utilization?{_range_q()}")
     assert r.status_code == 200, r.text
-    row = next((x for x in r.json()["rows"] if x["employee_id"] == _TECH), None)
-    # May appear as active tech with assigned count, but closed must be 0 from this insert alone
-    if row:
-        # Other test data may add closed_at rows; at least sentinel alone doesn't inflate wrongly —
-        # verify a dedicated closed_at row does count (next test). Here: assigned includes start_date.
-        assert row["calls_assigned"] >= 1
+    row = next(x for x in r.json()["rows"] if x["employee_id"] == _TECH)
+    assert row["calls_closed"] >= before + 1
+    assert row["calls_assigned"] >= 1
 
 
 def test_closed_at_counts(ac, db_conn, building):

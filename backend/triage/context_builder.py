@@ -38,7 +38,9 @@ Never truncated silently.
 """
 from __future__ import annotations
 
+import calendar
 import re
+import unicodedata
 from datetime import date, timedelta, datetime
 from typing import Any
 
@@ -97,21 +99,27 @@ _CAND_COLS = """
     mr.subcontractor_name,
     mr.routing_rule,
     mr.duplicate_of_request_id,
-    mr.addition_to_request_id
+    mr.addition_to_request_id,
+    mr.source_calendar
 """
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _rows(cur) -> list[dict]:
+def _as_dict(cur, row) -> dict:
+    if isinstance(row, dict):
+        return dict(row)
     cols = [d[0] for d in cur.description]
-    return [dict(zip(cols, row)) for row in cur.fetchall()]
+    return dict(zip(cols, row))
+
+
+def _rows(cur) -> list[dict]:
+    return [_as_dict(cur, row) for row in cur.fetchall()]
 
 
 def _one(cur) -> dict | None:
-    cols = [d[0] for d in cur.description]
     row = cur.fetchone()
-    return dict(zip(cols, row)) if row else None
+    return _as_dict(cur, row) if row else None
 
 
 def _is_pest(request: dict) -> bool:
@@ -172,6 +180,7 @@ def unit_context(cur, request: dict) -> dict | None:
     cur.execute(
         """
         SELECT
+            t.tenant_id,
             t.nom_complet,
             t.telephone,
             t.telephone_international,
@@ -189,6 +198,122 @@ def unit_context(cur, request: dict) -> dict | None:
     )
     row["occupants"] = _rows(cur)
     return row
+
+
+def _plus_months(d: date, months: int) -> date:
+    m0 = d.month - 1 + months
+    year = d.year + m0 // 12
+    month = m0 % 12 + 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _fold(text: str) -> str:
+    t = unicodedata.normalize("NFD", text or "")
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    return re.sub(r"[^a-z0-9]+", " ", t.lower()).strip()
+
+
+_EN_LANG = re.compile(r"anglais|english|\ben\b", re.IGNORECASE)
+_YES_PET = re.compile(r"oui|yes|chien|chat|animal|dog|cat|oiseau|poisson")
+
+
+def _declared_pets(animals: str | None) -> bool | None:
+    folded = _fold(animals or "")
+    if not folded:
+        return None
+    if _YES_PET.search(folded):
+        return True
+    if folded.startswith("non") or folded.startswith("no") or "aucun" in folded or folded in {"sans", "none"}:
+        return False
+    return True
+
+
+def _caller_on_lease(request: dict, occupants: list[dict]) -> bool | None:
+    """None when there is nothing to compare. False when the caller is not a lease holder."""
+    caller_id = request.get("caller_tenant_id")
+    tokens = [t for t in _fold(request.get("caller_name") or "").split() if len(t) >= 3]
+    if not tokens and not caller_id:
+        return None
+    if not occupants:
+        return None
+    if caller_id and any(o.get("tenant_id") == caller_id for o in occupants):
+        return True
+    if not tokens:
+        return False
+    for occ in occupants:
+        words = set(_fold(occ.get("nom_complet") or "").split())
+        if len(tokens) >= 2 and all(t in words for t in tokens):
+            return True
+        if len(tokens) == 1 and tokens[0] in words:
+            return True
+    return False
+
+
+def rentroll_checks(request: dict, unit: dict | None) -> dict:
+    """
+    RRIA facts the note must carry (guide rule 21 / v10.5).
+    Appliances and furniture are omitted: those tables are not used in triage.
+    A housing unit with no active lease is a blocker (lease_missing).
+    """
+    if not request.get("unit_id"):
+        return {
+            "applies": False,
+            "lease_missing": False,
+            "vacant": False,
+            "langue_en": False,
+            "recent_move_in": False,
+            "pet_mismatch": False,
+            "caller_mismatch": False,
+            "required_notes": [],
+        }
+    if unit is None:
+        return {
+            "applies": True,
+            "lease_missing": True,
+            "vacant": False,
+            "langue_en": False,
+            "recent_move_in": False,
+            "pet_mismatch": False,
+            "caller_mismatch": False,
+            "required_notes": [],
+        }
+
+    debut = unit.get("debut_bail")
+    if isinstance(debut, datetime):
+        debut = debut.date()
+    ref = _ref_date(request)
+    recent = (
+        isinstance(debut, date)
+        and isinstance(ref, date)
+        and debut <= ref < _plus_months(debut, 3)
+    )
+    langue_en = bool(_EN_LANG.search(unit.get("langue_bail") or ""))
+    pets = _declared_pets(request.get("animals"))
+    pet_mismatch = pets is True and unit.get("droit_animaux") is not True
+    occupants = unit.get("occupants") or []
+    on_lease = _caller_on_lease(request, occupants)
+    notes: list[str] = []
+    if pet_mismatch:
+        notes.append("ÉCART ANIMAUX")
+    if on_lease is False:
+        notes.append("RÉQUÉRANT ABSENT")
+    if recent:
+        notes.append("emménagement récent")
+    if langue_en:
+        notes.append("bail anglais")
+    if not occupants:
+        notes.append("LOGEMENT VACANT")
+    return {
+        "applies": True,
+        "lease_missing": False,
+        "vacant": not occupants,
+        "langue_en": langue_en,
+        "recent_move_in": recent,
+        "pet_mismatch": pet_mismatch,
+        "caller_mismatch": on_lease is False,
+        "required_notes": notes,
+    }
 
 
 # ── Block 2: building context ─────────────────────────────────────────────────
@@ -214,15 +339,66 @@ def building_context(cur, request: dict) -> dict | None:
     return _one(cur)
 
 
+# ── Same-problem vs different-problem (guide rule 12) ─────────────────────────
+
+_STOPWORDS = frozenset({
+    "le", "la", "les", "un", "une", "des", "de", "du", "et", "ou", "a", "au", "aux",
+    "en", "pour", "dans", "sur", "avec", "sans", "qui", "que", "ce", "cette", "pas",
+    "ne", "est", "sont", "the", "an", "of", "and", "or", "to", "in", "on", "for",
+    "with", "from", "is", "are", "at", "par", "plus", "tres", "très", "aussi",
+})
+_STRIP_URGENCY = re.compile(r"^(AJD|ajd)\s+")
+_DOUBLON_MARK = re.compile(r"DOUBLON\s+POTENTIEL", re.IGNORECASE)
+
+
+def problem_text(row: dict) -> str:
+    """Concatenate title + problem fields for sameness comparison."""
+    parts = [
+        row.get("raw_title") or row.get("title") or "",
+        row.get("problems") or "",
+        row.get("problem_summary") or "",
+    ]
+    if isinstance(parts[1], list):
+        parts[1] = " ".join(str(p) for p in parts[1])
+    return " ".join(parts)
+
+
+def problem_tokens(text: str) -> frozenset[str]:
+    t = unicodedata.normalize("NFD", text or "")
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn").lower()
+    t = _STRIP_URGENCY.sub("", t)
+    t = _DOUBLON_MARK.sub(" ", t)
+    # Prefer the summary after the unit/address colon when present.
+    if ":" in t:
+        t = t.rsplit(":", 1)[-1]
+    return frozenset(
+        tok for tok in re.findall(r"[a-z0-9]{3,}", t) if tok not in _STOPWORDS
+    )
+
+
+def same_problem(a: str, b: str) -> bool:
+    """True when two problem texts look like the same issue (guide rule 12)."""
+    ta, tb = problem_tokens(a), problem_tokens(b)
+    if not ta or not tb:
+        return False
+    inter = len(ta & tb)
+    if inter == 0:
+        return False
+    jaccard = inter / len(ta | tb)
+    containment = inter / min(len(ta), len(tb))
+    return jaccard >= 0.35 or containment >= 0.6
+
+
 # ── Block 3: duplicates ───────────────────────────────────────────────────────
 
 def duplicates(cur, request: dict) -> list[dict]:
     """
-    Same unit_id, window −90d → +45d from request.start_date.
-    Mechanical exclusions applied. Self excluded.
+    Same unit_id, open calls only, window −90d → +45d from request.start_date.
+    Each row gets problem_relation = same_problem | different_problem.
     """
     d = _ref_date(request)
-    if d is None:
+    unit_id = request.get("unit_id")
+    if d is None or unit_id is None:
         return []
     cur.execute(
         f"""
@@ -230,13 +406,21 @@ def duplicates(cur, request: dict) -> list[dict]:
         FROM maintenance_request mr
         WHERE mr.unit_id = %s
           AND mr.request_id != %s
+          AND mr.status::text <> 'closed'
           AND mr.start_date BETWEEN (%s - INTERVAL '90 days') AND (%s + INTERVAL '45 days')
           {_EXCL}
         ORDER BY mr.start_date DESC
         """,
-        (request["unit_id"], request["request_id"], d, d),
+        (unit_id, request["request_id"], d, d),
     )
-    return _rows(cur)
+    src = problem_text(request)
+    out = []
+    for r in _rows(cur):
+        r["problem_relation"] = (
+            "same_problem" if same_problem(src, problem_text(r)) else "different_problem"
+        )
+        out.append(r)
+    return out
 
 
 # ── Block 4: synergy ──────────────────────────────────────────────────────────
@@ -244,6 +428,38 @@ def duplicates(cur, request: dict) -> list[dict]:
 # Guide "2 pages" heuristic applied to LLM context: 100 candidates ≈ 25–30K
 # tokens for synergy alone, leaving ample room in the 200K window.
 _SYNERGY_THRESHOLD = 100
+# Skill §8: at most 5 clickable synergy lines; the rest stay compact.
+_SYNERGY_LINK_CAP = 5
+# Internal stream excludes portfolio-wide specialists (skill: Duclos, Body Gym,
+# Éric, 4 Saisons, Électro DB, Fortin, Newtech). Pest stream still sees Éric.
+_EXCLUSIVE_VENDOR_SQL = r"""
+    AND (
+        mr.subcontractor_name IS NULL
+        OR mr.subcontractor_name !~* 'duclos|body[[:space:]]*gym|[eé]ric|4[[:space:]]*saisons|[eé]lectro[[:space:]]*db|fortin|newtech'
+    )
+"""
+
+
+def _mark_saturday(rows: list[dict]) -> list[dict]:
+    """Saturday landing is not a real shared visit date (guide rule 18)."""
+    for r in rows:
+        sd = r.get("start_date")
+        r["saturday_landing"] = bool(sd is not None and sd.weekday() == 5)
+    return rows
+
+
+def _synergy_result(scope: str, rows: list[dict], *, total: int | None = None, narrowed_from, extra: dict | None = None) -> dict:
+    marked = _mark_saturday(rows)
+    out = {
+        "scope": scope,
+        "items": marked,
+        "total": len(marked) if total is None else total,
+        "narrowed_from": narrowed_from,
+        "link_cap": _SYNERGY_LINK_CAP,
+    }
+    if extra:
+        out.update(extra)
+    return out
 
 
 def synergy(cur, request: dict) -> dict:
@@ -259,11 +475,11 @@ def synergy(cur, request: dict) -> dict:
     Never truncates silently. See module docstring for the full policy.
     """
     if not request.get("project_id"):
-        return {"scope": "project", "items": [], "total": 0, "narrowed_from": None}
+        return _synergy_result("project", [], narrowed_from=None)
 
     d = _ref_date(request)
     if d is None:
-        return {"scope": "project", "items": [], "total": 0, "narrowed_from": None}
+        return _synergy_result("project", [], narrowed_from=None)
     stream = _stream(request)
 
     if stream == "pest":
@@ -274,7 +490,7 @@ def synergy(cur, request: dict) -> dict:
         stream_where = """
             AND (mr.vendor_id IS NULL)
             AND (mr.subcontractor_name IS NULL OR mr.subcontractor_name NOT ILIKE 'Oui%%')
-        """
+        """ + _EXCLUSIVE_VENDOR_SQL
         extra_params: tuple = ()
     else:
         vid = request.get("vendor_id")
@@ -287,7 +503,7 @@ def synergy(cur, request: dict) -> dict:
             stream_where = "AND mr.subcontractor_name ILIKE %s"
             extra_params = (f"{sub_prefix}%",)
         else:
-            return {"scope": "project", "items": [], "total": 0, "narrowed_from": None}
+            return _synergy_result("project", [], narrowed_from=None)
 
     window = "AND mr.start_date BETWEEN (%s - INTERVAL '60 days') AND (%s + INTERVAL '21 days')"
 
@@ -308,7 +524,7 @@ def synergy(cur, request: dict) -> dict:
     proj_rows = _rows(cur)
 
     if len(proj_rows) <= _SYNERGY_THRESHOLD:
-        return {"scope": "project", "items": proj_rows, "total": len(proj_rows), "narrowed_from": None}
+        return _synergy_result("project", proj_rows, narrowed_from=None)
 
     # 2. Narrow to building scope (guide §4.1: "if the key is too broad, narrow it")
     cur.execute(
@@ -328,10 +544,10 @@ def synergy(cur, request: dict) -> dict:
     narrowed = f"project scope found {len(proj_rows)} candidates (threshold {_SYNERGY_THRESHOLD}); narrowed to building"
 
     if len(bldg_rows) <= _SYNERGY_THRESHOLD:
-        return {"scope": "building", "items": bldg_rows, "total": len(bldg_rows), "narrowed_from": narrowed}
+        return _synergy_result("building", bldg_rows, narrowed_from=narrowed)
 
     # 3. Saturated — report count, no silent subset
-    return {"scope": "saturated", "items": [], "total": len(bldg_rows), "narrowed_from": narrowed}
+    return _synergy_result("saturated", [], total=len(bldg_rows), narrowed_from=narrowed)
 
 
 def _synergy_pest(cur, request: dict, d: date) -> dict:
@@ -386,35 +602,143 @@ def _synergy_pest(cur, request: dict, d: date) -> dict:
     )
     warranty_cases = _rows(cur)
 
+    return _synergy_result(
+        "pest",
+        rows,
+        narrowed_from=None,
+        extra={"warranty_cases": warranty_cases},
+    )
+
+
+# Open calls in the same sector → N1–N5. Cutoffs are ours until François
+# publishes bands; the skill's frozen "État actuel : N5" is a snapshot, not a formula.
+_CONGESTION_BANDS = ((15, "N1"), (40, "N2"), (80, "N3"), (150, "N4"))
+_CONGESTION_LABELS = {
+    "N1": "au-dessus de nos affaires",
+    "N2": "niveau courant",
+    "N3": "en retard",
+    "N4": "très en retard",
+    "N5": "critique",
+}
+
+
+def congestion_level_for_count(n: int) -> str:
+    for cap, level in _CONGESTION_BANDS:
+        if n <= cap:
+            return level
+    return "N5"
+
+
+def congestion(cur, request: dict) -> dict:
+    """Open (not closed) calls in this sector, excluding the request itself."""
+    sector_id = request.get("sector_id")
+    if sector_id is None:
+        level = "N2"
+        return {"level": level, "open_count": 0, "label": _CONGESTION_LABELS[level], "sector_id": None}
+    cur.execute(
+        """
+        SELECT count(*) FROM maintenance_request
+        WHERE sector_id = %s
+          AND request_id != %s
+          AND status::text <> 'closed'
+        """,
+        (sector_id, request["request_id"]),
+    )
+    row = cur.fetchone()
+    n = row[0] if not isinstance(row, dict) else row["count"]
+    level = congestion_level_for_count(int(n))
     return {
-        "scope": "pest",
-        "items": rows,
-        "total": len(rows),
-        "narrowed_from": None,
-        "warranty_cases": warranty_cases,
+        "level": level,
+        "open_count": int(n),
+        "label": _CONGESTION_LABELS[level],
+        "sector_id": sector_id,
     }
 
 
-# ── Block 5: history ──────────────────────────────────────────────────────────
+_COMMON_AREA = re.compile(
+    r"\b(espace|partie|aire|zone)\s+commun",
+    re.IGNORECASE,
+)
+# Stated cap — the prompt always reports how many rows were left out.
+_HISTORY_CAP = 40
 
-def history(cur, request: dict) -> list[dict]:
-    """Same unit_id, −6mo → +21d. Excludes self and recurring events."""
-    d = _ref_date(request)
-    if d is None:
-        return []
+
+def _is_common_area(request: dict) -> bool:
+    blob = " ".join(
+        str(request.get(k) or "")
+        for k in ("entry_permission", "raw_title", "unit_label", "problems")
+    )
+    return _COMMON_AREA.search(blob) is not None
+
+
+def _history_query(cur, *, where: str, params: tuple) -> list[dict]:
     cur.execute(
         f"""
         SELECT {_CAND_COLS}
         FROM maintenance_request mr
-        WHERE mr.unit_id = %s
+        WHERE {where}
           AND mr.request_id != %s
           AND mr.start_date BETWEEN (%s - INTERVAL '6 months') AND (%s + INTERVAL '21 days')
           {_EXCL}
         ORDER BY mr.start_date DESC
         """,
-        (request["unit_id"], request["request_id"], d, d),
+        params,
     )
     return _rows(cur)
+
+
+def history(cur, request: dict) -> dict:
+    """Unit history −6mo → +21d. Building history when there is no unit or the
+    call is a common area. Caps are reported, never silent.
+    """
+    d = _ref_date(request)
+    empty = {
+        "unit": [], "building": [],
+        "unit_omitted": 0, "building_omitted": 0,
+        "scope": "none",
+    }
+    if d is None:
+        return empty
+    rid = request["request_id"]
+    unit_rows: list[dict] = []
+    if request.get("unit_id") is not None:
+        unit_rows = _history_query(
+            cur,
+            where="mr.unit_id = %s",
+            params=(request["unit_id"], rid, d, d),
+        )
+    include_building = request.get("unit_id") is None or _is_common_area(request)
+    building_rows: list[dict] = []
+    if include_building and request.get("building_id") is not None:
+        seen = {r["request_id"] for r in unit_rows}
+        building_rows = [
+            r for r in _history_query(
+                cur,
+                where="mr.building_id = %s",
+                params=(request["building_id"], rid, d, d),
+            )
+            if r["request_id"] not in seen
+        ]
+    def _cap(rows: list[dict]) -> tuple[list[dict], int]:
+        if len(rows) <= _HISTORY_CAP:
+            return rows, 0
+        return rows[:_HISTORY_CAP], len(rows) - _HISTORY_CAP
+
+    unit_shown, unit_omitted = _cap(unit_rows)
+    bldg_shown, bldg_omitted = _cap(building_rows)
+    if request.get("unit_id") is None:
+        scope = "building"
+    elif include_building:
+        scope = "unit+building"
+    else:
+        scope = "unit"
+    return {
+        "unit": unit_shown,
+        "building": bldg_shown,
+        "unit_omitted": unit_omitted,
+        "building_omitted": bldg_omitted,
+        "scope": scope,
+    }
 
 
 # ── Block 6: photos ───────────────────────────────────────────────────────────
@@ -460,14 +784,17 @@ def assemble(conn, request_id: int) -> dict:
         if req is None:
             raise ValueError(f"request_id {request_id} not found")
 
+        unit = unit_context(cur, req)
         return {
             "request":    req,
-            "unit":       unit_context(cur, req),
+            "unit":       unit,
+            "rentroll":   rentroll_checks(req, unit),
             "building":   building_context(cur, req),
             "duplicates": duplicates(cur, req),
             "synergy":    synergy(cur, req),
-            "history":    history(cur, req),
-            "photos":     photos(cur, req),
+            "history":     history(cur, req),
+            "congestion":  congestion(cur, req),
+            "photos":      photos(cur, req),
         }
 
 
@@ -507,7 +834,8 @@ if __name__ == "__main__":
         occ_count = len(ctx["unit"]["occupants"]) if unit_ok else 0
         dup_count = len(ctx["duplicates"])
         syn = ctx["synergy"]
-        hist_count = len(ctx["history"])
+        hist = ctx["history"]
+        hist_count = len(hist.get("unit", [])) + len(hist.get("building", []))
         photo_count = len(ctx["photos"])
 
         syn_summary = f"{syn['scope']}({syn['total']})"

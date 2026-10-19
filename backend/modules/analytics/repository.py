@@ -139,14 +139,17 @@ def utilization_rows(conn, start: date, end: date) -> list[dict]:
             GROUP BY mr.assigned_employee_id
         ),
         closed AS (
-            -- App closeouts only (closed_at set). Import sentinel closed → closed_at NULL.
+            -- App closeouts use closed_at; Gravity/import rows are status=closed with
+            -- closed_at NULL — fall back to start_date so historical utilization isn't empty.
             SELECT mr.assigned_employee_id AS employee_id,
                    count(*)::int AS calls_closed
             FROM maintenance_request mr
             WHERE mr.assigned_employee_id IS NOT NULL
-              AND mr.closed_at IS NOT NULL
-              AND (mr.closed_at AT TIME ZONE 'America/Toronto')::date
-                    BETWEEN %(start)s AND %(end)s
+              AND mr.status::text = 'closed'
+              AND COALESCE(
+                    (mr.closed_at AT TIME ZONE 'America/Toronto')::date,
+                    mr.start_date
+                  ) BETWEEN %(start)s AND %(end)s
             GROUP BY mr.assigned_employee_id
         ),
         visits AS (
@@ -164,6 +167,23 @@ def utilization_rows(conn, start: date, end: date) -> list[dict]:
               AND (rv.en_route_at AT TIME ZONE 'America/Toronto')::date
                     BETWEEN %(start)s AND %(end)s
             GROUP BY rv.employee_id
+        ),
+        -- Outcome mix: prefer request_visit; fall back to MR.closeout_outcome for
+        -- app closeouts that never wrote a visit row (or legacy rows that have it).
+        mr_outcomes AS (
+            SELECT mr.assigned_employee_id AS employee_id,
+                   count(*) FILTER (WHERE mr.closeout_outcome::text = 'complete')::int AS complete,
+                   count(*) FILTER (WHERE mr.closeout_outcome::text = 'partial_reschedule')::int AS partial_reschedule,
+                   count(*) FILTER (WHERE mr.closeout_outcome::text = 'partial_expertise')::int AS partial_expertise,
+                   count(*) FILTER (WHERE mr.closeout_outcome::text = 'failed')::int AS failed
+            FROM maintenance_request mr
+            WHERE mr.assigned_employee_id IS NOT NULL
+              AND mr.closeout_outcome IS NOT NULL
+              AND COALESCE(
+                    (mr.closed_at AT TIME ZONE 'America/Toronto')::date,
+                    mr.start_date
+                  ) BETWEEN %(start)s AND %(end)s
+            GROUP BY mr.assigned_employee_id
         )
         SELECT w.employee_id,
                w.nom_employe,
@@ -174,14 +194,23 @@ def utilization_rows(conn, start: date, end: date) -> list[dict]:
                coalesce(max(a.planned_unknown_count), 0) AS planned_unknown_count,
                coalesce(max(v.visit_minutes), 0) AS visit_minutes,
                coalesce(max(v.visits_count), 0) AS visits_count,
-               coalesce(max(v.complete), 0) AS complete,
-               coalesce(max(v.partial_reschedule), 0) AS partial_reschedule,
-               coalesce(max(v.partial_expertise), 0) AS partial_expertise,
-               coalesce(max(v.failed), 0) AS failed
+               CASE WHEN coalesce(max(v.visits_count), 0) > 0
+                    THEN coalesce(max(v.complete), 0)
+                    ELSE coalesce(max(o.complete), 0) END AS complete,
+               CASE WHEN coalesce(max(v.visits_count), 0) > 0
+                    THEN coalesce(max(v.partial_reschedule), 0)
+                    ELSE coalesce(max(o.partial_reschedule), 0) END AS partial_reschedule,
+               CASE WHEN coalesce(max(v.visits_count), 0) > 0
+                    THEN coalesce(max(v.partial_expertise), 0)
+                    ELSE coalesce(max(o.partial_expertise), 0) END AS partial_expertise,
+               CASE WHEN coalesce(max(v.visits_count), 0) > 0
+                    THEN coalesce(max(v.failed), 0)
+                    ELSE coalesce(max(o.failed), 0) END AS failed
         FROM workforce w
         LEFT JOIN assigned a ON a.employee_id = w.employee_id
         LEFT JOIN closed c ON c.employee_id = w.employee_id
         LEFT JOIN visits v ON v.employee_id = w.employee_id
+        LEFT JOIN mr_outcomes o ON o.employee_id = w.employee_id
         GROUP BY w.employee_id, w.nom_employe
         ORDER BY w.nom_employe
         """,

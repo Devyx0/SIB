@@ -33,6 +33,8 @@ class ManualCreateBody(BaseModel):
     secondary_email: Optional[str] = None
     attention: Optional[str] = None
     attachment_url: Optional[str] = None
+    # UI language for auto-triage text fields (title, problems, notes).
+    ui_lang: Literal["fr", "en"] = "fr"
 
 
 _ACCESS_LABELS: dict[str, str] = {

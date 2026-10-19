@@ -189,6 +189,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
         secondary_email: secondaryEmail.trim() || undefined,
         problem: problem.trim(),
         attention: attention.trim() || undefined,
+        ui_lang: lang,
       });
       qc.invalidateQueries({ queryKey: ['requests'] });
       handleClose();

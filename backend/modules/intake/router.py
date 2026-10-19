@@ -46,5 +46,5 @@ def intake_manual_create(
     from backend.modules.requests import service as req_service
     from backend.modules.requests.router import _run_triage_background
     req_service.action_trigger_triage(conn, result.request_id)
-    background_tasks.add_task(_run_triage_background, result.request_id)
+    background_tasks.add_task(_run_triage_background, result.request_id, body.ui_lang)
     return result

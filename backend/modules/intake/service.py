@@ -126,6 +126,17 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
     building_id = body.building_id
     match_status = "exact" if unit_id is not None else "building_only"
 
+    # Cardinal rule 35: Lévis / rive-sud → Majordome queue; else Main.
+    from backend.triage.calendar_route import source_calendar_for_sector
+    sector_row = conn.execute(
+        "SELECT territoire, color_code FROM sector WHERE sector_id = %(id)s",
+        {"id": sector_id},
+    ).fetchone()
+    source_cal = source_calendar_for_sector(
+        territoire=sector_row["territoire"] if sector_row else None,
+        color_code=sector_row["color_code"] if sector_row else None,
+    )
+
     problems_text = _build_problems(body)
     entry_perm = access_label(body.access)
     animals_val = animals_db_value(body.animals)
@@ -141,6 +152,8 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
         "secondary_email": body.secondary_email or None,
         "phone_2": body.phone_2 or None,
     })
+
+    from backend.core.utils import today_local
 
     row = conn.execute(
         """
@@ -163,7 +176,7 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
             %(attachment_url)s,
             %(employee_id)s,
             %(raw_caller_body)s,
-            NULL, NULL, NOW()
+            %(source_calendar)s, %(start_date)s, NOW()
         )
         RETURNING request_id, building_id, unit_id
         """,
@@ -182,6 +195,8 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
             "attachment_url":   body.attachment_url,
             "employee_id":      user.employee_id,
             "raw_caller_body":  raw_caller_body,
+            "source_calendar":  source_cal,
+            "start_date":       today_local(),
         },
     ).fetchone()
 
