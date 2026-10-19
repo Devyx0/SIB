@@ -114,6 +114,10 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
   const qc = useQueryClient();
   const isEditor = !!(me?.roles.includes('coordinator') || me?.roles.includes('director'));
   const isClosed = data?.status === 'closed';
+  const isEnRoute = data?.status === 'en_route';
+  const EN_ROUTE_MSG = t(lang,
+    "Appel en cours — le technicien doit d'abord clôturer",
+    'Call in progress — the technician must close it out first');
 
   const { data: employees } = useQuery({
     queryKey: ['employees'],
@@ -197,6 +201,11 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
         qc.invalidateQueries({ queryKey: ['requests'] });
         qc.invalidateQueries({ queryKey: ['request', requestId] });
         setTimeout(() => setStaleMsg(null), 3000);
+      } else if (err instanceof ApiError && err.code === 'REQUEST_EN_ROUTE') {
+        // The refetched status becomes en_route, which also disables the control.
+        setStaleMsg(EN_ROUTE_MSG);
+        qc.invalidateQueries({ queryKey: ['requests'] });
+        qc.invalidateQueries({ queryKey: ['request', requestId] });
       }
     }
   }
@@ -619,13 +628,14 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                     </p>
                   )}
 
-                  {/* Assign */}
+                  {/* Assign — locked while the technician is en route */}
                   <div className={styles.editField}>
                     <label className={styles.editLabel}>{t(lang, 'Assigné à', 'Assigned to')}</label>
                     <select
                       className={styles.editInput}
                       value={String(assignEmpId ?? '')}
-                      disabled={isClosed}
+                      disabled={isClosed || isEnRoute}
+                      data-testid="assign-select"
                       onChange={(e) => {
                         const empId = e.target.value === '' ? null : Number(e.target.value);
                         setAssignEmpId(empId);
@@ -644,6 +654,11 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                         </option>
                       ))}
                     </select>
+                    {isEnRoute && (
+                      <p className={styles.closedNotice} data-testid="en-route-notice">
+                        {EN_ROUTE_MSG}
+                      </p>
+                    )}
                   </div>
 
                   {/* Reschedule */}

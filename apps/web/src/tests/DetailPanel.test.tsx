@@ -410,3 +410,41 @@ describe('visits section (stop 3)', () => {
     expect(screen.getByTestId('visit-photo').getAttribute('src')).toContain('signed.local');
   });
 });
+
+describe('en route assignment lock (fix 2026-10-19)', () => {
+  const EN_ROUTE_MSG = "Appel en cours — le technicien doit d'abord clôturer";
+
+  it('disables the assignee control with the message when en_route', async () => {
+    const enRouteReq = { ...MOCK_REQUEST, status: 'en_route' };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: enRouteReq, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    wrap(
+      <DetailPanel requestId={1} onClose={vi.fn()} lang="fr"
+        me={{ employee_id: 4, roles: ['coordinator'] } as any} />
+    );
+    const select = screen.getByTestId('assign-select') as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    expect(screen.getByTestId('en-route-notice').textContent).toContain(EN_ROUTE_MSG);
+    // The other dispatch controls stay usable (log textarea not disabled).
+    expect((screen.getByTestId('log-text') as HTMLTextAreaElement).disabled).toBe(false);
+  });
+
+  it('shows the message when the API returns 409 REQUEST_EN_ROUTE', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([
+      { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' },
+    ]);
+    vi.spyOn(client, 'dispatchAssign').mockRejectedValue(new ApiError('REQUEST_EN_ROUTE', EN_ROUTE_MSG));
+    wrap(
+      <DetailPanel requestId={1} onClose={vi.fn()} lang="fr"
+        me={{ employee_id: 4, roles: ['coordinator'] } as any} />
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('assign-select').querySelectorAll('option').length).toBeGreaterThan(1)
+    );
+    await userEvent.selectOptions(screen.getByTestId('assign-select'), '14');
+    await userEvent.type(screen.getByTestId('justification-text'), 'Réassignation test valide');
+    await userEvent.click(screen.getByTestId('justification-save'));
+    await waitFor(() => expect(screen.getByText(EN_ROUTE_MSG)).toBeTruthy());
+  });
+});
