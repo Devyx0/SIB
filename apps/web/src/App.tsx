@@ -4,6 +4,8 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import AppShell from './components/AppShell';
 import DispatchBoard from './pages/DispatchBoard';
+import TechList from './pages/TechPortal';
+import TechCallView from './pages/TechPortal/CallView';
 import Login from './pages/Login';
 import { fetchMe } from './api/client';
 import type { MeResponse } from './api/schema.d.ts';
@@ -30,7 +32,8 @@ export default function App() {
 
   useEffect(() => {
     if (session) {
-      fetchMe().then(setMe).catch(() => {});
+      // Role-less fallback on failure → coordinator branch (same as before).
+      fetchMe().then(setMe).catch(() => setMe({ employee_id: 0, nom_employe: '', roles: [] }));
     }
   }, [session]);
 
@@ -39,18 +42,33 @@ export default function App() {
   }
 
   if (session === undefined) return null; // loading
+  // Wait for roles before mounting routes: the catch-all Navigate would
+  // otherwise rewrite deep links (e.g. /tech/appels/5) before `me` arrives.
+  if (session && me === null) return null;
+
+  // Technician/contractor WITHOUT coordinator/director → mobile portal.
+  const techOnly =
+    me != null &&
+    me.roles.some((r) => r === 'technician' || r === 'contractor') &&
+    !me.roles.some((r) => r === 'coordinator' || r === 'director');
 
   return (
     <Routes>
       <Route
         path="/login"
-        element={session ? <Navigate to="/board" replace /> : <Login />}
+        element={session ? <Navigate to={techOnly ? '/tech' : '/board'} replace /> : <Login />}
       />
       <Route
         path="/*"
         element={
           !session ? (
             <Navigate to="/login" replace />
+          ) : techOnly ? (
+            <Routes>
+              <Route path="tech" element={<TechList lang={lang} me={me} onSignOut={handleSignOut} />} />
+              <Route path="tech/appels/:id" element={<TechCallView lang={lang} me={me} onSignOut={handleSignOut} />} />
+              <Route path="*" element={<Navigate to="/tech" replace />} />
+            </Routes>
           ) : (
             <AppShell
               lang={lang}

@@ -1,0 +1,209 @@
+/* Mobile-first technician portal. */
+.page {
+  min-height: 100vh;
+  background: #f4f5f7;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: #1e3a5f;
+  color: #fff;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.backLink {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.userName {
+  font-size: 0.8rem;
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.signOutBtn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  color: #fff;
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.main {
+  flex: 1;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sectionTitle {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #556;
+  margin: 0.75rem 0 0;
+}
+
+.openCall {
+  border: 2px solid #b45309;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.openCallBanner {
+  background: #b45309;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.callRow {
+  display: block;
+  background: #fff;
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+  text-decoration: none;
+  color: #1a1a2e;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.openCall .callRow {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.callRowTop {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.callDate {
+  font-size: 0.8rem;
+  color: #556;
+  font-variant-numeric: tabular-nums;
+}
+
+.statusBadge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334;
+}
+
+.statusBadge[data-status='en_route'] {
+  background: #b45309;
+  color: #fff;
+}
+
+.urgencyBadge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  text-transform: uppercase;
+}
+
+.callTitle {
+  font-weight: 600;
+  margin-top: 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.callAddress {
+  font-size: 0.85rem;
+  color: #556;
+  margin-top: 0.15rem;
+}
+
+.callViewTitle {
+  font-size: 1.1rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.card p {
+  margin: 0.2rem 0;
+}
+
+.cardTitle {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #667;
+  margin: 0 0 0.35rem;
+}
+
+.preWrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ftLink,
+.contactLink {
+  color: #1d4ed8;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.followupEntry {
+  border-top: 1px solid #eef0f3;
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.followupEntry:first-of-type {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.muted {
+  color: #778;
+}
+
+.error {
+  color: #b91c1c;
+  font-weight: 600;
+}

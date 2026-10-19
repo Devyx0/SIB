@@ -14,8 +14,9 @@ export class ApiError extends Error {
 }
 
 export interface RequestListParams {
-  start_date: string;
-  end_date: string;
+  // Optional as a pair — omit both to list any date (tech portal).
+  start_date?: string;
+  end_date?: string;
   status?: string[];
   building_id?: number;
   sector_id?: number;
@@ -71,8 +72,8 @@ function apiPost<T>(path: string, body: unknown): Promise<T> {
 
 function buildQuery(params: RequestListParams): string {
   const q = new URLSearchParams();
-  q.set('start_date', params.start_date);
-  q.set('end_date', params.end_date);
+  if (params.start_date) q.set('start_date', params.start_date);
+  if (params.end_date) q.set('end_date', params.end_date);
   if (params.status?.length) params.status.forEach((s) => q.append('status', s));
   if (params.building_id != null) q.set('building_id', String(params.building_id));
   if (params.sector_id != null) q.set('sector_id', String(params.sector_id));

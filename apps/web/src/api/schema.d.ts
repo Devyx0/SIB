@@ -103,6 +103,8 @@ export interface RequestDetail extends ListRow {
   raw_caller_body: { entry_permission: string | null; animals: string | null; problems: string | null } | null;
   problems: string | null;
   triage_model_version: string | null;
+  ft_link: string | null;
+  ft_name: string | null;
   heating_keyword_hint: boolean;
 }
 
