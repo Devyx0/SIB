@@ -412,6 +412,8 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                       <dd>{data.building_address ?? '—'}</dd>
                       <dt>{t(lang, 'Unité', 'Unit')}</dt>
                       <dd>{data.unit_label ?? '—'}</dd>
+                      <dt>{t(lang, "N° d'unité", 'Unit #')}</dt>
+                      <dd>{data.unique_unit_number ?? '—'}</dd>
                       <dt>{t(lang, 'Territoire', 'Territory')}</dt>
                       <dd>{data.territoire ?? '—'}</dd>
                       <dt>{t(lang, 'Accès', 'Access')}</dt>

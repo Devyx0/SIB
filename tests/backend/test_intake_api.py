@@ -241,3 +241,123 @@ def test_category_and_secondary_persisted(ac, db_conn):
     assert "Marie" in row["problems"]
     assert "marie@example.com" in row["problems"]
     assert "418-555-0002" in row["problems"]
+
+
+def test_taxonomy_axes_and_intake_urgent_persisted(ac, db_conn):
+    loc = _perigord(db_conn)
+    _ensure_coord_sector(db_conn, loc["sector_id"])
+    body = _valid_body(
+        db_conn,
+        element="Plomberie",
+        symptome="Fuite",
+        composante="Robinet",
+        emplacement="Cuisine",
+        intake_urgent=True,
+    )
+    r = ac(_user(_COORD, "coordinator")).post("/api/v1/intake", json=body)
+    assert r.status_code == 201
+    rid = r.json()["request_id"]
+    row = db_conn.execute(
+        """
+        SELECT element, symptome, composante, emplacement, intake_urgent
+        FROM maintenance_request WHERE request_id = %s
+        """,
+        [rid],
+    ).fetchone()
+    assert row["element"] == "Plomberie"
+    assert row["symptome"] == "Fuite"
+    assert row["composante"] == "Robinet"
+    assert row["emplacement"] == "Cuisine"
+    assert row["intake_urgent"] is True
+
+
+def test_lookup_unit_by_number(ac, db_conn):
+    unit = db_conn.execute(
+        """
+        SELECT u.unit_id, u.unique_unit_number, u.building_id
+        FROM unit u
+        WHERE u.unique_unit_number IS NOT NULL
+          AND u.unique_unit_number LIKE '% %'
+        LIMIT 1
+        """
+    ).fetchone()
+    if unit is None:
+        pytest.skip("need a unit with unique_unit_number")
+    r = ac(_user(_DIR, "director")).get(
+        "/api/v1/lookup/unit-by-number",
+        params={"unique_unit_number": unit["unique_unit_number"]},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["unit_id"] == unit["unit_id"]
+    assert body["building_id"] == unit["building_id"]
+    assert body["unique_unit_number"] == unit["unique_unit_number"]
+    assert "pets_allowed" in body
+    assert "tenants" in body
+    assert isinstance(body["tenants"], list)
+
+    # Short form before the street name (e.g. "1017-21" → "1017-21 Duchesneau")
+    short = unit["unique_unit_number"].split(" ", 1)[0]
+    # Skip if that prefix is ambiguous in this DB
+    n = db_conn.execute(
+        """
+        SELECT COUNT(*) AS n FROM unit
+        WHERE lower(unique_unit_number) LIKE lower(%(p)s) || ' %%'
+           OR lower(unique_unit_number) = lower(%(p)s)
+        """,
+        {"p": short},
+    ).fetchone()["n"]
+    if n == 1:
+        r2 = ac(_user(_DIR, "director")).get(
+            "/api/v1/lookup/unit-by-number",
+            params={"unique_unit_number": short},
+        )
+        assert r2.status_code == 200
+        assert r2.json()["unit_id"] == unit["unit_id"]
+
+
+def test_lookup_unit_by_number_404(ac, db_conn):
+    r = ac(_user(_DIR, "director")).get(
+        "/api/v1/lookup/unit-by-number",
+        params={"unique_unit_number": "__no_such_unit__"},
+    )
+    assert r.status_code == 404
+
+
+def test_lookup_unit_context_by_id(ac, db_conn):
+    unit = db_conn.execute(
+        "SELECT unit_id FROM unit WHERE numero_appartement IS NOT NULL LIMIT 1"
+    ).fetchone()
+    if unit is None:
+        pytest.skip("need a unit")
+    r = ac(_user(_DIR, "director")).get(
+        "/api/v1/lookup/unit-context",
+        params={"unit_id": unit["unit_id"]},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["unit_id"] == unit["unit_id"]
+    assert "pets_allowed" in body
+
+
+def test_search_unit_numbers(ac, db_conn):
+    unit = db_conn.execute(
+        """
+        SELECT unique_unit_number FROM unit
+        WHERE unique_unit_number IS NOT NULL AND unique_unit_number LIKE '% %'
+        LIMIT 1
+        """
+    ).fetchone()
+    if unit is None:
+        pytest.skip("need a unit with unique_unit_number")
+    prefix = unit["unique_unit_number"].split(" ", 1)[0][:4]
+    r = ac(_user(_DIR, "director")).get(
+        "/api/v1/lookup/unit-numbers",
+        params={"q": prefix, "limit": 10},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body, list)
+    assert len(body) >= 1
+    assert "unique_unit_number" in body[0]
+    assert "unit_id" in body[0]

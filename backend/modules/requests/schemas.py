@@ -35,6 +35,7 @@ SORT_SQL: dict[str, str] = {
     "raw_title":              "mr.raw_title",
     "territoire":             "s.territoire",
     "building_address":       "b.adresse",
+    "unique_unit_number":     "u.unique_unit_number",
     "assigned_employee_name": "e.nom_employe",
     "subcontractor_name":     "mr.subcontractor_name",
     "time_estimate_bucket":   "mr.time_estimate_bucket",
@@ -48,7 +49,7 @@ SORT_SQL: dict[str, str] = {
 
 SortKey = Literal[
     "start_date", "asnu", "urgency_tier", "raw_title",
-    "territoire", "building_address", "assigned_employee_name",
+    "territoire", "building_address", "unique_unit_number", "assigned_employee_name",
     "subcontractor_name", "time_estimate_bucket", "status", "source_calendar",
     "last_followup_date", "estimated_cost", "next_follow_up_date", "next_steps",
 ]
@@ -210,6 +211,7 @@ class ListRow(BaseModel):
     last_followup_date: Optional[date] = None
     last_followup_text: Optional[str] = None
     unit_label: Optional[str] = None
+    unique_unit_number: Optional[str] = None
     en_route_at: Optional[datetime] = None
     closeout_outcome: Optional[str] = None
     closeout_urgent: Optional[bool] = None
@@ -304,3 +306,30 @@ class UnitLookup(BaseModel):
     unit_id: int
     numero_appartement: str
     rue: Optional[str] = None
+
+
+class UnitNumberHit(BaseModel):
+    unit_id: int
+    unique_unit_number: str
+    building_adresse: Optional[str] = None
+    numero_appartement: Optional[str] = None
+
+
+class LeaseTenantOut(BaseModel):
+    tenant_id: int
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+
+class UnitByNumberLookup(BaseModel):
+    """Unit + current-lease tenants / pet flag (by unique number or unit_id)."""
+    unit_id: int
+    building_id: int
+    sector_id: Optional[int] = None
+    unique_unit_number: Optional[str] = None
+    numero_appartement: Optional[str] = None
+    rue: Optional[str] = None
+    building_adresse: Optional[str] = None
+    pets_allowed: bool = False
+    tenants: list[LeaseTenantOut] = Field(default_factory=list)

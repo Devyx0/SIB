@@ -35,6 +35,7 @@ const MANDATORY_COLS: ColDef[] = [
   { key: 'raw_title',             fr: 'Appel',          en: 'Call',          sortable: true  },
   { key: 'territoire',            fr: 'Territoire',     en: 'Territory',     sortable: true  },
   { key: 'building_address',      fr: 'Immeuble',       en: 'Building',      sortable: true  },
+  { key: 'unique_unit_number',    fr: "N° d'unité",     en: 'Unit #',        sortable: true  },
   { key: 'assigned_employee_name',fr: 'Employé',        en: 'Employee',      sortable: true  },
   { key: 'last_followup_date',    fr: 'Dernier suivi',  en: 'Last log',      sortable: true  },
   { key: 'status',                fr: 'Statut',         en: 'Status',        sortable: true  },
@@ -193,6 +194,9 @@ export default function RequestTable({
           <td className={styles.nowrap}>{row.territoire ?? '—'}</td>
           <td className={styles.buildingCell}>
             <span className={styles.clamp} title={row.building_address ?? undefined}>{row.building_address ?? '—'}</span>
+          </td>
+          <td className={styles.nowrap + ' ' + styles.mono} title={row.unique_unit_number ?? undefined}>
+            {row.unique_unit_number ?? '—'}
           </td>
           <td className={styles.nowrap + ' ' + styles.bold}>{row.assigned_employee_name ?? '—'}</td>
           <td className={styles.nowrap}>{row.last_followup_date ?? '—'}</td>

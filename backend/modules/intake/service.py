@@ -141,6 +141,10 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
     entry_perm = access_label(body.access)
     animals_val = animals_db_value(body.animals)
     category = (body.category or "").strip() or None
+    element = (body.element or "").strip() or None
+    symptome = (body.symptome or "").strip() or None
+    composante = (body.composante or "").strip() or None
+    emplacement = (body.emplacement or "").strip() or None
 
     raw_caller_body = json.dumps({
         "entry_permission": entry_perm,
@@ -148,6 +152,11 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
         "problems": problems_text,
         "attention": body.attention or None,
         "category": category,
+        "element": element,
+        "symptome": symptome,
+        "composante": composante,
+        "emplacement": emplacement,
+        "intake_urgent": body.intake_urgent,
         "secondary_name": body.secondary_name or None,
         "secondary_email": body.secondary_email or None,
         "phone_2": body.phone_2 or None,
@@ -163,6 +172,8 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
             caller_name, caller_phone, caller_email,
             entry_permission, animals,
             problems, raw_title, category_raw,
+            element, symptome, composante, emplacement,
+            intake_urgent,
             attachment_url,
             created_by_employee_id,
             raw_caller_body,
@@ -173,6 +184,8 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
             %(caller_name)s, %(phone_1)s, %(caller_email)s,
             %(entry_permission)s, %(animals)s,
             %(problems)s, %(raw_title)s, %(category_raw)s,
+            %(element)s, %(symptome)s, %(composante)s, %(emplacement)s,
+            %(intake_urgent)s,
             %(attachment_url)s,
             %(employee_id)s,
             %(raw_caller_body)s,
@@ -192,6 +205,11 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
             "problems":         problems_text,
             "raw_title":        _raw_title(body.problem),
             "category_raw":     category,
+            "element":          element,
+            "symptome":         symptome,
+            "composante":       composante,
+            "emplacement":      emplacement,
+            "intake_urgent":    body.intake_urgent,
             "attachment_url":   body.attachment_url,
             "employee_id":      user.employee_id,
             "raw_caller_body":  raw_caller_body,

@@ -33,6 +33,7 @@ function makeRow(overrides: Partial<ListRow> = {}): ListRow {
     last_followup_date: null,
     last_followup_text: null,
     unit_label: null,
+    unique_unit_number: null,
     en_route_at: null,
     closeout_outcome: null,
     closeout_urgent: null,

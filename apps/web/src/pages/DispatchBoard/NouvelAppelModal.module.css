@@ -75,6 +75,51 @@
   flex: 1;
 }
 
+.suggestWrap {
+  position: relative;
+}
+
+.suggestList {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-pop);
+}
+
+.suggestItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.suggestItem:hover,
+.suggestItemActive {
+  background: var(--navy-50);
+}
+
+.suggestMeta {
+  display: block;
+  font-size: 12px;
+  color: var(--color-neutral-600);
+  margin-top: 2px;
+}
+
 .section {
   display: flex;
   flex-direction: column;

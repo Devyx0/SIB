@@ -25,10 +25,16 @@ class ManualCreateBody(BaseModel):
     unit_id: Optional[int] = None
     access: AccessChoice
     access_details: Optional[str] = None
-    animals: AnimalsChoice = "non"
+    # Only set when lease allows pets (oui/non). Omitted when pets not allowed.
+    animals: Optional[AnimalsChoice] = None
     animal_details: Optional[str] = None
     problem: str = Field(..., min_length=1)
     category: Optional[str] = None
+    element: Optional[str] = None
+    symptome: Optional[str] = None
+    composante: Optional[str] = None
+    emplacement: Optional[str] = None
+    intake_urgent: bool = False
     secondary_name: Optional[str] = None
     secondary_email: Optional[str] = None
     attention: Optional[str] = None
@@ -49,8 +55,10 @@ def access_label(access: str) -> str:
     return _ACCESS_LABELS.get(access, access)
 
 
-def animals_db_value(animals: str) -> str | None:
-    """Map the three-option animals choice to the DB value (Oui / N/A / NULL)."""
+def animals_db_value(animals: str | None) -> str | None:
+    """Map the animals choice to the DB value (Oui / Non / N/A / NULL)."""
+    if animals is None:
+        return None
     return _ANIMALS_LABELS.get(animals)
 
 

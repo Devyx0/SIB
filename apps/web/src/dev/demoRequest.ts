@@ -42,6 +42,7 @@ export const DEMO_ROW: ListRow = {
   last_followup_date: today,
   last_followup_text: 'Locataire avisée par téléphone.',
   unit_label: '204',
+  unique_unit_number: '1580-204 Perigord',
   en_route_at: null,
   closeout_outcome: null,
   closeout_urgent: false,

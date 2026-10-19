@@ -7,12 +7,16 @@ import NouvelAppelModal from '../pages/DispatchBoard/NouvelAppelModal';
 const mockFetchSectors = vi.fn().mockResolvedValue([{ sector_id: 1, territoire: 'Secteur A', color_code: null }]);
 const mockFetchBuildings = vi.fn().mockResolvedValue([{ building_id: 10, adresse: '1580 Perigord', web_building_name: null, sector_id: 1 }]);
 const mockFetchUnits = vi.fn().mockResolvedValue([{ unit_id: 100, numero_appartement: '101', rue: '1580, rue Perigord' }]);
+const mockSearchUnitNumbers = vi.fn();
+const mockFetchUnitContext = vi.fn();
 const mockCreateManualRequest = vi.fn();
 
 vi.mock('../api/client', () => ({
   fetchSectors: (...args: unknown[]) => mockFetchSectors(...args),
   fetchBuildings: (...args: unknown[]) => mockFetchBuildings(...args),
   fetchUnits: (...args: unknown[]) => mockFetchUnits(...args),
+  searchUnitNumbers: (...args: unknown[]) => mockSearchUnitNumbers(...args),
+  fetchUnitContext: (...args: unknown[]) => mockFetchUnitContext(...args),
   createManualRequest: (...args: unknown[]) => mockCreateManualRequest(...args),
 }));
 
@@ -36,12 +40,38 @@ async function fillRequired(opts: { phone?: string; problem?: string } = {}) {
   await selectBuilding();
 }
 
+async function pickUnitFromSearch(opts: {
+  query: string;
+  hit: { unit_id: number; unique_unit_number: string; building_adresse: string | null; numero_appartement: string | null };
+  context: Record<string, unknown>;
+}) {
+  mockSearchUnitNumbers.mockResolvedValue([opts.hit]);
+  mockFetchUnitContext.mockResolvedValue(opts.context);
+  await userEvent.type(screen.getByTestId('unique-unit-number'), opts.query);
+  await waitFor(() => expect(mockSearchUnitNumbers).toHaveBeenCalled());
+  const list = await screen.findByTestId('unique-unit-suggestions');
+  await userEvent.click(list.querySelector('button')!);
+  await waitFor(() => expect(mockFetchUnitContext).toHaveBeenCalledWith(opts.hit.unit_id));
+}
+
 describe('NouvelAppelModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetchSectors.mockResolvedValue([{ sector_id: 1, territoire: 'Secteur A', color_code: null }]);
     mockFetchBuildings.mockResolvedValue([{ building_id: 10, adresse: '1580 Perigord', web_building_name: null, sector_id: 1 }]);
     mockFetchUnits.mockResolvedValue([{ unit_id: 100, numero_appartement: '101', rue: '1580, rue Perigord' }]);
+    mockSearchUnitNumbers.mockResolvedValue([]);
+    mockFetchUnitContext.mockResolvedValue({
+      unit_id: 100,
+      building_id: 10,
+      sector_id: 1,
+      unique_unit_number: null,
+      numero_appartement: '101',
+      rue: null,
+      building_adresse: '1580 Perigord',
+      pets_allowed: false,
+      tenants: [],
+    });
   });
 
   it('renders nothing when closed', () => {
@@ -56,8 +86,14 @@ describe('NouvelAppelModal', () => {
     expect(screen.getByTestId('phone-1')).toBeTruthy();
     expect(screen.getByTestId('phone-2')).toBeTruthy();
     expect(screen.getByTestId('access-group')).toBeTruthy();
-    expect(screen.getByTestId('animals-group')).toBeTruthy();
-    expect(screen.getByTestId('category')).toBeTruthy();
+    expect(screen.getByTestId('unique-unit-number')).toBeTruthy();
+    expect(screen.getByTestId('element')).toBeTruthy();
+    expect(screen.getByTestId('symptome')).toBeTruthy();
+    expect(screen.getByTestId('composante')).toBeTruthy();
+    expect(screen.getByTestId('emplacement')).toBeTruthy();
+    expect(screen.getByTestId('intake-urgent')).toBeTruthy();
+    expect(screen.queryByTestId('animals-group')).toBeNull();
+    expect(screen.queryByTestId('category')).toBeNull();
     await waitFor(() => expect(mockFetchSectors).toHaveBeenCalled());
   });
 
@@ -92,7 +128,161 @@ describe('NouvelAppelModal', () => {
     expect(mockCreateManualRequest).not.toHaveBeenCalled();
   });
 
-  it('creates with phone_2, secondary contact, category', async () => {
+  it('searches unique unit numbers and autofills single tenant + pets', async () => {
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    await waitFor(() => expect(mockFetchSectors).toHaveBeenCalled());
+    await pickUnitFromSearch({
+      query: 'U-1',
+      hit: {
+        unit_id: 100,
+        unique_unit_number: 'U-101',
+        building_adresse: '1580 Perigord',
+        numero_appartement: '101',
+      },
+      context: {
+        unit_id: 100,
+        building_id: 10,
+        sector_id: 1,
+        unique_unit_number: 'U-101',
+        numero_appartement: '101',
+        rue: '1580, rue Perigord',
+        building_adresse: '1580 Perigord',
+        pets_allowed: true,
+        tenants: [{
+          tenant_id: 1,
+          name: 'Marie Locataire',
+          phone: '418-555-9999',
+          email: 'marie@example.com',
+        }],
+      },
+    });
+    expect((screen.getByTestId('caller-name') as HTMLInputElement).value).toBe('Marie Locataire');
+    expect((screen.getByTestId('phone-1') as HTMLInputElement).value).toBe('418-555-9999');
+    expect((screen.getByTestId('caller-email') as HTMLInputElement).value).toBe('marie@example.com');
+    expect(screen.getByTestId('animals-group')).toBeTruthy();
+    expect(screen.queryByTestId('tenant-select')).toBeNull();
+  });
+
+  it('shows tenant picker when multiple occupants and fills on choose', async () => {
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    await waitFor(() => expect(mockFetchSectors).toHaveBeenCalled());
+    // First: single-tenant unit fills caller fields.
+    await pickUnitFromSearch({
+      query: 'Old',
+      hit: {
+        unit_id: 99,
+        unique_unit_number: 'Old-1',
+        building_adresse: 'Old St',
+        numero_appartement: '1',
+      },
+      context: {
+        unit_id: 99,
+        building_id: 10,
+        sector_id: 1,
+        unique_unit_number: 'Old-1',
+        numero_appartement: '1',
+        rue: null,
+        building_adresse: 'Old St',
+        pets_allowed: false,
+        tenants: [{
+          tenant_id: 50,
+          name: 'Myriam Sanogo',
+          phone: '418-555-9999',
+          email: 'old@example.com',
+        }],
+      },
+    });
+    expect((screen.getByTestId('caller-name') as HTMLInputElement).value).toBe('Myriam Sanogo');
+
+    // Then: multi-tenant unit must clear previous caller before pick.
+    await userEvent.clear(screen.getByTestId('unique-unit-number'));
+    await pickUnitFromSearch({
+      query: 'U-1',
+      hit: {
+        unit_id: 100,
+        unique_unit_number: 'U-101',
+        building_adresse: '1580 Perigord',
+        numero_appartement: '101',
+      },
+      context: {
+        unit_id: 100,
+        building_id: 10,
+        sector_id: 1,
+        unique_unit_number: 'U-101',
+        numero_appartement: '101',
+        rue: null,
+        building_adresse: '1580 Perigord',
+        pets_allowed: false,
+        tenants: [
+          { tenant_id: 1, name: 'Alice', phone: '418-555-0001', email: 'a@example.com' },
+          { tenant_id: 2, name: 'Bob', phone: '418-555-0002', email: 'b@example.com' },
+        ],
+      },
+    });
+    await waitFor(() => expect(screen.getByTestId('tenant-select')).toBeTruthy());
+    expect((screen.getByTestId('caller-name') as HTMLInputElement).value).toBe('');
+    expect((screen.getByTestId('phone-1') as HTMLInputElement).value).toBe('');
+    expect((screen.getByTestId('caller-email') as HTMLInputElement).value).toBe('');
+    await userEvent.selectOptions(screen.getByTestId('tenant-select'), '2');
+    expect((screen.getByTestId('caller-name') as HTMLInputElement).value).toBe('Bob');
+    expect((screen.getByTestId('phone-1') as HTMLInputElement).value).toBe('418-555-0002');
+    expect((screen.getByTestId('caller-email') as HTMLInputElement).value).toBe('b@example.com');
+  });
+
+  it('loads pets from lease when unit picked from dropdown', async () => {
+    mockFetchUnitContext.mockResolvedValue({
+      unit_id: 100,
+      building_id: 10,
+      sector_id: 1,
+      unique_unit_number: 'U-101',
+      numero_appartement: '101',
+      rue: null,
+      building_adresse: '1580 Perigord',
+      pets_allowed: true,
+      tenants: [{
+        tenant_id: 9,
+        name: 'Jean Dropdown',
+        phone: '418-555-1111',
+        email: null,
+      }],
+    });
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    await selectBuilding();
+    await waitFor(() => expect(screen.getByTestId('unit-select')).toBeTruthy());
+    await userEvent.selectOptions(screen.getByTestId('unit-select'), '100');
+    await waitFor(() => expect(mockFetchUnitContext).toHaveBeenCalledWith(100));
+    expect(screen.getByTestId('animals-group')).toBeTruthy();
+    expect((screen.getByTestId('caller-name') as HTMLInputElement).value).toBe('Jean Dropdown');
+    expect((screen.getByTestId('phone-1') as HTMLInputElement).value).toBe('418-555-1111');
+  });
+
+  it('hides pets when lease does not allow them', async () => {
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    await waitFor(() => expect(mockFetchSectors).toHaveBeenCalled());
+    await pickUnitFromSearch({
+      query: 'U-1',
+      hit: {
+        unit_id: 100,
+        unique_unit_number: 'U-101',
+        building_adresse: '1580 Perigord',
+        numero_appartement: '101',
+      },
+      context: {
+        unit_id: 100,
+        building_id: 10,
+        sector_id: 1,
+        unique_unit_number: 'U-101',
+        numero_appartement: '101',
+        rue: null,
+        building_adresse: '1580 Perigord',
+        pets_allowed: false,
+        tenants: [{ tenant_id: 1, name: 'Jean', phone: '418-555-0101', email: null }],
+      },
+    });
+    expect(screen.queryByTestId('animals-group')).toBeNull();
+  });
+
+  it('creates with taxonomy axes, urgent, secondary contact', async () => {
     mockCreateManualRequest.mockResolvedValue({ request_id: 42, building_id: 10, unit_id: 100, match_status: 'exact' });
     wrap(<NouvelAppelModal open onClose={vi.fn()} />);
     await fillRequired();
@@ -101,6 +291,11 @@ describe('NouvelAppelModal', () => {
     await userEvent.type(screen.getByTestId('caller-email-confirm'), 'a@example.com');
     await userEvent.type(screen.getByTestId('secondary-name'), 'Marie');
     await userEvent.type(screen.getByTestId('secondary-email'), 'marie@example.com');
+    await userEvent.type(screen.getByTestId('element'), 'Plomberie');
+    await userEvent.type(screen.getByTestId('symptome'), 'Fuite');
+    await userEvent.type(screen.getByTestId('composante'), 'Robinet');
+    await userEvent.type(screen.getByTestId('emplacement'), 'Cuisine');
+    await userEvent.click(screen.getByTestId('intake-urgent'));
     await waitFor(() => expect(screen.getByTestId('unit-select')).toBeTruthy());
     await userEvent.selectOptions(screen.getByTestId('unit-select'), '100');
     await userEvent.click(screen.getByTestId('submit-btn'));
@@ -113,7 +308,12 @@ describe('NouvelAppelModal', () => {
     expect(body.caller_email).toBe('a@example.com');
     expect(body.secondary_name).toBe('Marie');
     expect(body.secondary_email).toBe('marie@example.com');
-    expect(body.category).toBe('Entretien général et maintenance');
+    expect(body.element).toBe('Plomberie');
+    expect(body.symptome).toBe('Fuite');
+    expect(body.composante).toBe('Robinet');
+    expect(body.emplacement).toBe('Cuisine');
+    expect(body.intake_urgent).toBe(true);
+    expect(body.animals).toBeUndefined();
     expect(body.access).toBe('yes');
   });
 

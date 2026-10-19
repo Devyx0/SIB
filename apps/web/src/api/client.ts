@@ -271,6 +271,11 @@ export interface IntakeBody {
   animal_details?: string;
   problem: string;
   category?: string;
+  element?: string;
+  symptome?: string;
+  composante?: string;
+  emplacement?: string;
+  intake_urgent?: boolean;
   secondary_name?: string;
   secondary_email?: string;
   attention?: string;
@@ -284,6 +289,25 @@ export interface IntakeResponse {
   match_status: string;
 }
 
+export interface LeaseTenant {
+  tenant_id: number;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+}
+
+export interface UnitByNumberLookup {
+  unit_id: number;
+  building_id: number;
+  sector_id: number | null;
+  unique_unit_number: string | null;
+  numero_appartement: string | null;
+  rue: string | null;
+  building_adresse: string | null;
+  pets_allowed: boolean;
+  tenants: LeaseTenant[];
+}
+
 export function createManualRequest(body: IntakeBody): Promise<IntakeResponse> {
   return apiPost('/api/v1/intake', body);
 }
@@ -295,6 +319,27 @@ export function fetchBuildings(sectorId?: number): Promise<BuildingLookup[]> {
 
 export function fetchUnits(buildingId: number): Promise<UnitLookup[]> {
   return apiFetch(`/api/v1/lookup/units?building_id=${buildingId}`);
+}
+
+export interface UnitNumberHit {
+  unit_id: number;
+  unique_unit_number: string;
+  building_adresse: string | null;
+  numero_appartement: string | null;
+}
+
+export function fetchUnitByNumber(uniqueUnitNumber: string): Promise<UnitByNumberLookup> {
+  const q = encodeURIComponent(uniqueUnitNumber.trim());
+  return apiFetch(`/api/v1/lookup/unit-by-number?unique_unit_number=${q}`);
+}
+
+export function fetchUnitContext(unitId: number): Promise<UnitByNumberLookup> {
+  return apiFetch(`/api/v1/lookup/unit-context?unit_id=${unitId}`);
+}
+
+export function searchUnitNumbers(q: string, limit = 20): Promise<UnitNumberHit[]> {
+  const term = encodeURIComponent(q.trim());
+  return apiFetch(`/api/v1/lookup/unit-numbers?q=${term}&limit=${limit}`);
 }
 
 export function fetchFeedback(requestId: number): Promise<TriageFeedback> {

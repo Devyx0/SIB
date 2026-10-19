@@ -62,6 +62,7 @@ export interface ListRow {
   last_followup_date: string | null;
   last_followup_text: string | null;
   unit_label: string | null;
+  unique_unit_number: string | null;
   en_route_at: string | null;
   closeout_outcome: string | null;
   closeout_urgent: boolean | null;

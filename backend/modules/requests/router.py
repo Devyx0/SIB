@@ -35,7 +35,9 @@ from .schemas import (
     SortKey,
     StatusValue,
     TriageTriggerBody,
+    UnitByNumberLookup,
     UnitLookup,
+    UnitNumberHit,
 )
 
 router = APIRouter(prefix="/requests", tags=["requests"])
@@ -297,6 +299,58 @@ def lookup_units(
     conn=Depends(get_db_conn),
 ) -> list[UnitLookup]:
     return [UnitLookup(**r) for r in repo.list_units(conn, building_id)]
+
+
+@lookup_router.get(
+    "/unit-numbers",
+    operation_id="lookup_unit_numbers",
+    response_model=list[UnitNumberHit],
+)
+def lookup_unit_numbers(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(default=20, ge=1, le=50),
+    user: CurrentUser = _COORD_DIR,
+    conn=Depends(get_db_conn),
+) -> list[UnitNumberHit]:
+    return [UnitNumberHit(**r) for r in repo.search_unique_unit_numbers(conn, q, limit=limit)]
+
+
+@lookup_router.get(
+    "/unit-by-number",
+    operation_id="lookup_unit_by_number",
+    response_model=UnitByNumberLookup,
+)
+def lookup_unit_by_number(
+    unique_unit_number: str = Query(..., min_length=1),
+    user: CurrentUser = _COORD_DIR,
+    conn=Depends(get_db_conn),
+) -> UnitByNumberLookup:
+    from backend.core.exceptions import NotFoundError
+    from backend.core.utils import today_local
+
+    row = repo.get_unit_context(conn, today_local(), unique_unit_number=unique_unit_number)
+    if row is None:
+        raise NotFoundError()
+    return UnitByNumberLookup(**row)
+
+
+@lookup_router.get(
+    "/unit-context",
+    operation_id="lookup_unit_context",
+    response_model=UnitByNumberLookup,
+)
+def lookup_unit_context(
+    unit_id: int = Query(...),
+    user: CurrentUser = _COORD_DIR,
+    conn=Depends(get_db_conn),
+) -> UnitByNumberLookup:
+    from backend.core.exceptions import NotFoundError
+    from backend.core.utils import today_local
+
+    row = repo.get_unit_context(conn, today_local(), unit_id=unit_id)
+    if row is None:
+        raise NotFoundError()
+    return UnitByNumberLookup(**row)
 
 
 @lookup_router.get(

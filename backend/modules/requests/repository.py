@@ -55,6 +55,7 @@ _LIST_SELECT = """
         lf.entry_date                    AS last_followup_date,
         lf.entry_text                    AS last_followup_text,
         COALESCE(mr.unit_label, u.numero_appartement) AS unit_label,
+        u.unique_unit_number,
         mr.en_route_at,
         mr.closeout_outcome::text        AS closeout_outcome,
         mr.closeout_urgent
@@ -348,6 +349,7 @@ def get_request(
             mr.follow_up_expected,
             mr.unit_id,
             COALESCE(mr.unit_label, u.numero_appartement) AS unit_label,
+            u.unique_unit_number,
             mr.project_id,
             mr.project_label,
             mr.html_link,
@@ -685,6 +687,146 @@ def list_units(conn, building_id: int) -> list[dict]:
         return (civic_num, apt_num, u["numero_appartement"] or "")
 
     return sorted(units, key=_sort_key)
+
+
+_UNIT_CONTEXT_SQL = """
+    SELECT
+        u.unit_id,
+        u.building_id,
+        b.sector_id,
+        u.unique_unit_number,
+        u.numero_appartement,
+        u.rue,
+        b.adresse AS building_adresse,
+        cl.droit_animaux,
+        cl.lease_id
+    FROM unit u
+    JOIN building b ON b.building_id = u.building_id
+    LEFT JOIN LATERAL (
+        SELECT l.lease_id, l.droit_animaux
+        FROM lease l
+        WHERE l.unit_id = u.unit_id
+          AND (l.debut_bail IS NULL OR l.debut_bail <= %(today)s)
+          AND (l.fin_bail IS NULL OR l.fin_bail >= %(today)s)
+        ORDER BY l.debut_bail DESC NULLS LAST, l.lease_id DESC
+        LIMIT 1
+    ) cl ON true
+"""
+
+
+def _lease_tenants(conn, lease_id: int | None) -> list[dict]:
+    if lease_id is None:
+        return []
+    rows = conn.execute(
+        """
+        SELECT
+            t.tenant_id,
+            t.nom_complet AS name,
+            COALESCE(t.telephone, t.telephone_international) AS phone,
+            t.courriel AS email
+        FROM tenancy_record tr
+        JOIN tenant t ON t.tenant_id = tr.tenant_id
+        WHERE tr.lease_id = %(lid)s
+        ORDER BY
+            CASE tr.capacite::text
+                WHEN 'named_on_lease' THEN 0
+                WHEN 'took_over' THEN 1
+                ELSE 2
+            END,
+            t.nom_complet
+        """,
+        {"lid": lease_id},
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _unit_context_row(conn, row) -> dict | None:
+    if row is None:
+        return None
+    d = dict(row)
+    d["pets_allowed"] = d.pop("droit_animaux") is True
+    d["tenants"] = _lease_tenants(conn, d.pop("lease_id", None))
+    return d
+
+
+def get_unit_context(
+    conn,
+    today,
+    *,
+    unit_id: int | None = None,
+    unique_unit_number: str | None = None,
+) -> dict | None:
+    """Resolve unit (by id or unique number) + current lease tenant / pets.
+
+    Unique-number lookup accepts the full value or the short prefix before the
+    street (e.g. ``1017-21`` → ``1017-21 Duchesneau``). Ambiguous prefixes miss.
+    """
+    number = (unique_unit_number or "").strip() or None
+    if unit_id is None and not number:
+        return None
+
+    if unit_id is not None:
+        row = conn.execute(
+            _UNIT_CONTEXT_SQL + " WHERE u.unit_id = %(uid)s",
+            {"uid": unit_id, "today": today},
+        ).fetchone()
+        return _unit_context_row(conn, row)
+
+    # Exact match first (case-insensitive).
+    row = conn.execute(
+        _UNIT_CONTEXT_SQL + " WHERE lower(u.unique_unit_number) = lower(%(num)s)",
+        {"num": number, "today": today},
+    ).fetchone()
+    if row is not None:
+        return _unit_context_row(conn, row)
+
+    # Prefix before street name: "1017-21" → "1017-21 Duchesneau"
+    # (avoids matching "1017-210 …" via a bare ILIKE '1017-21%').
+    rows = conn.execute(
+        _UNIT_CONTEXT_SQL
+        + " WHERE lower(u.unique_unit_number) LIKE %(pat)s"
+        + " ORDER BY u.unique_unit_number",
+        {"pat": f"{number.lower()} %", "today": today},
+    ).fetchall()
+    if len(rows) == 1:
+        return _unit_context_row(conn, rows[0])
+    return None
+
+
+def get_unit_by_unique_number(conn, unique_unit_number: str, today) -> dict | None:
+    return get_unit_context(conn, today, unique_unit_number=unique_unit_number)
+
+
+def search_unique_unit_numbers(conn, q: str, *, limit: int = 20) -> list[dict]:
+    """Narrow unique_unit_number list by substring (case-insensitive)."""
+    term = (q or "").strip()
+    if not term:
+        return []
+    lim = max(1, min(limit, 50))
+    rows = conn.execute(
+        """
+        SELECT
+            u.unit_id,
+            u.unique_unit_number,
+            u.numero_appartement,
+            b.adresse AS building_adresse
+        FROM unit u
+        JOIN building b ON b.building_id = u.building_id
+        WHERE u.unique_unit_number IS NOT NULL
+          AND lower(u.unique_unit_number) LIKE %(pat)s
+        ORDER BY
+            CASE WHEN lower(u.unique_unit_number) LIKE %(prefix)s THEN 0 ELSE 1 END,
+            length(u.unique_unit_number),
+            u.unique_unit_number
+        LIMIT %(lim)s
+        """,
+        {
+            "pat": f"%{term.lower()}%",
+            "prefix": f"{term.lower()}%",
+            "lim": lim,
+        },
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def list_sectors(conn, sector_ids: frozenset[int] | None = None) -> list[dict]:
