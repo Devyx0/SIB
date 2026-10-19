@@ -24,7 +24,7 @@ urgency for **no-heat** calls:
    building (Québec / Lévis), maps the lowest 24 h forecast temp to a draft band, and — if the
    band's suggested tier ranks **higher** than the model's `urgency_tier` — floors urgency up
    before write, and appends one French line to `other_notes` citing the forecast, band, and
-   **art. 1864–1865 C.c.Q.** Raise only; lowering stays an open question for Charles.
+   **art. 1864–1865 C.c.Q.** Raise only (see locked urgency map under Seed bands).
 3. Weather failures never block triage (B10); the evaluation row still records
    `source_failed` / `location_unknown`.
 
@@ -174,7 +174,7 @@ that only decides whether to **show the "Vérifier la météo" affordance** (nev
 | # | Default | Source / our choice | Open question |
 |---|---|---|---|
 | B1 | Feature setting `weather_escalation_enabled`, **default off**. Our choice: an **env var** (`WEATHER_ESCALATION_ENABLED=false`) read by `backend/core/config.py` and surfaced to the UI via `/me` (no DB settings table exists). | Our choice (ticket says "feature setting, default off") | Does the client want a coordinator-editable toggle in the UI? That needs a 1-row DB setting instead of an env var. |
-| B2 | `weather_threshold_band` settings table, seeded with 4 draft bands (below). `status='draft'`, `source_text` carries the provenance. | Thresholds: S5 §2.3 draft "Ébauche à valider". Tier mapping: **our choice**. | Are the four cut-points (−15 / −5 / +10) and the band→tier mapping correct? |
+| B2 | `weather_threshold_band` settings table, seeded with 4 draft bands (below). `status='draft'`, `source_text` carries the provenance. | Cut-points from S5 §2.3 examples (−15 / −5…+10). Urgency map locked (below). | Cut-points still draft pending Charles; urgency map is locked from known examples. |
 | B3 | Temperature used = **lowest forecast temp in the next 24 h** (min over the 24 hourly entries). Also store `current_temp` and `wind_chill` when present. | S5 §2.3 ("24 h"); mechanics our choice | Should wind chill (not raw temp) drive the band when it's colder? S5 mentions wind chill rhetorically but the table is in °C air temp. |
 | B4 | Detection is the triage **`heating_failure`** flag (STEP 3). Keyword hint removed. No backtest re-run. Manual `POST …/weather-check` still available. | Approved STEP 3 | — |
 | B5 | Location = Québec or Lévis from the building (A2). Unknown ⇒ no check; panel shows **« Emplacement inconnu »**. | Our choice (per schema) | Which buildings are genuinely out-of-area vs just missing data? |
@@ -187,22 +187,20 @@ that only decides whether to **show the "Vérifier la météo" affordance** (nev
 | B12 | Tests in `sib_test` only, **weather API always mocked, no network** (monkeypatch the fetcher, as the codebase mocks via `monkeypatch`/`MagicMock`). | Ticket | — |
 | B13 | This document. | Ticket | — |
 
-### Seed bands (draft)
+### Seed bands (draft cut-points; urgency map locked)
 
 `below −15 → critical`, `−15 to −5 → emergency`, `−5 to +10 → priority`, `above +10 → normal`.
-Tier mapping (**our choice**, onto the existing `urgency_tier` enum `AJD/ajd/none`):
+Maps onto the existing `urgency_tier` enum `AJD` / `ajd` / null (raise-only at triage):
 
-| Band | Temp range (°C, lowest-24 h) | Boundary convention | Suggested tier | Critical badge |
+| Band | Temp range (°C, lowest-24 h) | Suggested tier | Critical badge | Provenance |
 |---|---|---|---|---|
-| critical | `t < −15` | — | `AJD` | **yes** (astreinte) |
-| emergency | `−15 ≤ t < −5` | −15 → emergency | `AJD` | no |
-| priority | `−5 ≤ t < +10` | −5 → priority | `ajd` | no |
-| normal | `t ≥ +10` | +10 → normal | `none` (no change) | no |
+| critical | `t < −15` | `AJD` | **yes** (astreinte) | Doc example: below −15°C → critical, same-day |
+| emergency | `−15 ≤ t < −5` | `AJD` | no | Gap fill: top-level urgency (`AJD`) |
+| priority | `−5 ≤ t < +10` | `ajd` | no | Doc example: −5°C to +10°C → 48h response → `ajd` |
+| normal | `t ≥ +10` | `none` (no change) | no | Our call: no weather floor when mild |
 
-> **Boundary rule is our choice** and is what the band-boundary tests assert: inclusive lower
-> bound, exclusive upper. So exactly −15 → emergency, exactly −5 → priority, exactly +10 → normal.
-> Confirm with Charles (the draft text says "below −15" and "−15 to −5", which is consistent with
-> an inclusive lower bound, but it is not explicit). Direction compare uses the order
+> **Boundary rule** (tests assert): inclusive lower bound, exclusive upper. Exactly −15 →
+> emergency, exactly −5 → priority, exactly +10 → normal. Direction compare:
 > `none/null < ajd < AJD` (suggested > current → higher; < → lower; = → equal).
 
 ---
@@ -246,12 +244,12 @@ inconnu, check-failed, feature-off-hidden); RLS enabled on all three tables.
 1. **May weather *lower* urgency at all?** Built as a non-alarming « Baisse possible » option that
    is never auto-applied — but given no-heat is already AJD, confirm lowering is wanted at all.
 2. Confirm the four cut-points (−15 / −5 / +10) and the boundary convention (inclusive lower bound).
-3. Confirm the band → tier mapping (critical/emergency → AJD, priority → ajd, normal → none).
-4. Wind chill vs air temperature as the band driver (wind chill is stored, not used).
-5. Is the focused-keyword hint list right? Should the evaluation itself be scoped to heating calls?
-6. Coordinator-editable enable toggle (DB setting) vs ops-only env var (`WEATHER_ESCALATION_ENABLED`).
-7. The "astreinte / garde" badge: does it need to read a real on-call roster (that is 3.7, out of scope)?
-8. Pipe-freezing (<−20 °C), snow accumulation, and AC-in-heatwave variants are mentioned in S5 §2.3
+   Urgency map for those bands is **locked** (critical/emergency → `AJD`, priority → `ajd`,
+   normal → none); only the numeric thresholds remain draft.
+3. Wind chill vs air temperature as the band driver (wind chill is stored, not used).
+4. Coordinator-editable enable toggle (DB setting) vs ops-only env var (`WEATHER_ESCALATION_ENABLED`).
+5. The "astreinte / garde" badge: does it need to read a real on-call roster (that is 3.7, out of scope)?
+6. Pipe-freezing (<−20 °C), snow accumulation, and AC-in-heatwave variants are mentioned in S5 §2.3
    with **no thresholds** — out of scope for 3.4 unless the client provides them.
 
 ---

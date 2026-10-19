@@ -38,13 +38,13 @@ INSERT INTO public.weather_threshold_band
     (name, temp_min_c, temp_max_c, suggested_tier, is_critical, status, source_text, sort_order)
 VALUES
     ('critical',  NULL, -15,  'AJD', true,  'draft',
-     'Francois Notes Maintenance §2.3 "Notes Claude Latchel" — Ebauche a valider avec Charles Bergeron. Tier mapping: Agentyx choice.', 1),
+     'Doc example: below -15 C -> critical, same-day (AJD). Draft cut-point.', 1),
     ('emergency', -15,  -5,   'AJD', false, 'draft',
-     'Francois Notes Maintenance §2.3 "Notes Claude Latchel" — Ebauche a valider avec Charles Bergeron. Tier mapping: Agentyx choice.', 2),
+     'Gap fill: -15 to -5 C -> top-level urgency (AJD). Draft cut-point.', 2),
     ('priority',  -5,   10,   'ajd', false, 'draft',
-     'Francois Notes Maintenance §2.3 "Notes Claude Latchel" — Ebauche a valider avec Charles Bergeron. Tier mapping: Agentyx choice.', 3),
+     'Doc example: -5 to +10 C -> 48h response -> ajd. Draft cut-point.', 3),
     ('normal',    10,   NULL, NULL,  false, 'draft',
-     'Francois Notes Maintenance §2.3 "Notes Claude Latchel" — Ebauche a valider avec Charles Bergeron. Tier mapping: Agentyx choice.', 4);
+     'Our call: t >= +10 C -> no weather floor (suggested_tier null). Draft cut-point.', 4);
 
 -- ── Forecast snapshots (cache + audit) ─────────────────────────────────────────
 -- One row per MSC fetch. Cache rule: reuse the newest row for a location whose
