@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated, Literal, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, Query
 
 from backend.core.db import get_db_conn
 from backend.core.exceptions import ValidationFailed
@@ -18,8 +18,11 @@ from .schemas import (
     AssignBody,
     BuildingLookup,
     EmployeeLookup,
+    CloseoutBody,
     EnRouteBody,
     ListResponse,
+    PhotoUploadResponse,
+    PhotoUrlResponse,
     RequestDetail,
     RescheduleBody,
     RouteBody,
@@ -61,6 +64,7 @@ class RequestListParams:
         sort_dir: Literal["asc", "desc"] = Query(default="asc"),
         limit: int = Query(default=50, ge=1, le=200),
         offset: int = Query(default=0, ge=0),
+        redispatch: bool = Query(default=False),
     ) -> None:
         if (start_date is None) != (end_date is None):
             raise ValidationFailed("start_date and end_date must be provided together")
@@ -82,6 +86,7 @@ class RequestListParams:
         self.sort_dir = sort_dir
         self.limit = limit
         self.offset = offset
+        self.redispatch = redispatch
 
 
 @router.get(
@@ -186,6 +191,29 @@ def request_route(
 @router.post("/{request_id}/en-route", operation_id="request_en_route", response_model=RequestDetail)
 def request_en_route(request_id: int, body: EnRouteBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
     return service.action_en_route(conn, request_id, body, user)
+
+
+@router.post("/{request_id}/photos", operation_id="request_upload_photo",
+             response_model=PhotoUploadResponse, status_code=201)
+def request_upload_photo(
+    request_id: int,
+    photo: Annotated[bytes, Body(media_type="image/*")],
+    content_type: Annotated[str, Header()] = "",
+    user: CurrentUser = _TECH_CONTRACTOR,
+    conn=Depends(get_db_conn),
+) -> PhotoUploadResponse:
+    # Raw image body (no multipart) — the mime travels in Content-Type.
+    return service.action_upload_photo(conn, request_id, photo, content_type, user)
+
+
+@router.post("/{request_id}/closeout", operation_id="request_closeout", response_model=RequestDetail)
+def request_closeout(request_id: int, body: CloseoutBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_closeout(conn, request_id, body, user)
+
+
+@router.get("/{request_id}/photos/{attachment_id}", operation_id="request_photo_url", response_model=PhotoUrlResponse)
+def request_photo_url(request_id: int, attachment_id: int, user: CurrentUser = _ALL_ROLES, conn=Depends(get_db_conn)) -> PhotoUrlResponse:
+    return service.get_photo_url(conn, request_id, attachment_id, user)
 
 
 @router.post("/{request_id}/assign", operation_id="request_assign", response_model=RequestDetail)

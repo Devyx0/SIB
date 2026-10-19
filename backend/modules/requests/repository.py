@@ -21,6 +21,10 @@ _UPDATABLE_FIELDS: dict[str, str] = {
     "estimated_cost":        "estimated_cost = %(v)s",
     "status":                "status = %(v)s::request_status",
     "en_route_at":           "en_route_at = %(v)s",
+    "closed_at":             "closed_at = %(v)s",
+    "closeout_outcome":      "closeout_outcome = %(v)s::closeout_outcome",
+    "closeout_urgent":       "closeout_urgent = %(v)s",
+    "work_performed":        "work_performed = %(v)s",
 }
 
 _LIST_SELECT = """
@@ -51,7 +55,9 @@ _LIST_SELECT = """
         lf.entry_date                    AS last_followup_date,
         lf.entry_text                    AS last_followup_text,
         COALESCE(mr.unit_label, u.numero_appartement) AS unit_label,
-        mr.en_route_at
+        mr.en_route_at,
+        mr.closeout_outcome::text        AS closeout_outcome,
+        mr.closeout_urgent
     FROM maintenance_request mr
     LEFT JOIN building  b ON b.building_id = mr.building_id
     LEFT JOIN sector    s ON s.sector_id   = mr.sector_id
@@ -100,6 +106,7 @@ def list_requests(
     offset: int,
     scope_sql: str,
     scope_params: dict[str, Any],
+    redispatch: bool = False,
 ) -> tuple[int, list[dict]]:
     conditions: list[str] = []
     params: dict[str, Any] = {**scope_params}
@@ -135,6 +142,13 @@ def list_requests(
     if source_calendar is not None and source_calendar != "unrouted":
         conditions.append("mr.source_calendar = %(source_calendar)s")
         params["source_calendar"] = source_calendar
+    if redispatch:
+        # « À redispatcher »: returned by closeout outcomes 3/4, awaiting the
+        # coordinator — triaged, unassigned, last outcome expertise/failed.
+        conditions.append(
+            "mr.status::text = 'triaged' AND mr.assigned_employee_id IS NULL"
+            " AND mr.closeout_outcome::text IN ('partial_expertise', 'failed')"
+        )
     if q is not None:
         conditions.append("""(
             unaccent(mr.asnu) ILIKE unaccent(%(q_pat)s)
@@ -241,7 +255,9 @@ def get_request(
             mr.triage_model_version,
             mr.ft_link,
             mr.ft_name,
-            mr.en_route_at
+            mr.en_route_at,
+            mr.closeout_outcome::text        AS closeout_outcome,
+            mr.closeout_urgent
         FROM maintenance_request mr
         LEFT JOIN building  b ON b.building_id = mr.building_id
         LEFT JOIN sector    s ON s.sector_id   = mr.sector_id
@@ -277,7 +293,9 @@ def lock_request(conn, request_id: int) -> dict | None:
         """
         SELECT request_id, status::text, assigned_employee_id, start_date,
                urgency_tier::text AS urgency_tier, next_follow_up_date,
-               next_steps, estimated_cost, source_calendar, en_route_at
+               next_steps, estimated_cost, source_calendar, en_route_at,
+               closed_at, closeout_outcome::text AS closeout_outcome,
+               closeout_urgent, work_performed
         FROM maintenance_request
         WHERE request_id = %(request_id)s
         FOR UPDATE
@@ -390,6 +408,103 @@ def insert_outbox(
          "recipient": recipient, "subject": subject, "body": body,
          "employee_id": employee_id},
     )
+
+
+def insert_photo(
+    conn, *, request_id: int, employee_id: int, storage_ext: str,
+) -> tuple[int, str]:
+    """Insert the attachment row, derive the storage path from its id, and
+    persist the path. Returns (attachment_id, storage_path)."""
+    row = conn.execute(
+        """
+        INSERT INTO maintenance_attachment
+            (request_id, file_type, photo_context, uploaded_by_employee_id)
+        VALUES (%(request_id)s, 'photo', 'closeout', %(employee_id)s)
+        RETURNING attachment_id
+        """,
+        {"request_id": request_id, "employee_id": employee_id},
+    ).fetchone()
+    attachment_id = row["attachment_id"]
+    path = f"closeout/{request_id}/{attachment_id}.{storage_ext}"
+    conn.execute(
+        "UPDATE maintenance_attachment SET storage_path = %(p)s WHERE attachment_id = %(id)s",
+        {"p": path, "id": attachment_id},
+    )
+    return attachment_id, path
+
+
+def get_photo(conn, request_id: int, attachment_id: int) -> dict | None:
+    row = conn.execute(
+        """
+        SELECT a.attachment_id, a.storage_path, a.uploaded_by_employee_id,
+               a.visit_id, mr.assigned_employee_id
+        FROM maintenance_attachment a
+        JOIN maintenance_request mr ON mr.request_id = a.request_id
+        WHERE a.attachment_id = %(aid)s AND a.request_id = %(rid)s
+        """,
+        {"aid": attachment_id, "rid": request_id},
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def count_usable_photos(conn, request_id: int, employee_id: int, attachment_ids: list[int]) -> int:
+    """Photos among *attachment_ids* that belong to this request, were uploaded
+    by this employee, and were not consumed by a previous closeout."""
+    return conn.execute(
+        """
+        SELECT count(*) AS n FROM maintenance_attachment
+        WHERE attachment_id = ANY(%(ids)s)
+          AND request_id = %(rid)s
+          AND uploaded_by_employee_id = %(emp)s
+          AND photo_context = 'closeout'
+          AND visit_id IS NULL
+        """,
+        {"ids": attachment_ids, "rid": request_id, "emp": employee_id},
+    ).fetchone()["n"]
+
+
+def close_visit(
+    conn, *, visit_id: int, outcome: str, comment: str,
+    lat: float | None, lng: float | None,
+) -> None:
+    conn.execute(
+        """
+        UPDATE request_visit
+        SET closeout_at = NOW(), outcome = %(outcome)s::closeout_outcome,
+            closeout_comment = %(comment)s,
+            closeout_lat = %(lat)s, closeout_lng = %(lng)s
+        WHERE visit_id = %(visit_id)s
+        """,
+        {"visit_id": visit_id, "outcome": outcome, "comment": comment,
+         "lat": lat, "lng": lng},
+    )
+
+
+def mark_photos_used(conn, visit_id: int, attachment_ids: list[int]) -> None:
+    conn.execute(
+        "UPDATE maintenance_attachment SET visit_id = %(v)s WHERE attachment_id = ANY(%(ids)s)",
+        {"v": visit_id, "ids": attachment_ids},
+    )
+
+
+def list_visits(conn, request_id: int) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT v.visit_id, v.employee_id, e.nom_employe AS employee_name,
+               v.en_route_at, v.closeout_at, v.outcome::text AS outcome,
+               v.closeout_comment,
+               COALESCE(array_agg(a.attachment_id) FILTER (WHERE a.attachment_id IS NOT NULL),
+                        '{}') AS photo_ids
+        FROM request_visit v
+        LEFT JOIN employee e ON e.employee_id = v.employee_id
+        LEFT JOIN maintenance_attachment a ON a.visit_id = v.visit_id
+        WHERE v.request_id = %(request_id)s
+        GROUP BY v.visit_id, e.nom_employe
+        ORDER BY v.en_route_at ASC
+        """,
+        {"request_id": request_id},
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def get_message_context(conn, request_id: int) -> dict:

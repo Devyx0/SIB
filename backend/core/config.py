@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     SERVICE_ROLE: str = ""
     SECRET_KEY: str = ""
 
+    # Supabase Storage API — defaults to the local stack; tests mock the
+    # storage module entirely.
+    STORAGE_URL: str = "http://127.0.0.1:54321/storage/v1"
+
     # Anthropic — required at startup; prevents a silent triage_pending hang.
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_WORKSPACE_ID: str = ""

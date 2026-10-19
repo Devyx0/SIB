@@ -31,8 +31,11 @@ _TRANSITIONS: dict[str, frozenset[str]] = {
     "intake_received": frozenset({"triage_pending", "en_route"}),
     "triage_failed":   frozenset({"triage_pending", "en_route"}),  # service.py:289 retry path
     # service.py:166  success  /  service.py:375  retries exhausted
+    # NO en_route: triage runs in the background and its completion write
+    # (triage/service.py:221) sets status unconditionally — it would overwrite
+    # en_route. The en-route endpoint returns 409 « Triage en cours » instead.
     "triage_pending":  frozenset({"triaged", "triage_failed",
-                                  "triage_clarify", "en_route"}),  # triage_clarify: proposed path, no writer yet
+                                  "triage_clarify"}),  # triage_clarify: proposed path, no writer yet
 
     # ── Coordinator / technician actions ──────────────────────────────────────
     "triage_clarify":  frozenset({"intake_received", "en_route"}),  # proposed: coordinator resets blocked row

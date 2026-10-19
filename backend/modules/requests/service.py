@@ -18,11 +18,16 @@ from backend.modules.weather.keywords import matches_heating_keywords
 from backend.modules.weather import repository as weather_repo
 
 from . import repository as repo
+from . import storage
 from .schemas import (
-    AddLogBody, AssignBody, EnRouteBody, ListResponse, ListRow, RequestDetail,
-    RescheduleBody, RouteBody, SetCostBody, SetFollowUpDateBody, SetNextStepsBody,
+    AddLogBody, AssignBody, CloseoutBody, EnRouteBody, ListResponse, ListRow,
+    PhotoUploadResponse, PhotoUrlResponse, RequestDetail, RescheduleBody,
+    RouteBody, SetCostBody, SetFollowUpDateBody, SetNextStepsBody,
     SetUrgencyBody,
 )
+
+_PHOTO_MIMES = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+_MAX_PHOTO_BYTES = 10 * 1024 * 1024
 
 _TRIAGE_ABANDONED_MINUTES = 10
 
@@ -107,6 +112,7 @@ def list_requests(conn, params, user: CurrentUser) -> ListResponse:
         offset=params.offset,
         scope_sql=scope_sql,
         scope_params=scope_params,
+        redispatch=params.redispatch,
     )
     unscheduled: list[dict] = []
     # Without a date window the main query has no date filter, so undated rows
@@ -131,12 +137,15 @@ def list_requests(conn, params, user: CurrentUser) -> ListResponse:
     )
 
 
-def get_request(conn, request_id: int, user: CurrentUser) -> RequestDetail:
-    scope_sql, scope_params = _scope(user)
+def get_request(conn, request_id: int, user: CurrentUser, *, bypass_scope: bool = False) -> RequestDetail:
+    # bypass_scope: closeout outcomes 3/4 clear the assignment, which can push
+    # the request out of the caller's scope — the response must still be built.
+    scope_sql, scope_params = ("", {}) if bypass_scope else _scope(user)
     row = repo.get_request(conn, request_id, scope_sql=scope_sql, scope_params=scope_params)
     if row is None:
         raise NotFoundError(f"Request {request_id} not found")
     row["followup_log"] = repo.list_followup_entries(conn, request_id)
+    row["visits"] = repo.list_visits(conn, request_id)
 
     is_restricted = not bool(user.roles & {"director", "coordinator"})
     if is_restricted:
@@ -160,6 +169,7 @@ def _after_action(conn, request_id: int, user: CurrentUser) -> RequestDetail:
         raise NotFoundError(f"Request {request_id} not found")
     row["followup_log"] = repo.list_followup_entries(conn, request_id)
     row["justification_log"] = repo.list_justification_entries(conn, request_id)
+    row["visits"] = repo.list_visits(conn, request_id)
     _set_heating_hint(row)
     return RequestDetail(**row)
 
@@ -339,6 +349,10 @@ def action_en_route(conn, request_id: int, body: EnRouteBody, user: CurrentUser)
     _check_not_closed(row)
     if row["status"] != body.current_status or row["start_date"] != body.current_start_date:
         raise StaleDataError()
+    # Background triage writes status unconditionally when it finishes
+    # (triage/service.py:221) — going en route now would be overwritten.
+    if row["status"] == "triage_pending":
+        raise ConflictError("Triage en cours — réessayez dans un instant")
 
     open_visit = repo.get_open_visit(conn, user.employee_id)
     if open_visit is not None:
@@ -393,6 +407,123 @@ def action_en_route(conn, request_id: int, body: EnRouteBody, user: CurrentUser)
         )
 
     return get_request(conn, request_id, user)
+
+
+def action_upload_photo(conn, request_id: int, content: bytes, mime: str, user: CurrentUser) -> PhotoUploadResponse:
+    """Closeout photo: raw image body, mime in Content-Type. Row first, then
+    storage upload — an upload failure rolls the row back."""
+    row = _lock_or_404(conn, request_id)
+    if row["assigned_employee_id"] != user.employee_id:
+        raise PermissionDenied("Seul l'employé assigné peut ajouter des photos")
+    _check_not_closed(row)
+    ext = _PHOTO_MIMES.get(mime.split(";")[0].strip().lower())
+    if ext is None:
+        raise ValidationFailed("Format accepté : JPEG, PNG ou WebP")
+    if len(content) == 0:
+        raise ValidationFailed("Photo vide")
+    if len(content) > _MAX_PHOTO_BYTES:
+        raise ValidationFailed("Photo trop lourde (max 10 Mo)")
+
+    attachment_id, path = repo.insert_photo(
+        conn, request_id=request_id, employee_id=user.employee_id, storage_ext=ext,
+    )
+    storage.upload_photo(path, content, mime)
+    return PhotoUploadResponse(attachment_id=attachment_id)
+
+
+def get_photo_url(conn, request_id: int, attachment_id: int, user: CurrentUser) -> PhotoUrlResponse:
+    photo = repo.get_photo(conn, request_id, attachment_id)
+    if photo is None or not photo["storage_path"]:
+        raise NotFoundError("Photo introuvable")
+    if not (user.roles & {"coordinator", "director"}) \
+            and photo["assigned_employee_id"] != user.employee_id:
+        raise PermissionDenied()
+    return PhotoUrlResponse(url=storage.create_signed_url(photo["storage_path"]))
+
+
+def action_closeout(conn, request_id: int, body: CloseoutBody, user: CurrentUser) -> RequestDetail:
+    """The four outcomes from François's notes (reference §6.1). Closes the
+    visit, writes the follow-up entry, provenance per column; outcomes 3/4
+    return the call to the coordinator queue with a justification row."""
+    row = _lock_or_404(conn, request_id)
+    if row["assigned_employee_id"] != user.employee_id:
+        raise PermissionDenied("Seul l'employé assigné peut clôturer")
+    _check_not_closed(row)
+    if row["status"] != body.current_status:
+        raise StaleDataError()
+    if row["status"] != "en_route":
+        raise ConflictError("L'appel n'est pas en route")
+    visit = repo.get_open_visit(conn, user.employee_id)
+    if visit is None or visit["request_id"] != request_id:
+        raise ConflictError("Aucune visite en cours pour cet appel")
+
+    today = today_local()
+    if body.outcome == "partial_reschedule":
+        if body.next_date is None:
+            raise ValidationFailed("Date de retour requise pour « je dois revenir »")
+        if body.next_date < today:
+            raise ValidationFailed("La date de retour ne peut pas être dans le passé")
+    elif body.next_date is not None:
+        raise ValidationFailed("Une date de retour n'est permise que pour « je dois revenir »")
+    if body.urgent and body.outcome not in ("partial_expertise", "failed"):
+        raise ValidationFailed("« Urgent » n'est permis que pour les expertises")
+
+    ids = list(dict.fromkeys(body.attachment_ids))
+    if repo.count_usable_photos(conn, request_id, user.employee_id, ids) != len(ids):
+        raise ValidationFailed("Photo invalide, d'un autre appel ou déjà utilisée")
+
+    target = "closed" if body.outcome == "complete" else "triaged"
+    transition(row["status"], target)
+
+    now = datetime.now(timezone.utc)
+    repo.close_visit(conn, visit_id=visit["visit_id"], outcome=body.outcome,
+                     comment=body.comment, lat=body.lat, lng=body.lng)
+    repo.mark_photos_used(conn, visit["visit_id"], ids)
+
+    def _set(column: str, value: Any, previous: Any) -> None:
+        repo.update_field(conn, request_id, column, value)
+        repo.write_provenance(conn,
+            target_table="maintenance_request", target_pk=str(request_id),
+            target_column=column, employee_id=user.employee_id,
+            previous_value=_to_str(previous), new_value=_to_str(value),
+        )
+
+    _set("status", target, row["status"])
+    _set("closeout_outcome", body.outcome, row["closeout_outcome"])
+    _set("work_performed", body.comment, row["work_performed"])
+    if body.outcome == "complete":
+        _set("closed_at", now.isoformat(), row["closed_at"])
+    if body.outcome == "partial_reschedule":
+        # He picks the new date himself; the call stays his.
+        _set("start_date", body.next_date, row["start_date"])
+    if body.outcome in ("partial_expertise", "failed"):
+        # Back to the coordinator queue: unassigned = triaged + no employee.
+        _set("assigned_employee_id", None, row["assigned_employee_id"])
+        _set("closeout_urgent", body.urgent, row["closeout_urgent"])
+        repo.write_justification(conn,
+            request_id=request_id, employee_id=user.employee_id,
+            decision_type="closeout",
+            before_value={"assigned_employee_id": row["assigned_employee_id"],
+                          "status": "en_route"},
+            after_value={"assigned_employee_id": None, "status": "triaged",
+                         "closeout_outcome": body.outcome, "urgent": body.urgent},
+            text=body.comment, input_method=body.input_method,
+        )
+
+    # Follow-up entry with the comment, technician initials (add-log pattern).
+    emp_row = conn.execute(
+        "SELECT nom_employe FROM employee WHERE employee_id = %(emp_id)s",
+        {"emp_id": user.employee_id},
+    ).fetchone()
+    initials = "".join(w[0].upper() for w in (emp_row["nom_employe"] if emp_row else "?").split() if w)[:4]
+    followup_id = repo.add_log_entry(conn, request_id, body.comment, initials, today)
+    repo.write_provenance(conn,
+        target_table="maintenance_followup_entry", target_pk=str(followup_id),
+        target_column="entry_text", employee_id=user.employee_id,
+        previous_value=None, new_value=body.comment,
+    )
+
+    return get_request(conn, request_id, user, bypass_scope=True)
 
 
 def action_trigger_triage(conn, request_id: int) -> None:

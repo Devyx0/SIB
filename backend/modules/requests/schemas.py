@@ -87,6 +87,37 @@ class EnRouteBody(BaseModel):
     lng: Optional[float] = None
 
 
+class CloseoutBody(BaseModel):
+    outcome: Literal["complete", "partial_reschedule", "partial_expertise", "failed"]
+    comment: str = Field(..., min_length=10)
+    input_method: Literal["voice", "typed"] = "typed"
+    attachment_ids: list[int] = Field(..., min_length=1)
+    next_date: Optional[date] = None   # outcome 2 only
+    urgent: bool = False               # outcomes 3/4 only
+    current_status: str                # stale check — must match, and be en_route
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+class VisitEntry(BaseModel):
+    visit_id: int
+    employee_id: int
+    employee_name: Optional[str] = None
+    en_route_at: datetime
+    closeout_at: Optional[datetime] = None
+    outcome: Optional[str] = None
+    closeout_comment: Optional[str] = None
+    photo_ids: list[int] = Field(default_factory=list)
+
+
+class PhotoUploadResponse(BaseModel):
+    attachment_id: int
+
+
+class PhotoUrlResponse(BaseModel):
+    url: str
+
+
 class SetUrgencyBody(BaseModel):
     urgency_tier: Optional[Literal["AJD", "ajd"]] = None
     current_urgency_tier: Optional[str] = None
@@ -169,6 +200,8 @@ class ListRow(BaseModel):
     last_followup_text: Optional[str] = None
     unit_label: Optional[str] = None
     en_route_at: Optional[datetime] = None
+    closeout_outcome: Optional[str] = None
+    closeout_urgent: Optional[bool] = None
 
 
 class RequestDetail(ListRow):
@@ -191,6 +224,7 @@ class RequestDetail(ListRow):
     caller_type: Optional[str] = None
     followup_log: list[FollowupEntry] = Field(default_factory=list)
     justification_log: list[JustificationEntry] = Field(default_factory=list)
+    visits: list[VisitEntry] = Field(default_factory=list)
     # PII — null for tech/contractor unless they are the case-assigned employee
     caller_name: Optional[str] = None
     caller_phone: Optional[str] = None

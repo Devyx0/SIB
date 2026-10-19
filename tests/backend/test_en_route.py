@@ -13,8 +13,9 @@ _CONTRACTOR = 20    # contractor (Mahmoud Chachia)
 _OTHER_TECH = 14    # technician, never assigned here
 _COORD = 4
 
+# triage_pending excluded: background triage would overwrite the status → 409.
 _OPEN_STATUSES = [
-    "intake_received", "triage_pending", "triaged",
+    "intake_received", "triaged",
     "triage_clarify", "triage_proposal", "triage_failed",
 ]
 
@@ -195,6 +196,15 @@ def test_en_route_409_when_caller_has_open_call(ac, db_conn, building):
     assert str(first) in err["message"]
     assert err["details"]["open_request_id"] == first
     assert err["details"]["open_request_title"] == "Premier appel"
+
+
+def test_en_route_triage_pending_is_409(ac, db_conn, building):
+    rid = _mk_request(db_conn, building["building_id"], status="triage_pending")
+    r = _post(ac(_user(_TECH, "technician")), rid, current_status="triage_pending")
+    assert r.status_code == 409
+    err = r.json()["error"]
+    assert err["code"] == "CONFLICT"
+    assert err["message"] == "Triage en cours — réessayez dans un instant"
 
 
 def test_en_route_stale_status_is_409(ac, db_conn, building):
