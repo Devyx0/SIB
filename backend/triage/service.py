@@ -21,6 +21,7 @@ are eligible for takeover (process crashed mid-call).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from datetime import datetime, timezone
@@ -28,6 +29,8 @@ from datetime import datetime, timezone
 import anthropic
 
 from .context_builder import assemble
+
+logger = logging.getLogger("backend.triage")
 from .output_contract import ValidationError, parse_response, validate
 from .system_prompt import DOCUMENTS_HASH, build_system_prompt
 
@@ -242,6 +245,7 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
             triage_model_version    = %(model_version)s,
             triage_started_at       = NULL
         WHERE request_id = %(request_id)s
+          AND status = 'triage_pending'
         """,
         {
             "title":              parsed.get("title"),
@@ -265,8 +269,30 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
             "request_id":         request_id,
         },
     )
+    if cur.rowcount == 0:
+        # Status changed under us (e.g. a human action) — never overwrite it.
+        logger.warning(
+            "triage result for request %s discarded: status is no longer triage_pending",
+            request_id,
+        )
+        return
     if old_row is not None:
         _write_triage_provenance(cur, request_id, parsed, model_version, old_row)
+
+
+def _mark_failed(cur, request_id: int) -> None:
+    """Exhausted retries → triage_failed. Guarded: never overwrite a status a
+    human set while we were retrying."""
+    cur.execute(
+        "UPDATE maintenance_request SET status = 'triage_failed', triage_started_at = NULL "
+        "WHERE request_id = %s AND status = 'triage_pending'",
+        (request_id,),
+    )
+    if cur.rowcount == 0:
+        logger.warning(
+            "triage failure for request %s discarded: status is no longer triage_pending",
+            request_id,
+        )
 
 
 def _log_attempt(cur, request_id: int, *, model_version: str, context_sent: dict,
@@ -428,12 +454,9 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
             last_result = "error"
             last_detail = str(exc)
 
-    # All retries exhausted — surface as triage_failed
+    # All retries exhausted — surface as triage_failed (guarded, see _mark_failed).
     with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE maintenance_request SET status = 'triage_failed', triage_started_at = NULL WHERE request_id = %s",
-            (request_id,),
-        )
+        _mark_failed(cur, request_id)
     conn.commit()
 
     return {"result": "triage_failed", "attempts": max_retries,
