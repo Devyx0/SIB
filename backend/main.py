@@ -23,7 +23,7 @@ from backend.middleware.request_logging import RequestLoggingMiddleware
 from backend.modules.buildings.router import router as buildings_router
 from backend.modules.employees.router import router as employees_router
 from backend.modules.intake.router import router as intake_router
-from backend.modules.requests.router import lookup_router, router as requests_router
+from backend.modules.requests.router import dossiers_router, lookup_router, router as requests_router
 from backend.modules.feedback.router import router as feedback_router
 from backend.modules.units.router import router as units_router
 from backend.modules.weather.router import router as weather_router
@@ -48,8 +48,9 @@ def create_app() -> FastAPI:
     app.add_exception_handler(HTTPException, http_exception_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)
 
-    for router in (requests_router, lookup_router, intake_router, buildings_router,
-                   units_router, employees_router, feedback_router, weather_router):
+    for router in (requests_router, lookup_router, dossiers_router, intake_router,
+                   buildings_router, units_router, employees_router, feedback_router,
+                   weather_router):
         app.include_router(router, prefix="/api/v1")
 
     @app.get(

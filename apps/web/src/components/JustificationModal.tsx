@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Lang } from '../i18n';
 import { t } from '../i18n';
 import MicButton from './MicButton';
@@ -15,6 +15,12 @@ interface Props {
 export default function JustificationModal({ open, onSave, onCancel, lang = 'fr', context }: Props) {
   const [text, setText] = useState('');
   const inputMethodRef = useRef<'voice' | 'typed'>('typed');
+
+  useEffect(() => {
+    if (!open) return;
+    document.body.classList.add('modal-open');
+    return () => { document.body.classList.remove('modal-open'); };
+  }, [open]);
 
   if (!open) return null;
 

@@ -1,6 +1,7 @@
 .shell {
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* Fixed sidebar: full viewport height, scrollable nav section in the middle,
@@ -11,11 +12,15 @@
   left: 0;
   bottom: 0;
   width: 220px;
-  background: var(--color-surface);
-  border-right: 1px solid var(--color-divider);
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-right: 1px solid var(--glass-border);
+  box-shadow: 4px 0 32px -12px oklch(0.35 0.04 265 / 0.15);
   display: flex;
   flex-direction: column;
   z-index: 10;
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
 }
 
 .brand {
@@ -33,13 +38,14 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  background: var(--color-accent);
+  background: linear-gradient(135deg, var(--color-accent-500), var(--color-accent-800));
   color: #fff;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: -0.02em;
   flex-shrink: 0;
+  box-shadow: 0 4px 12px -2px oklch(0.45 0.18 268 / 0.45);
 }
 
 .brandName {
@@ -58,14 +64,70 @@
 }
 
 .navItem {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
   padding: 8px 12px;
   border-radius: var(--r-md);
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-accent);
+  color: var(--color-text);
+  text-decoration: none;
+  box-sizing: border-box;
+  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+}
+
+.navItem:hover {
   background: var(--color-accent-100);
+  text-decoration: none;
+}
+
+.navActive {
+  color: var(--color-accent);
+  background: linear-gradient(135deg, var(--color-accent-100), oklch(0.95 0.03 250 / 0.8));
+  box-shadow: inset 0 0 0 1px var(--color-accent-200);
+}
+
+.navDisabled {
+  color: var(--color-neutral-500);
+  cursor: default;
+}
+
+/* The greyed overview items are still real links (mockup preview). */
+a.navDisabled {
+  cursor: pointer;
+}
+
+.navDisabled:hover {
+  background: transparent;
+}
+
+.navGroup {
+  margin: 14px 12px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-neutral-500);
+}
+
+.soonChip {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-divider);
+  color: var(--color-neutral-700);
+}
+
+.burger {
+  display: none;
+}
+
+.overlay {
+  display: none;
 }
 
 /* Bottom controls: shrink-0 keeps them anchored to the bottom of the sidebar. */
@@ -104,6 +166,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .langBtn {
@@ -113,7 +176,8 @@
   padding: 4px 12px;
   border: 1px solid var(--color-divider);
   border-radius: 999px;
-  background: transparent;
+  background: var(--glass-bg);
+  backdrop-filter: blur(8px);
   color: var(--color-neutral-700);
   cursor: pointer;
   align-self: flex-start;
@@ -150,16 +214,69 @@
   flex: 1;
   min-width: 0;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
 
-/* Phone: hide sidebar, let board use full width. */
+/* Tablet: slightly tighter sidebar */
+@media (max-width: 1023px) and (min-width: 640px) {
+  .sidebar {
+    width: 200px;
+  }
+  .main {
+    margin-left: 200px;
+  }
+}
+
+/* Phone: sidebar becomes a slide-over behind a burger button. */
 @media (max-width: 639px) {
   .sidebar {
-    display: none;
+    transform: translateX(-100%);
+    width: min(280px, 86vw);
+    box-shadow: none;
+  }
+  .sidebarOpen {
+    transform: translateX(0);
+    box-shadow: 12px 0 40px -8px oklch(0.3 0.04 265 / 0.35);
+  }
+  .burger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 11;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--r-md);
+    background: var(--glass-bg-strong);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    box-shadow: var(--sh-card);
+    font: inherit;
+    cursor: pointer;
+  }
+  .overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: oklch(0.2 0.03 265 / 0.35);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 9;
+    animation: fadeIn 0.2s var(--ease-out);
   }
   .main {
     margin-left: 0;
+    padding-top: 52px;
   }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }

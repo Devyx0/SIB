@@ -1,22 +1,28 @@
 .page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-bg);
+  background: var(--bg-gradient);
+  background-attachment: fixed;
   padding: 24px;
 }
 
 .card {
   width: 100%;
   max-width: 360px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-divider);
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-lg, 12px);
   padding: 32px 28px 24px;
   display: flex;
   flex-direction: column;
   gap: 24px;
+  box-shadow: var(--sh-pop);
+  animation: cardIn 0.35s var(--ease-out);
 }
 
 .brand {
@@ -31,13 +37,14 @@
   justify-content: center;
   width: 36px;
   height: 36px;
-  background: var(--color-accent);
+  background: linear-gradient(135deg, var(--color-accent-500), var(--color-accent-800));
   color: #fff;
   border-radius: 9px;
   font-size: 13px;
   font-weight: 800;
   letter-spacing: -0.02em;
   flex-shrink: 0;
+  box-shadow: 0 4px 12px -2px oklch(0.45 0.18 268 / 0.45);
 }
 
 .brandName {
@@ -72,14 +79,15 @@
   padding: 8px 10px;
   border: 1px solid var(--color-divider);
   border-radius: var(--r-md);
-  background: var(--color-bg);
+  background: var(--glass-bg);
   color: var(--color-text);
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
 }
 
 .input:focus {
   border-color: var(--color-accent);
+  box-shadow: 0 0 0 4px var(--color-accent-200);
 }
 
 .btn {
@@ -87,17 +95,17 @@
   font-size: 14px;
   font-weight: 600;
   padding: 10px 0;
-  background: var(--color-accent);
+  background: linear-gradient(135deg, var(--color-accent-500), var(--color-accent-700));
   color: #fff;
   border: none;
   border-radius: var(--r-md);
   cursor: pointer;
   margin-top: 4px;
-  transition: opacity 0.15s;
+  box-shadow: 0 4px 14px -4px oklch(0.45 0.18 268 / 0.5);
 }
 
 .btn:hover:not(:disabled) {
-  opacity: 0.88;
+  filter: brightness(1.06);
 }
 
 .btn:disabled {
@@ -116,4 +124,21 @@
   color: var(--color-neutral-700);
   margin: 0;
   line-height: 1.5;
+}
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 639px) {
+  .page {
+    padding: 16px;
+    align-items: flex-end;
+  }
+
+  .card {
+    max-width: 100%;
+    padding: 28px 20px 20px;
+  }
 }

@@ -4,6 +4,8 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import AppShell from './components/AppShell';
 import DispatchBoard from './pages/DispatchBoard';
+import DossiersList from './pages/Dossiers';
+import DossierDetail from './pages/Dossiers/DossierDetail';
 import TechList from './pages/TechPortal';
 import TechCallView from './pages/TechPortal/CallView';
 import CloseoutForm from './pages/TechPortal/CloseoutForm';
@@ -80,6 +82,8 @@ export default function App() {
             >
               <Routes>
                 <Route path="board" element={<DispatchBoard lang={lang} me={me} />} />
+                <Route path="dossiers" element={<DossiersList lang={lang} />} />
+                <Route path="dossiers/:id" element={<DossierDetail lang={lang} />} />
                 <Route path="*" element={<Navigate to="board" replace />} />
               </Routes>
             </AppShell>

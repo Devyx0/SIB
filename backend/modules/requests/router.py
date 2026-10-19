@@ -19,6 +19,7 @@ from .schemas import (
     BuildingLookup,
     EmployeeLookup,
     CloseoutBody,
+    DossierListResponse,
     EnRouteBody,
     ListResponse,
     PhotoUploadResponse,
@@ -38,6 +39,8 @@ from .schemas import (
 
 router = APIRouter(prefix="/requests", tags=["requests"])
 lookup_router = APIRouter(prefix="/lookup", tags=["lookup"])
+# Own prefix: a literal /requests/dossiers would be captured by /requests/{request_id}.
+dossiers_router = APIRouter(prefix="/dossiers", tags=["dossiers"])
 
 _ALL_ROLES = require_role("technician", "coordinator", "director", "contractor")
 _COORD_DIR  = require_role("coordinator", "director")
@@ -214,6 +217,25 @@ def request_closeout(request_id: int, body: CloseoutBody, user: CurrentUser = _T
 @router.get("/{request_id}/photos/{attachment_id}", operation_id="request_photo_url", response_model=PhotoUrlResponse)
 def request_photo_url(request_id: int, attachment_id: int, user: CurrentUser = _ALL_ROLES, conn=Depends(get_db_conn)) -> PhotoUrlResponse:
     return service.get_photo_url(conn, request_id, attachment_id, user)
+
+
+@dossiers_router.get("", operation_id="dossier_list", response_model=DossierListResponse)
+def dossier_list(
+    outcome: Optional[Literal["complete", "partial_reschedule", "partial_expertise", "failed"]] = Query(default=None),
+    employee_id: Optional[int] = Query(default=None),
+    start_date: Optional[date] = Query(default=None),
+    end_date: Optional[date] = Query(default=None),
+    q: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    user: CurrentUser = _COORD_DIR,
+    conn=Depends(get_db_conn),
+) -> DossierListResponse:
+    return service.list_dossiers(
+        conn, outcome=outcome, employee_id=employee_id,
+        start_date=start_date, end_date=end_date, q=q,
+        limit=limit, offset=offset,
+    )
 
 
 @router.post("/{request_id}/assign", operation_id="request_assign", response_model=RequestDetail)

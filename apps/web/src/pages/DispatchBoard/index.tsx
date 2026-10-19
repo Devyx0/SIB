@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useRequests } from '../../hooks/useRequests';
@@ -29,6 +29,24 @@ export default function DispatchBoard({ lang, me }: Props) {
   const [showAllCols, setShowAllCols] = useState(false);
   const [showNewCall, setShowNewCall] = useState(false);
   const isCoordOrDir = !!(me?.roles.includes('coordinator') || me?.roles.includes('director'));
+
+  // Side-menu entry point: ?nouvel-appel=1 opens the modal. The param is
+  // stripped on close/save so a refresh afterwards does not reopen it.
+  const newCallParam = searchParams.get('nouvel-appel') === '1';
+  useEffect(() => {
+    if (newCallParam) setShowNewCall(true);
+  }, [newCallParam]);
+
+  function closeNewCall() {
+    setShowNewCall(false);
+    if (newCallParam) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('nouvel-appel');
+        return next;
+      }, { replace: true });
+    }
+  }
 
   const startDate = searchParams.get('start_date') ?? DEFAULT_START;
   const endDate = searchParams.get('end_date') ?? DEFAULT_END;
@@ -252,7 +270,7 @@ export default function DispatchBoard({ lang, me }: Props) {
 
       <NouvelAppelModal
         open={showNewCall}
-        onClose={() => setShowNewCall(false)}
+        onClose={closeNewCall}
         lang={lang}
       />
     </div>

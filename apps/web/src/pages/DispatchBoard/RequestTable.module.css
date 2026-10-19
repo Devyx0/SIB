@@ -10,7 +10,9 @@
 }
 
 .table thead th {
-  background: var(--color-surface);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border-bottom: 2px solid var(--color-divider);
   padding: 8px 12px;
   text-align: left;
@@ -42,7 +44,7 @@
 .row {
   border-bottom: 1px solid var(--color-divider);
   cursor: pointer;
-  transition: background 0.1s;
+  transition: background var(--dur) var(--ease-out);
 }
 
 .row:hover {
@@ -178,4 +180,19 @@
   font-weight: 700;
   background: #dc2626;
   color: #fff;
+}
+
+@media (max-width: 639px) {
+  .table {
+    font-size: 12px;
+  }
+
+  .table thead th,
+  .row td {
+    padding: 8px 8px;
+  }
+
+  .titleCell {
+    max-width: 200px;
+  }
 }

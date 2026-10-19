@@ -208,6 +208,12 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
     }
   }
 
+  useEffect(() => {
+    if (!open) return;
+    document.body.classList.add('modal-open');
+    return () => { document.body.classList.remove('modal-open'); };
+  }, [open]);
+
   if (!open) return null;
 
   const unitLabel = (() => {
@@ -341,7 +347,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
           </form>
         ) : (
           /* ── Confirm phase ── */
-          <div>
+          <div className={styles.modalBody}>
             <button type="button" className={styles.backLink}
               onClick={() => { setPhase('form'); setErrorMsg(null); }}>
               ← {t(lang, 'Modifier', 'Edit')}

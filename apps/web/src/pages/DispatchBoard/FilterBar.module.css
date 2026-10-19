@@ -3,7 +3,9 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px 28px;
-  background: var(--color-surface);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
   border-bottom: 1px solid var(--color-divider);
 }
 
@@ -34,10 +36,11 @@
   font: inherit;
   font-size: 13px;
   color: var(--color-text);
-  background: var(--color-surface);
+  background: var(--glass-bg-strong);
   border: 1px solid var(--color-divider);
   border-radius: var(--r-md);
-  transition: border-color 0.15s;
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+  max-width: 100%;
 }
 
 .input:focus {
@@ -61,10 +64,10 @@
   font: inherit;
   font-size: 13px;
   color: var(--color-text);
-  background: var(--color-surface);
+  background: var(--glass-bg-strong);
   border: 1px solid var(--color-divider);
   border-radius: var(--r-md);
-  transition: border-color 0.15s;
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
 }
 
 .searchInput:focus {
@@ -207,4 +210,28 @@
   align-self: flex-end;
   padding-bottom: 6px;
   white-space: nowrap;
+}
+
+@media (max-width: 1023px) {
+  .bar {
+    padding: 10px 16px;
+  }
+}
+
+@media (max-width: 639px) {
+  .bar {
+    padding: 10px 12px;
+  }
+
+  .searchInput {
+    max-width: none;
+  }
+
+  .count,
+  .dateNote,
+  .dateError {
+    align-self: flex-start;
+    padding-bottom: 0;
+    white-space: normal;
+  }
 }
