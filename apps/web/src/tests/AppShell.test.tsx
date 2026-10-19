@@ -4,7 +4,7 @@ import AppShell from '../components/AppShell';
 import type { MeResponse } from '../api/schema.d.ts';
 
 function me(role: string): MeResponse {
-  return { employee_id: 1, nom_employe: 'Test User', roles: [role], sector_ids: [] };
+  return { employee_id: 1, nom_employe: 'Test User', roles: [role] };
 }
 
 const CASES: [string, string][] = [

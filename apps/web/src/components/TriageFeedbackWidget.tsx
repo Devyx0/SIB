@@ -38,7 +38,7 @@ export default function TriageFeedbackWidget({ requestId, lang = 'fr' }: Props) 
 
   const [level, setLevel] = useState<FeedbackLevel | null>(null);
   const [reason, setReason] = useState('');
-  const [inputMethod, setInputMethod] = useState<'typed' | 'voice'>('typed');
+  const [, setInputMethod] = useState<'typed' | 'voice'>('typed');
 
   // Sync form state when existing feedback loads.
   useEffect(() => {
