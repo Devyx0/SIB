@@ -22,26 +22,33 @@ from __future__ import annotations
 from backend.core.exceptions import InvalidTransition
 
 # Each key is a "from" status; the frozenset is the set of legal "to" statuses.
+# en_route is reachable from EVERY open status (anything except closed /
+# en_route itself) — mirrors the assign action, which only rejects closed
+# (service.py _check_not_closed). Written by requests/service.action_en_route.
 _TRANSITIONS: dict[str, frozenset[str]] = {
     # ── Written by triage/service.py ──────────────────────────────────────────
     # service.py:289  acquire lock (accepts intake_received or triage_failed)
-    "intake_received": frozenset({"triage_pending"}),
-    "triage_failed":   frozenset({"triage_pending"}),      # service.py:289 retry path
+    "intake_received": frozenset({"triage_pending", "en_route"}),
+    "triage_failed":   frozenset({"triage_pending", "en_route"}),  # service.py:289 retry path
     # service.py:166  success  /  service.py:375  retries exhausted
     "triage_pending":  frozenset({"triaged", "triage_failed",
-                                  "triage_clarify"}),        # triage_clarify: proposed path, no writer yet
+                                  "triage_clarify", "en_route"}),  # triage_clarify: proposed path, no writer yet
 
-    # ── Proposed coordinator actions (no writer exists) ───────────────────────
-    "triage_clarify":  frozenset({"intake_received"}),      # proposed: coordinator resets blocked row
-    "triaged":         frozenset({"en_route", "closed"}),   # proposed: dispatch assigns / cancellation
-    "en_route":        frozenset({"closed"}),               # proposed: technician closeout
+    # ── Coordinator / technician actions ──────────────────────────────────────
+    "triage_clarify":  frozenset({"intake_received", "en_route"}),  # proposed: coordinator resets blocked row
+    "triaged":         frozenset({"en_route", "closed"}),
+    # en_route → closed: closeout outcome 1 (stop 3)
+    # en_route → triaged: closeout outcomes 2/3/4 — back to his schedule or
+    #                     the coordinator queue (stop 3)
+    "en_route":        frozenset({"closed", "triaged"}),
 
     # ── Terminal ──────────────────────────────────────────────────────────────
     "closed":          frozenset(),
 
     # ── Unreachable under current rules ───────────────────────────────────────
-    # triage_proposal blocked by rule 37; no code writes it or reads from it.
-    "triage_proposal": frozenset(),
+    # triage_proposal blocked by rule 37; nothing transitions INTO it, but as
+    # an open status an assigned call could still be taken en route.
+    "triage_proposal": frozenset({"en_route"}),
 }
 
 # All known status values — used for exhaustiveness checks.

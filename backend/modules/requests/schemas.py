@@ -1,7 +1,7 @@
 """Pydantic request/response schemas for the requests module."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
@@ -77,6 +77,14 @@ class RescheduleBody(BaseModel):
     current_assigned_employee_id: Optional[int] = None
     current_urgency_tier: Optional[str] = None
     justification: JustificationBody
+
+
+class EnRouteBody(BaseModel):
+    current_status: str
+    current_start_date: Optional[date] = None
+    # Location point only if the browser granted it — null otherwise.
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
 
 class SetUrgencyBody(BaseModel):
@@ -159,6 +167,8 @@ class ListRow(BaseModel):
     next_steps: Optional[str] = None
     last_followup_date: Optional[date] = None
     last_followup_text: Optional[str] = None
+    unit_label: Optional[str] = None
+    en_route_at: Optional[datetime] = None
 
 
 class RequestDetail(ListRow):
@@ -174,7 +184,7 @@ class RequestDetail(ListRow):
     occupants_raw: Optional[str] = None
     follow_up_expected: Optional[bool] = None
     unit_id: Optional[int] = None
-    unit_label: Optional[str] = None
+    # unit_label inherited from ListRow
     project_id: Optional[int] = None
     project_label: Optional[str] = None
     html_link: Optional[str] = None

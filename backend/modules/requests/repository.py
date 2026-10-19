@@ -19,6 +19,8 @@ _UPDATABLE_FIELDS: dict[str, str] = {
     "next_follow_up_date":   "next_follow_up_date = %(v)s",
     "next_steps":            "next_steps = %(v)s",
     "estimated_cost":        "estimated_cost = %(v)s",
+    "status":                "status = %(v)s::request_status",
+    "en_route_at":           "en_route_at = %(v)s",
 }
 
 _LIST_SELECT = """
@@ -47,11 +49,14 @@ _LIST_SELECT = """
         mr.next_follow_up_date,
         mr.next_steps,
         lf.entry_date                    AS last_followup_date,
-        lf.entry_text                    AS last_followup_text
+        lf.entry_text                    AS last_followup_text,
+        COALESCE(mr.unit_label, u.numero_appartement) AS unit_label,
+        mr.en_route_at
     FROM maintenance_request mr
     LEFT JOIN building  b ON b.building_id = mr.building_id
     LEFT JOIN sector    s ON s.sector_id   = mr.sector_id
     LEFT JOIN employee  e ON e.employee_id = mr.assigned_employee_id
+    LEFT JOIN unit      u ON u.unit_id     = mr.unit_id
     LEFT JOIN LATERAL (
         SELECT entry_date, entry_text
         FROM maintenance_followup_entry
@@ -235,7 +240,8 @@ def get_request(
             mr.problems,
             mr.triage_model_version,
             mr.ft_link,
-            mr.ft_name
+            mr.ft_name,
+            mr.en_route_at
         FROM maintenance_request mr
         LEFT JOIN building  b ON b.building_id = mr.building_id
         LEFT JOIN sector    s ON s.sector_id   = mr.sector_id
@@ -271,7 +277,7 @@ def lock_request(conn, request_id: int) -> dict | None:
         """
         SELECT request_id, status::text, assigned_employee_id, start_date,
                urgency_tier::text AS urgency_tier, next_follow_up_date,
-               next_steps, estimated_cost, source_calendar
+               next_steps, estimated_cost, source_calendar, en_route_at
         FROM maintenance_request
         WHERE request_id = %(request_id)s
         FOR UPDATE
@@ -338,6 +344,69 @@ def write_justification(
             "text": text, "input_method": input_method,
         },
     )
+
+
+def get_open_visit(conn, employee_id: int) -> dict | None:
+    """The employee's open visit (closeout_at IS NULL) with its call title, if any."""
+    row = conn.execute(
+        """
+        SELECT v.visit_id, v.request_id, v.en_route_at, mr.raw_title
+        FROM request_visit v
+        JOIN maintenance_request mr ON mr.request_id = v.request_id
+        WHERE v.employee_id = %(employee_id)s AND v.closeout_at IS NULL
+        """,
+        {"employee_id": employee_id},
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def insert_visit(
+    conn, *, request_id: int, employee_id: int,
+    lat: float | None, lng: float | None,
+) -> int:
+    row = conn.execute(
+        """
+        INSERT INTO request_visit (request_id, employee_id, en_route_lat, en_route_lng)
+        VALUES (%(request_id)s, %(employee_id)s, %(lat)s, %(lng)s)
+        RETURNING visit_id
+        """,
+        {"request_id": request_id, "employee_id": employee_id, "lat": lat, "lng": lng},
+    ).fetchone()
+    return row["visit_id"]
+
+
+def insert_outbox(
+    conn, *, request_id: int, visit_id: int, channel: str, recipient: str | None,
+    subject: str | None, body: str, employee_id: int,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO message_outbox
+            (request_id, visit_id, channel, recipient, subject, body, created_by_employee_id)
+        VALUES (%(request_id)s, %(visit_id)s, %(channel)s, %(recipient)s,
+                %(subject)s, %(body)s, %(employee_id)s)
+        """,
+        {"request_id": request_id, "visit_id": visit_id, "channel": channel,
+         "recipient": recipient, "subject": subject, "body": body,
+         "employee_id": employee_id},
+    )
+
+
+def get_message_context(conn, request_id: int) -> dict:
+    """Address + cleaned tenant contact for the en-route notification."""
+    row = conn.execute(
+        """
+        SELECT b.adresse,
+               COALESCE(mr.unit_label, u.numero_appartement) AS unit_label,
+               mr.caller_phone, mr.caller_email
+        FROM maintenance_request mr
+        LEFT JOIN building b ON b.building_id = mr.building_id
+        LEFT JOIN unit     u ON u.unit_id     = mr.unit_id
+        WHERE mr.request_id = %(request_id)s
+        """,
+        {"request_id": request_id},
+    ).fetchone()
+    return _normalise_contacts(dict(row))
 
 
 def write_provenance(

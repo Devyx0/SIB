@@ -8,9 +8,10 @@ from typing import Any
 from datetime import datetime, timezone
 
 from backend.core.exceptions import (
-    ConflictError, InvalidTransition, NotFoundError, RequestClosedError,
-    StaleDataError, ValidationFailed,
+    ConflictError, InvalidTransition, NotFoundError, PermissionDenied,
+    RequestClosedError, StaleDataError, ValidationFailed,
 )
+from backend.domain.status_machine import transition
 from backend.core.security import CurrentUser
 from backend.core.utils import today_local
 from backend.modules.weather.keywords import matches_heating_keywords
@@ -18,7 +19,7 @@ from backend.modules.weather import repository as weather_repo
 
 from . import repository as repo
 from .schemas import (
-    AddLogBody, AssignBody, ListResponse, ListRow, RequestDetail,
+    AddLogBody, AssignBody, EnRouteBody, ListResponse, ListRow, RequestDetail,
     RescheduleBody, RouteBody, SetCostBody, SetFollowUpDateBody, SetNextStepsBody,
     SetUrgencyBody,
 )
@@ -327,6 +328,71 @@ def action_set_cost(conn, request_id: int, body: SetCostBody, user: CurrentUser)
         previous_value=_to_str(current_db), new_value=_to_str(body.estimated_cost),
     )
     return _after_action(conn, request_id, user)
+
+
+def action_en_route(conn, request_id: int, body: EnRouteBody, user: CurrentUser) -> RequestDetail:
+    """Technician/contractor departs for the call. Status → en_route, visit row,
+    two outbox rows (sms + email, never sent in V1), provenance per column."""
+    row = _lock_or_404(conn, request_id)
+    if row["assigned_employee_id"] != user.employee_id:
+        raise PermissionDenied("Seul l'employé assigné peut se mettre en route")
+    _check_not_closed(row)
+    if row["status"] != body.current_status or row["start_date"] != body.current_start_date:
+        raise StaleDataError()
+
+    open_visit = repo.get_open_visit(conn, user.employee_id)
+    if open_visit is not None:
+        raise ConflictError(
+            f"Appel {open_visit['request_id']} déjà en route — clôturez-le d'abord",
+            details={
+                "open_request_id": open_visit["request_id"],
+                "open_request_title": open_visit["raw_title"],
+            },
+        )
+
+    transition(row["status"], "en_route")  # 409 if the machine forbids it
+
+    now = datetime.now(timezone.utc)
+    # Insert the visit first: the partial unique index is the authoritative
+    # one-open-call guard if two devices race past the SELECT above.
+    visit_id = repo.insert_visit(
+        conn, request_id=request_id, employee_id=user.employee_id,
+        lat=body.lat, lng=body.lng,
+    )
+    repo.update_field(conn, request_id, "status", "en_route")
+    repo.update_field(conn, request_id, "en_route_at", now)
+    repo.write_provenance(conn,
+        target_table="maintenance_request", target_pk=str(request_id),
+        target_column="status", employee_id=user.employee_id,
+        previous_value=row["status"], new_value="en_route",
+    )
+    repo.write_provenance(conn,
+        target_table="maintenance_request", target_pk=str(request_id),
+        target_column="en_route_at", employee_id=user.employee_id,
+        previous_value=_to_str(row["en_route_at"]), new_value=now.isoformat(),
+    )
+
+    # Tenant notification — template start is the client's (reference §5);
+    # outbox only, status 'not_sent': no sender code exists in V1.
+    ctx = repo.get_message_context(conn, request_id)
+    address = ctx["adresse"] or ""
+    if ctx["unit_label"]:
+        address = f"{address}, app. {ctx['unit_label']}" if address else f"app. {ctx['unit_label']}"
+    msg = (
+        f"Bonjour, Ce message est destiné aux occupants, aux locataires du {address or 'logement'}. "
+        "Votre technicien S.I. Bélanger est en route."
+    )
+    for channel, recipient, subject in (
+        ("sms", ctx["caller_phone"], None),
+        ("email", ctx["caller_email"], "Technicien en route — S.I. Bélanger"),
+    ):
+        repo.insert_outbox(conn,
+            request_id=request_id, visit_id=visit_id, channel=channel,
+            recipient=recipient, subject=subject, body=msg,
+            employee_id=user.employee_id,
+        )
+
+    return get_request(conn, request_id, user)
 
 
 def action_trigger_triage(conn, request_id: int) -> None:

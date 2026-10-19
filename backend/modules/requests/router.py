@@ -18,6 +18,7 @@ from .schemas import (
     AssignBody,
     BuildingLookup,
     EmployeeLookup,
+    EnRouteBody,
     ListResponse,
     RequestDetail,
     RescheduleBody,
@@ -37,6 +38,7 @@ lookup_router = APIRouter(prefix="/lookup", tags=["lookup"])
 
 _ALL_ROLES = require_role("technician", "coordinator", "director", "contractor")
 _COORD_DIR  = require_role("coordinator", "director")
+_TECH_CONTRACTOR = require_role("technician", "contractor")
 
 
 class RequestListParams:
@@ -179,6 +181,11 @@ def request_route(
     conn=Depends(get_db_conn),
 ) -> RequestDetail:
     return service.action_route(conn, request_id, body, user)
+
+
+@router.post("/{request_id}/en-route", operation_id="request_en_route", response_model=RequestDetail)
+def request_en_route(request_id: int, body: EnRouteBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_en_route(conn, request_id, body, user)
 
 
 @router.post("/{request_id}/assign", operation_id="request_assign", response_model=RequestDetail)
