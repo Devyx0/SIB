@@ -85,6 +85,9 @@ class SetUrgencyBody(BaseModel):
     current_assigned_employee_id: Optional[int] = None
     current_start_date: Optional[date] = None
     justification: JustificationBody
+    # Set when accepting a weather suggestion — recorded in the justification's
+    # after_value for provenance. Does not change how urgency is written.
+    weather_evaluation_id: Optional[int] = None
 
 
 class SetFollowUpDateBody(BaseModel):
@@ -188,6 +191,9 @@ class RequestDetail(ListRow):
     raw_caller_body: Optional[dict] = None
     problems: Optional[str] = None
     triage_model_version: Optional[str] = None
+    # True when the tenant's problem text matches the focused "no heat" keyword
+    # list — advisory hint next to the "Vérifier la météo" button.
+    heating_keyword_hint: bool = False
 
 
 class ListResponse(BaseModel):

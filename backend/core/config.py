@@ -63,5 +63,9 @@ class Settings(BaseSettings):
     TIMEZONE: str = "America/Toronto"
     TRIAGE_PROMPT_DIR: Path = _REPO_ROOT / "docs" / "client-ai-system"
 
+    # Weather escalation (SoW 3.4) — DRAFT feature, off by default.
+    # Set WEATHER_ESCALATION_ENABLED=true in .env to turn it on locally.
+    WEATHER_ESCALATION_ENABLED: bool = False
+
 
 settings = Settings()

@@ -13,6 +13,8 @@ from backend.core.exceptions import (
 )
 from backend.core.security import CurrentUser
 from backend.core.utils import today_local
+from backend.modules.weather.keywords import matches_heating_keywords
+from backend.modules.weather import repository as weather_repo
 
 from . import repository as repo
 from .schemas import (
@@ -144,6 +146,7 @@ def get_request(conn, request_id: int, user: CurrentUser) -> RequestDetail:
     else:
         row["justification_log"] = repo.list_justification_entries(conn, request_id)
 
+    _set_heating_hint(row)
     return RequestDetail(**row)
 
 
@@ -154,6 +157,7 @@ def _after_action(conn, request_id: int, user: CurrentUser) -> RequestDetail:
         raise NotFoundError(f"Request {request_id} not found")
     row["followup_log"] = repo.list_followup_entries(conn, request_id)
     row["justification_log"] = repo.list_justification_entries(conn, request_id)
+    _set_heating_hint(row)
     return RequestDetail(**row)
 
 
@@ -176,6 +180,14 @@ def _to_str(v: Any) -> str | None:
 def _norm_urgency(v: Any) -> str | None:
     """Treat 'none' enum value and Python None both as absent urgency."""
     return None if (v is None or v == "none") else str(v)
+
+
+def _set_heating_hint(row: dict) -> None:
+    """Advisory 'no heat' keyword hint over the request's problem text."""
+    text = " ".join(filter(None, (
+        row.get("problem_summary"), row.get("problems"), row.get("raw_title"),
+    )))
+    row["heating_keyword_hint"] = matches_heating_keywords(text)
 
 
 # ── Dispatch actions ───────────────────────────────────────────────────────────
@@ -237,11 +249,22 @@ def action_set_urgency(conn, request_id: int, body: SetUrgencyBody, user: Curren
             or row["start_date"] != body.current_start_date):
         raise StaleDataError()
 
+    after_value: dict[str, Any] = {"urgency_tier": body.urgency_tier}
+    if body.weather_evaluation_id is not None:
+        ev = weather_repo.get_evaluation_provenance(conn, body.weather_evaluation_id)
+        if ev is not None:
+            after_value["weather"] = {
+                "evaluation_id": ev["evaluation_id"],
+                "band": ev["band_name"],
+                "min_forecast_temp_24h_c": _to_str(ev["min_forecast_temp_24h_c"]),
+                "source_url": ev["source_url"],
+            }
+
     repo.update_field(conn, request_id, "urgency_tier", body.urgency_tier)
     repo.write_justification(conn,
         request_id=request_id, employee_id=user.employee_id, decision_type="urgency",
         before_value={"urgency_tier": row["urgency_tier"]},
-        after_value={"urgency_tier": body.urgency_tier},
+        after_value=after_value,
         text=body.justification.text, input_method=body.justification.input_method,
     )
     repo.write_provenance(conn,
