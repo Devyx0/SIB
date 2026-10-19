@@ -378,9 +378,9 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                         {t(lang, 'Unité (optionnel)', 'Unit (optional)')}
                       </label>
                       {unitsLoading
-                        ? <p style={{ fontSize: 12, color: '#888', margin: 0 }}>{t(lang, 'Chargement…', 'Loading…')}</p>
+                        ? <p style={{ fontSize: 12, color: 'var(--color-neutral-600)', margin: 0 }}>{t(lang, 'Chargement…', 'Loading…')}</p>
                         : !unitsError && confirmUnits.length === 0
-                          ? <p style={{ fontSize: 12, color: '#888', margin: 0 }} data-testid="no-units-msg">
+                          ? <p style={{ fontSize: 12, color: 'var(--color-neutral-600)', margin: 0 }} data-testid="no-units-msg">
                               {t(lang, 'Aucune unité enregistrée pour ce bâtiment', 'No units registered for this building')}
                             </p>
                           : (
@@ -421,9 +421,9 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                           {t(lang, 'Unité (optionnel)', 'Unit (optional)')}
                         </label>
                         {unitsLoading
-                          ? <p style={{ fontSize: 12, color: '#888', margin: 0 }}>{t(lang, 'Chargement…', 'Loading…')}</p>
+                          ? <p style={{ fontSize: 12, color: 'var(--color-neutral-600)', margin: 0 }}>{t(lang, 'Chargement…', 'Loading…')}</p>
                           : !unitsError && confirmUnits.length === 0
-                            ? <p style={{ fontSize: 12, color: '#888', margin: 0 }} data-testid="no-units-msg">
+                            ? <p style={{ fontSize: 12, color: 'var(--color-neutral-600)', margin: 0 }} data-testid="no-units-msg">
                                 {t(lang, 'Aucune unité enregistrée pour ce bâtiment', 'No units registered for this building')}
                               </p>
                             : <select id="confirm-unit" className={styles.select} value={confirmUnitId ?? ''}
@@ -477,9 +477,9 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                           {t(lang, 'Unité (optionnel)', 'Unit (optional)')}
                         </label>
                         {unitsLoading
-                          ? <p style={{ fontSize: 12, color: '#888', margin: 0 }}>{t(lang, 'Chargement…', 'Loading…')}</p>
+                          ? <p style={{ fontSize: 12, color: 'var(--color-neutral-600)', margin: 0 }}>{t(lang, 'Chargement…', 'Loading…')}</p>
                           : !unitsError && confirmUnits.length === 0
-                            ? <p style={{ fontSize: 12, color: '#888', margin: 0 }} data-testid="no-units-msg">
+                            ? <p style={{ fontSize: 12, color: 'var(--color-neutral-600)', margin: 0 }} data-testid="no-units-msg">
                                 {t(lang, 'Aucune unité enregistrée pour ce bâtiment', 'No units registered for this building')}
                               </p>
                             : <select id="confirm-unit" className={styles.select} value={confirmUnitId ?? ''}

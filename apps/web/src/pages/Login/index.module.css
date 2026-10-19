@@ -1,23 +1,25 @@
+/* Navy band across the top with the card overlapping it — the same move as
+   the public site's hero with its search card. */
 .page {
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-gradient);
-  background-attachment: fixed;
+  background:
+    linear-gradient(to bottom, var(--navy-800) 0, var(--navy-800) 42%, transparent 42%),
+    var(--color-bg);
+  border-top: 4px solid var(--charcoal);
   padding: 24px;
 }
 
 .card {
   width: 100%;
-  max-width: 360px;
-  background: var(--glass-bg-strong);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--r-lg, 12px);
-  padding: 32px 28px 24px;
+  max-width: 400px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  padding: 32px 32px 26px;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -28,84 +30,87 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--color-divider);
 }
 
-.brandMark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  background: linear-gradient(135deg, var(--color-accent-500), var(--color-accent-800));
-  color: #fff;
-  border-radius: 9px;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  flex-shrink: 0;
-  box-shadow: 0 4px 12px -2px oklch(0.45 0.18 268 / 0.45);
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.brandName {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--color-text);
-  letter-spacing: -0.01em;
+.title {
+  font-size: 22px;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-neutral-700);
 }
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 
 .label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-neutral-700);
-  letter-spacing: 0.01em;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
 }
 
 .input {
   font: inherit;
-  font-size: 14px;
-  padding: 8px 10px;
-  border: 1px solid var(--color-divider);
+  font-size: 15px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
   border-radius: var(--r-md);
-  background: var(--glass-bg);
+  background: var(--color-surface);
   color: var(--color-text);
   outline: none;
   transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
 }
 
+.input:hover {
+  border-color: var(--color-neutral-400);
+}
+
 .input:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 4px var(--color-accent-200);
+  border-color: var(--navy-800);
+  box-shadow: var(--ring);
 }
 
 .btn {
   font: inherit;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  min-height: 46px;
   padding: 10px 0;
-  background: linear-gradient(135deg, var(--color-accent-500), var(--color-accent-700));
+  background: var(--navy-800);
   color: #fff;
   border: none;
   border-radius: var(--r-md);
   cursor: pointer;
   margin-top: 4px;
-  box-shadow: 0 4px 14px -4px oklch(0.45 0.18 268 / 0.5);
 }
 
 .btn:hover:not(:disabled) {
-  filter: brightness(1.06);
+  background: var(--navy-900);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .btn:disabled {
@@ -115,15 +120,20 @@
 
 .error {
   font-size: 13px;
-  color: oklch(0.5 0.18 25);
+  color: var(--color-danger);
+  background: var(--color-danger-t);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--r-md);
+  padding: 8px 12px;
   margin: 0;
 }
 
 .note {
-  font-size: 11px;
-  color: var(--color-neutral-700);
+  font-size: 12px;
+  color: var(--color-neutral-600);
   margin: 0;
   line-height: 1.5;
+  text-align: center;
 }
 
 @keyframes cardIn {
@@ -134,11 +144,13 @@
 @media (max-width: 639px) {
   .page {
     padding: 16px;
-    align-items: flex-end;
+    background:
+      linear-gradient(to bottom, var(--navy-800) 0, var(--navy-800) 30%, transparent 30%),
+      var(--color-bg);
   }
 
   .card {
     max-width: 100%;
-    padding: 28px 20px 20px;
+    padding: 26px 20px 20px;
   }
 }

@@ -3,7 +3,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  padding: 12px 28px 16px;
+  padding: 4px 28px 24px;
   flex-wrap: wrap;
 }
 
@@ -29,9 +29,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--color-divider);
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--color-border);
   border-radius: var(--r-md);
   background: var(--color-surface);
   color: var(--color-text);

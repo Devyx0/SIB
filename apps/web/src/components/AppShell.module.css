@@ -5,54 +5,29 @@
 }
 
 /* Fixed sidebar: full viewport height, scrollable nav section in the middle,
-   brand pinned at top and bottom controls pinned at bottom. */
+   brand pinned at top and bottom controls pinned at bottom. The charcoal
+   top rule echoes the strip above the public site's header. */
 .sidebar {
   position: fixed;
   top: 0;
   left: 0;
   bottom: 0;
-  width: 220px;
-  background: var(--glass-bg-strong);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border-right: 1px solid var(--glass-border);
-  box-shadow: 4px 0 32px -12px oklch(0.35 0.04 265 / 0.15);
+  width: 232px;
+  background: var(--color-surface);
+  border-top: 4px solid var(--charcoal);
+  border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   z-index: 10;
-  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+  transition: transform 0.24s var(--ease-out), box-shadow 0.24s var(--ease-out);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 20px 16px;
+  padding: 18px 18px 16px;
   border-bottom: 1px solid var(--color-divider);
   flex-shrink: 0;
-}
-
-.brandMark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  background: linear-gradient(135deg, var(--color-accent-500), var(--color-accent-800));
-  color: #fff;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  flex-shrink: 0;
-  box-shadow: 0 4px 12px -2px oklch(0.45 0.18 268 / 0.45);
-}
-
-.brandName {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--color-text);
-  letter-spacing: -0.01em;
 }
 
 /* Nav grows to fill remaining space; scrolls internally if it ever overflows. */
@@ -60,37 +35,72 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 10px 8px;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .navItem {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
+  min-height: 38px;
   padding: 8px 12px;
   border-radius: var(--r-md);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-neutral-800);
   text-decoration: none;
   box-sizing: border-box;
   transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
 }
 
 .navItem:hover {
-  background: var(--color-accent-100);
+  background: var(--navy-50);
+  color: var(--navy-800);
   text-decoration: none;
 }
 
-.navActive {
-  color: var(--color-accent);
-  background: linear-gradient(135deg, var(--color-accent-100), oklch(0.95 0.03 250 / 0.8));
-  box-shadow: inset 0 0 0 1px var(--color-accent-200);
+.navActive,
+.navActive:hover {
+  color: var(--navy-800);
+  background: var(--navy-100);
+  font-weight: 600;
 }
 
-.navDisabled {
+.navActive::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--navy-800);
+}
+
+.plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-sm);
+  background: var(--navy-800);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.navDisabled,
+.navDisabled:hover {
   color: var(--color-neutral-500);
+  background: transparent;
   cursor: default;
 }
 
@@ -99,27 +109,29 @@ a.navDisabled {
   cursor: pointer;
 }
 
-.navDisabled:hover {
-  background: transparent;
+a.navDisabled:hover {
+  color: var(--color-neutral-700);
+  background: var(--color-bg-alt);
 }
 
 .navGroup {
-  margin: 14px 12px 4px;
+  margin: 18px 12px 6px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   color: var(--color-neutral-500);
 }
 
 .soonChip {
   margin-left: auto;
   font-size: 10px;
-  font-weight: 700;
-  padding: 1px 6px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 1px 7px;
   border-radius: 999px;
-  background: var(--color-divider);
-  color: var(--color-neutral-700);
+  background: var(--color-bg);
+  color: var(--color-neutral-600);
 }
 
 .burger {
@@ -133,22 +145,21 @@ a.navDisabled {
 /* Bottom controls: shrink-0 keeps them anchored to the bottom of the sidebar. */
 .bottom {
   flex-shrink: 0;
-  padding: 12px 12px 20px;
+  padding: 14px 16px 18px;
   border-top: 1px solid var(--color-divider);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .userInfo {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 4px 2px;
+  gap: 1px;
 }
 
 .userName {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--color-text);
   white-space: nowrap;
@@ -157,8 +168,8 @@ a.navDisabled {
 }
 
 .userRole {
-  font-size: 11px;
-  color: var(--color-neutral-700);
+  font-size: 12px;
+  color: var(--color-neutral-600);
   text-transform: capitalize;
 }
 
@@ -171,31 +182,31 @@ a.navDisabled {
 
 .langBtn {
   font: inherit;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
+  min-height: 32px;
   padding: 4px 12px;
-  border: 1px solid var(--color-divider);
-  border-radius: 999px;
-  background: var(--glass-bg);
-  backdrop-filter: blur(8px);
-  color: var(--color-neutral-700);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--color-neutral-800);
   cursor: pointer;
-  align-self: flex-start;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .langBtn:hover {
-  background: var(--color-accent-100);
-  border-color: var(--color-accent-300);
-  color: var(--color-accent);
+  background: var(--navy-50);
+  border-color: var(--navy-300);
+  color: var(--navy-800);
 }
 
 .signOutBtn {
   font: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 32px;
+  padding: 4px 10px;
   border: none;
   background: transparent;
   color: var(--color-neutral-700);
@@ -204,13 +215,13 @@ a.navDisabled {
 }
 
 .signOutBtn:hover {
-  color: var(--color-text);
-  background: var(--color-accent-100);
+  color: var(--navy-800);
+  background: var(--navy-50);
 }
 
 /* Main content offset matches sidebar width. */
 .main {
-  margin-left: 220px;
+  margin-left: 232px;
   flex: 1;
   min-width: 0;
   min-height: 100vh;
@@ -222,10 +233,13 @@ a.navDisabled {
 /* Tablet: slightly tighter sidebar */
 @media (max-width: 1023px) and (min-width: 640px) {
   .sidebar {
-    width: 200px;
+    width: 208px;
   }
   .main {
-    margin-left: 200px;
+    margin-left: 208px;
+  }
+  .brand {
+    padding: 16px 14px 14px;
   }
 }
 
@@ -234,11 +248,10 @@ a.navDisabled {
   .sidebar {
     transform: translateX(-100%);
     width: min(280px, 86vw);
-    box-shadow: none;
   }
   .sidebarOpen {
     transform: translateX(0);
-    box-shadow: 12px 0 40px -8px oklch(0.3 0.04 265 / 0.35);
+    box-shadow: var(--sh-pop);
   }
   .burger {
     display: flex;
@@ -248,31 +261,26 @@ a.navDisabled {
     top: 10px;
     left: 10px;
     z-index: 11;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     padding: 0;
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--color-border);
     border-radius: var(--r-md);
-    background: var(--glass-bg-strong);
-    backdrop-filter: var(--glass-blur);
-    -webkit-backdrop-filter: var(--glass-blur);
-    box-shadow: var(--sh-card);
-    font: inherit;
-    cursor: pointer;
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: var(--sh-raised);
   }
   .overlay {
     display: block;
     position: fixed;
     inset: 0;
-    background: oklch(0.2 0.03 265 / 0.35);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    background: var(--scrim);
     z-index: 9;
     animation: fadeIn 0.2s var(--ease-out);
   }
   .main {
     margin-left: 0;
-    padding-top: 52px;
+    padding-top: 60px;
   }
 }
 

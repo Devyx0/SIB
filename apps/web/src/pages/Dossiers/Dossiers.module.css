@@ -2,63 +2,106 @@
   display: flex;
   flex-direction: column;
   min-height: 100%;
-  padding: 16px 20px 32px;
+  padding: 24px 28px 36px;
 }
 
 .header {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
 }
 
 .title {
   margin: 0;
-  font-size: 18px;
+  font-size: 26px;
+  overflow-wrap: anywhere;
 }
 
 .count {
   font-size: 13px;
-  color: var(--color-neutral-700);
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--navy-100);
+  color: var(--navy-800);
+  font-variant-numeric: tabular-nums;
 }
 
 .filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 12px 0;
+  gap: 10px;
+  margin: 18px 0 16px;
+  padding: 14px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-card);
 }
 
 .filters select,
 .filters input {
   font: inherit;
-  font-size: 13px;
-  padding: 5px 8px;
-  border: 1px solid var(--color-divider);
+  font-size: 14px;
+  min-height: 38px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
   border-radius: var(--r-md);
-  background: var(--color-surface);
+  background-color: var(--color-surface);
   color: var(--color-text);
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+
+.filters select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23555a61' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+  cursor: pointer;
+}
+
+.filters input[type='search'] {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.filters select:hover,
+.filters input:hover {
+  border-color: var(--color-neutral-400);
+}
+
+.filters select:focus,
+.filters input:focus {
+  outline: none;
+  border-color: var(--navy-800);
+  box-shadow: var(--ring);
 }
 
 .tableWrap {
   overflow-x: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-card);
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 13.5px;
 }
 
 .table thead th {
-  background: var(--glass-bg-strong);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-bottom: 2px solid var(--color-divider);
-  padding: 8px 12px;
+  background: var(--color-bg-alt);
+  border-bottom: 1px solid var(--color-border);
+  padding: 11px 14px;
   text-align: left;
   font-weight: 600;
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-neutral-700);
   white-space: nowrap;
@@ -68,17 +111,27 @@
 }
 
 .table tbody td {
-  padding: 8px 12px;
+  padding: 11px 14px;
   border-bottom: 1px solid var(--color-divider);
   vertical-align: top;
 }
 
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 .row {
   cursor: pointer;
+  transition: background var(--dur) var(--ease-out);
 }
 
 .row:hover {
-  background: var(--color-accent-100);
+  background: var(--navy-50);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--navy-800);
+  outline-offset: -2px;
 }
 
 .num {
@@ -89,55 +142,71 @@
 
 .urgentBadge {
   margin-left: 6px;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
   border-radius: 999px;
-  background: #fee2e2;
-  color: #b91c1c;
+  background: var(--color-danger-t);
+  color: var(--color-danger);
+  box-shadow: inset 0 0 0 1px var(--color-danger-border);
 }
 
 .error {
-  color: #b91c1c;
-  font-size: 13px;
+  color: var(--color-danger);
+  background: var(--color-danger-t);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  font-size: 14px;
 }
 
 /* Detail page */
 .backLink {
-  display: inline-block;
-  margin-bottom: 8px;
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  margin-bottom: 12px;
+  font-size: 14px;
   text-decoration: none;
-  color: var(--color-accent);
+  color: var(--navy-700);
 }
 
 .facts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
-  margin: 12px 0 0;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin: 18px 0 0;
 }
 
 .facts dt {
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 11.5px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-neutral-500);
+  letter-spacing: 0.06em;
+  color: var(--color-neutral-600);
 }
 
 .facts dd {
-  margin: 2px 0 0;
-  font-size: 13px;
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 500;
   overflow-wrap: break-word;
 }
 
 .facts > div {
-  background: var(--glass-bg);
-  backdrop-filter: blur(10px);
-  border: 1px solid var(--glass-border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--navy-800);
   border-radius: var(--r-md);
-  padding: 10px 12px;
+  padding: 12px 14px;
+  box-shadow: var(--sh-card);
+}
+
+@media (max-width: 1023px) {
+  .page {
+    padding: 20px 16px 28px;
+  }
 }
 
 @media (max-width: 639px) {
@@ -145,21 +214,48 @@
     padding: 12px 12px 24px;
   }
 
+  .title {
+    font-size: 21px;
+  }
+
   .table {
-    font-size: 12px;
+    font-size: 12.5px;
   }
 
   .table thead th,
   .table tbody td {
-    padding: 8px;
+    padding: 9px 10px;
   }
 
   .filters {
     flex-direction: column;
+    padding: 12px;
   }
 
   .filters select,
-  .filters input {
+  .filters input,
+  .filters input[type='search'] {
     width: 100%;
+    max-width: none;
   }
+}
+
+/* Visits / log / decisions sit on one white card; the sections' own top
+   rules separate them, so the first one's is dropped. */
+.sections {
+  margin-top: 20px;
+  padding: 4px 20px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-card);
+}
+
+.sections:empty {
+  display: none;
+}
+
+.sections > :first-child {
+  border-top: none;
+  margin-top: 0;
 }

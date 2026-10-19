@@ -3,6 +3,7 @@ import { Link, NavLink } from 'react-router-dom';
 import type { MeResponse } from '../api/schema.d.ts';
 import type { Lang } from '../i18n';
 import { roleLabel, t } from '../i18n';
+import BrandMark from './BrandMark';
 import styles from './AppShell.module.css';
 
 // The mockup is state-routed (no deep links — it only reads a ?theme= param),
@@ -41,13 +42,16 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
         aria-label={t(lang, 'Ouvrir le menu', 'Open menu')}
         aria-expanded={menuOpen}
         onClick={() => setMenuOpen((o) => !o)}
-      >☰</button>
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      </button>
       {menuOpen && <div className={styles.overlay} onClick={() => setMenuOpen(false)} />}
 
       <aside className={`${styles.sidebar} ${menuOpen ? styles.sidebarOpen : ''}`}>
         <div className={styles.brand}>
-          <span className={styles.brandMark}>SIB</span>
-          <span className={styles.brandName}>Maintenance</span>
+          <BrandMark product="Maintenance" />
         </div>
 
         <nav className={styles.nav} onClick={() => setMenuOpen(false)}>
@@ -55,6 +59,7 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
             {t(lang, 'Répartition', 'Dispatch')}
           </NavLink>
           <Link to="/board?nouvel-appel=1" data-testid="nav-nouvel-appel" className={styles.navItem}>
+            <span className={styles.plus} aria-hidden="true">+</span>
             {t(lang, 'Nouvel appel', 'New call')}
           </Link>
           <NavLink to="/dossiers" data-testid="nav-dossiers" className={navItemClass}>

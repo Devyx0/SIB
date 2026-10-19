@@ -8,15 +8,17 @@
 
 .followupHeading {
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-neutral-700);
+  color: var(--navy-800);
   margin: 0 0 12px;
 }
 
 .followupEntry {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--navy-200);
 }
 
 .followupMeta {
@@ -30,8 +32,7 @@
 .followupText {
   margin: 0;
   font-size: 13px;
-  font-style: italic;
-  color: var(--color-neutral-700);
+  color: var(--color-neutral-800);
   line-height: 1.5;
   overflow-wrap: break-word;
   word-break: break-word;
@@ -44,7 +45,9 @@
 }
 
 .justifEntry {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--color-divider);
 }
 
 .justifMeta {
@@ -76,5 +79,5 @@
   height: 64px;
   object-fit: cover;
   border-radius: 6px;
-  border: 1px solid var(--color-border, #dde);
+  border: 1px solid var(--color-border);
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import BrandMark from '../../components/BrandMark';
 import styles from './index.module.css';
 
 export default function Login() {
@@ -27,8 +28,12 @@ export default function Login() {
     <div className={styles.page}>
       <div className={styles.card}>
         <div className={styles.brand}>
-          <span className={styles.brandMark}>SIB</span>
-          <span className={styles.brandName}>Maintenance</span>
+          <BrandMark product="Maintenance" />
+        </div>
+
+        <div className={styles.intro}>
+          <h1 className={styles.title}>Connexion</h1>
+          <p className={styles.subtitle}>Accédez au portail de répartition et d'entretien.</p>
         </div>
 
         <form onSubmit={handleSubmit} className={styles.form}>
@@ -62,7 +67,7 @@ export default function Login() {
             />
           </div>
 
-          {error && <p className={styles.error}>{error}</p>}
+          {error && <p className={styles.error} role="alert">{error}</p>}
 
           <button type="submit" className={styles.btn} disabled={loading}>
             {loading ? 'Connexion…' : 'Se connecter'}
