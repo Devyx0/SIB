@@ -44,8 +44,10 @@ class RequestListParams:
 
     def __init__(
         self,
-        start_date: date = Query(...),
-        end_date: date = Query(...),
+        # Optional as a pair: omitting both lists any date (tech portal
+        # "all my open calls"); providing only one is a validation error.
+        start_date: Optional[date] = Query(default=None),
+        end_date: Optional[date] = Query(default=None),
         status: list[StatusValue] = Query(default=[]),
         building_id: Optional[int] = Query(default=None),
         sector_id: Optional[int] = Query(default=None),
@@ -58,10 +60,13 @@ class RequestListParams:
         limit: int = Query(default=50, ge=1, le=200),
         offset: int = Query(default=0, ge=0),
     ) -> None:
-        if end_date < start_date:
-            raise ValidationFailed("end_date must not be before start_date")
-        if (end_date - start_date).days > 31:
-            raise ValidationFailed("Date range cannot exceed 31 days")
+        if (start_date is None) != (end_date is None):
+            raise ValidationFailed("start_date and end_date must be provided together")
+        if start_date is not None and end_date is not None:
+            if end_date < start_date:
+                raise ValidationFailed("end_date must not be before start_date")
+            if (end_date - start_date).days > 31:
+                raise ValidationFailed("Date range cannot exceed 31 days")
         self.start_date = start_date
         self.end_date = end_date
         self.status = status

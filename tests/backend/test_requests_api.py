@@ -668,3 +668,69 @@ def test_list_sort_by_next_steps(ac):
     r = c.get(f"/api/v1/requests?{_BASE}&sort_by=next_steps&sort_dir=asc&limit=10")
     assert r.status_code == 200
     assert all(i["next_steps"] is None for i in r.json()["items"])
+
+
+# ── Technician portal (stop 1) ────────────────────────────────────────────────
+
+def test_list_technician_assigned_filter_excludes_sector_calls(ac):
+    # Tech 11 (sector 6) sees request 1909 via sector scope when unfiltered…
+    c = ac(_user(_TECH_SECTOR, "technician"))
+    r = c.get("/api/v1/requests?start_date=2026-09-24&end_date=2026-09-24&limit=200")
+    assert r.status_code == 200
+    assert _REQ_WITH_PII in [i["request_id"] for i in r.json()["items"]]
+
+    # …but the portal's assigned-only list (assigned_employee_id = me) must
+    # exclude sector calls not assigned to him. Tech 11 has 0 assigned in range.
+    r = c.get(f"/api/v1/requests?{_BASE}&assigned_employee_id={_TECH_SECTOR}&limit=200")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 0
+    assert _REQ_WITH_PII not in [i["request_id"] for i in body["items"]]
+    assert all(i["assigned_employee_id"] == _TECH_SECTOR for i in body["items"])
+
+
+def test_detail_includes_ft_fields(ac):
+    # Request 1018 has a fiche technique link; field must be exposed on detail.
+    c = ac(_user(_COORD_EMP, "coordinator"))
+    r = c.get("/api/v1/requests/1018")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ft_link"] is not None
+    assert "ft_name" in body
+
+
+def test_list_no_dates_returns_old_open_assigned_call(ac, db_conn):
+    # An assigned open call dated 10 days ago (outside any 31-day board window
+    # anchored on the Sept data) must appear in the undated "all my calls"
+    # list; a closed one must not when the status filter excludes 'closed'.
+    old_open = db_conn.execute(
+        "INSERT INTO maintenance_request (status, assigned_employee_id, start_date) "
+        "VALUES ('triaged', %(emp)s, CURRENT_DATE - 10) RETURNING request_id",
+        {"emp": _TECH_ASSIGNED},
+    ).fetchone()["request_id"]
+    old_closed = db_conn.execute(
+        "INSERT INTO maintenance_request (status, assigned_employee_id, start_date) "
+        "VALUES ('closed', %(emp)s, CURRENT_DATE - 10) RETURNING request_id",
+        {"emp": _TECH_ASSIGNED},
+    ).fetchone()["request_id"]
+
+    open_statuses = [
+        "intake_received", "triage_pending", "triaged", "triage_clarify",
+        "triage_proposal", "triage_failed", "en_route",
+    ]
+    status_qs = "&".join(f"status={s}" for s in open_statuses)
+    c = ac(_user(_TECH_ASSIGNED, "technician"))
+    r = c.get(f"/api/v1/requests?assigned_employee_id={_TECH_ASSIGNED}&{status_qs}&limit=200")
+    assert r.status_code == 200
+    ids = [i["request_id"] for i in r.json()["items"]]
+    assert old_open in ids
+    assert old_closed not in ids
+    # No date window → undated rows come back in items; no separate panel.
+    assert r.json()["unscheduled_items"] == []
+
+
+def test_list_only_one_date_is_422(ac):
+    c = ac(_user(_COORD_EMP, "coordinator"))
+    r = c.get(f"/api/v1/requests?start_date={_START}")
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "VALIDATION_FAILED"

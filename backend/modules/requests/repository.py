@@ -80,8 +80,8 @@ def _normalise_contacts(d: dict) -> dict:
 def list_requests(
     conn,
     *,
-    start_date: date,
-    end_date: date,
+    start_date: date | None,
+    end_date: date | None,
     status: list[str],
     building_id: int | None,
     sector_id: int | None,
@@ -96,8 +96,21 @@ def list_requests(
     scope_sql: str,
     scope_params: dict[str, Any],
 ) -> tuple[int, list[dict]]:
-    conditions: list[str] = ["mr.start_date BETWEEN %(start_date)s AND %(end_date)s"]
-    params: dict[str, Any] = {"start_date": start_date, "end_date": end_date, **scope_params}
+    conditions: list[str] = []
+    params: dict[str, Any] = {**scope_params}
+
+    if source_calendar == "unrouted":
+        # 90-day window on submission_date; start_date is NULL on intake rows,
+        # so any date range is ignored here.
+        conditions.append(
+            "mr.source_calendar IS NULL"
+            " AND mr.status::text NOT IN ('closed', 'en_route')"
+            " AND (mr.submission_date >= NOW() - INTERVAL '90 days' OR mr.submission_date IS NULL)"
+        )
+    elif start_date is not None:
+        conditions.append("mr.start_date BETWEEN %(start_date)s AND %(end_date)s")
+        params["start_date"] = start_date
+        params["end_date"] = end_date
 
     if status:
         conditions.append("mr.status::text = ANY(%(status)s)")
@@ -114,15 +127,7 @@ def list_requests(
     if urgency is not None:
         conditions.append("mr.urgency_tier::text = %(urgency)s")
         params["urgency"] = urgency
-    if source_calendar == "unrouted":
-        # Replace the date-range condition with a 90-day window on submission_date.
-        # start_date is NULL on intake rows; the board date picker is ignored here.
-        conditions[0] = (
-            "mr.source_calendar IS NULL"
-            " AND mr.status::text NOT IN ('closed', 'en_route')"
-            " AND (mr.submission_date >= NOW() - INTERVAL '90 days' OR mr.submission_date IS NULL)"
-        )
-    elif source_calendar is not None:
+    if source_calendar is not None and source_calendar != "unrouted":
         conditions.append("mr.source_calendar = %(source_calendar)s")
         params["source_calendar"] = source_calendar
     if q is not None:
@@ -135,7 +140,7 @@ def list_requests(
         )""")
         params["q_pat"] = f"%{q}%"
 
-    where = " AND ".join(conditions)
+    where = " AND ".join(conditions) if conditions else "TRUE"
     if scope_sql:
         where = f"({where}) {scope_sql}"
 
@@ -228,7 +233,9 @@ def get_request(
             mr.caller_tenant_id,
             mr.raw_caller_body,
             mr.problems,
-            mr.triage_model_version
+            mr.triage_model_version,
+            mr.ft_link,
+            mr.ft_name
         FROM maintenance_request mr
         LEFT JOIN building  b ON b.building_id = mr.building_id
         LEFT JOIN sector    s ON s.sector_id   = mr.sector_id

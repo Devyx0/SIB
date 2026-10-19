@@ -191,6 +191,9 @@ class RequestDetail(ListRow):
     raw_caller_body: Optional[dict] = None
     problems: Optional[str] = None
     triage_model_version: Optional[str] = None
+    # Fiche technique link — in the always-visible set for tech/contractor
+    ft_link: Optional[str] = None
+    ft_name: Optional[str] = None
     # True when the tenant's problem text matches the focused "no heat" keyword
     # list — advisory hint next to the "Vérifier la météo" button.
     heating_keyword_hint: bool = False

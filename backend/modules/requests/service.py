@@ -108,7 +108,9 @@ def list_requests(conn, params, user: CurrentUser) -> ListResponse:
         scope_params=scope_params,
     )
     unscheduled: list[dict] = []
-    if params.source_calendar != "unrouted":
+    # Without a date window the main query has no date filter, so undated rows
+    # are already in `items` — the extra query would only duplicate them.
+    if params.source_calendar != "unrouted" and params.start_date is not None:
         unscheduled = repo.list_routed_unscheduled(
             conn,
             scope_sql=scope_sql,
