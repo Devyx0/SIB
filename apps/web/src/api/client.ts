@@ -7,6 +7,7 @@ export class ApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly traceId?: string,
+    public readonly details?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -51,13 +52,15 @@ async function request<T>(path: string, method: string, body?: unknown): Promise
     let code = `HTTP_${res.status}`;
     let message = res.statusText;
     let traceId: string | undefined;
+    let details: unknown;
     try {
       const envelope = await res.json();
       if (envelope?.error?.code) code = envelope.error.code;
       if (envelope?.error?.message) message = envelope.error.message;
       if (envelope?.error?.request_id) traceId = envelope.error.request_id;
+      details = envelope?.error?.details;
     } catch { /* ignore parse error */ }
-    throw new ApiError(code, message, traceId);
+    throw new ApiError(code, message, traceId, details);
   }
   return res.json() as Promise<T>;
 }
@@ -109,6 +112,10 @@ export function fetchMe(): Promise<MeResponse> {
 }
 
 export interface Justification { text: string; input_method: 'voice' | 'typed'; }
+
+export function goEnRoute(id: number, body: { current_status: string; current_start_date: string | null; lat: number | null; lng: number | null }): Promise<RequestDetail> {
+  return apiPost(`/api/v1/requests/${id}/en-route`, body);
+}
 
 export function dispatchAssign(id: number, body: { employee_id: number | null; current_assigned_employee_id: number | null; current_start_date: string | null; current_urgency_tier: string | null; justification: Justification }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/assign`, body);

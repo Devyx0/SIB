@@ -32,6 +32,8 @@ function makeRow(overrides: Partial<ListRow> = {}): ListRow {
     next_steps: null,
     last_followup_date: null,
     last_followup_text: null,
+    unit_label: null,
+    en_route_at: null,
     ...overrides,
   };
 }
@@ -106,5 +108,15 @@ describe('RequestTable', () => {
     render(<RequestTable {...defaultProps} rows={[makeRow()]} selectedId={1} />);
     const row = screen.getByTestId('request-row');
     expect(row.getAttribute('aria-selected')).toBe('true');
+  });
+});
+
+describe('en route visibility (stop 2)', () => {
+  it('shows a highlighted « En route » status tag — the X prefix equivalent', () => {
+    render(
+      <RequestTable {...defaultProps} rows={[makeRow({ status: 'en_route' })]} total={1} />
+    );
+    const tag = screen.getByText('En route');
+    expect(tag.getAttribute('data-status')).toBe('en_route');
   });
 });

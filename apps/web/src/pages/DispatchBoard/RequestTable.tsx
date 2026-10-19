@@ -53,7 +53,8 @@ function UrgencyTag({ tier }: { tier: string | null }) {
 }
 
 function StatusTag({ status, lang = 'fr' }: { status: string; lang?: Lang }) {
-  return <span className={styles.tagStatus}>{statusLabel(lang, status)}</span>;
+  // en_route is highlighted — the calendar's "X" prefix equivalent.
+  return <span className={styles.tagStatus} data-status={status}>{statusLabel(lang, status)}</span>;
 }
 
 export default function RequestTable({

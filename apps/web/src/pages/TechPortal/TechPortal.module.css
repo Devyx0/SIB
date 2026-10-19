@@ -207,3 +207,36 @@
   color: #b91c1c;
   font-weight: 600;
 }
+
+.enRouteBtn {
+  width: 100%;
+  padding: 0.9rem;
+  border: none;
+  border-radius: 10px;
+  background: #b45309;
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.enRouteBtn:disabled {
+  opacity: 0.6;
+}
+
+.openCallBannerCard {
+  background: #b45309;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 0.6rem 0.9rem;
+}
+
+.warning {
+  background: #fef3c7;
+  border: 1px solid #b45309;
+  color: #7c2d12;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+  margin: 0;
+}

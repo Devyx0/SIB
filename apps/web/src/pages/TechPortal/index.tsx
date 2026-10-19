@@ -5,6 +5,7 @@ import type { MeResponse, ListRow } from '../../api/schema.d.ts';
 import type { Lang } from '../../i18n';
 import { t, statusLabel } from '../../i18n';
 import TechHeader from './TechHeader';
+import { elapsedLabel } from './elapsed';
 import styles from './TechPortal.module.css';
 
 interface Props {
@@ -33,7 +34,10 @@ function CallRow({ row, lang }: { row: ListRow; lang: Lang }) {
         )}
       </div>
       <div className={styles.callTitle}>{row.raw_title ?? `#${row.request_id}`}</div>
-      <div className={styles.callAddress}>{row.building_address ?? '—'}</div>
+      <div className={styles.callAddress}>
+        {row.building_address ?? '—'}
+        {row.unit_label ? `, app. ${row.unit_label}` : ''}
+      </div>
     </Link>
   );
 }
@@ -83,6 +87,9 @@ export default function TechList({ lang, me, onSignOut }: Props) {
           <section className={styles.openCall}>
             <div className={styles.openCallBanner}>
               {t(lang, 'Appel en cours — à clôturer avant le prochain', 'Open call — close it before the next one')}
+              {elapsedLabel(enRoute[0].en_route_at) && (
+                <> · {t(lang, 'En route depuis', 'En route for')} {elapsedLabel(enRoute[0].en_route_at)}</>
+              )}
             </div>
             {enRoute.map((r) => <CallRow key={r.request_id} row={r} lang={lang} />)}
           </section>

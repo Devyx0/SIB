@@ -160,3 +160,10 @@
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* en_route highlighted — the calendar's "X" prefix equivalent */
+.tagStatus[data-status='en_route'] {
+  background: #b45309;
+  color: #fff;
+  font-weight: 700;
+}

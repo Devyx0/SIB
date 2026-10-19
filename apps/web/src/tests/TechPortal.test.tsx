@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   fetchMe: vi.fn(),
   fetchRequests: vi.fn(),
   fetchRequest: vi.fn(),
+  goEnRoute: vi.fn(),
 }));
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -31,6 +32,7 @@ vi.mock('../api/client', async (importOriginal) => {
     fetchMe: mocks.fetchMe,
     fetchRequests: mocks.fetchRequests,
     fetchRequest: mocks.fetchRequest,
+    goEnRoute: mocks.goEnRoute,
     fetchSectors: () => Promise.resolve([]),
     fetchEmployees: () => Promise.resolve([]),
   };
@@ -49,6 +51,27 @@ function row(id: number, status: string, extra: Record<string, unknown> = {}) {
     urgency_tier: null,
     raw_title: `Appel ${id}`,
     building_address: '123 rue Test',
+    unit_label: null,
+    en_route_at: null,
+    ...extra,
+  };
+}
+
+// Full-enough RequestDetail for the call view.
+function detail(extra: Record<string, unknown> = {}) {
+  return {
+    ...row(5, 'triaged'),
+    assigned_employee_id: 24,
+    problem_summary: null,
+    problems: null,
+    raw_caller_body: null,
+    building_name: null,
+    ft_link: null,
+    ft_name: null,
+    caller_name: null,
+    caller_phone: null,
+    caller_email: null,
+    followup_log: [],
     ...extra,
   };
 }
@@ -70,6 +93,7 @@ beforeEach(() => {
   mocks.fetchMe.mockReset();
   mocks.fetchRequests.mockReset().mockResolvedValue(EMPTY_LIST);
   mocks.fetchRequest.mockReset();
+  mocks.goEnRoute.mockReset();
 });
 
 describe('role routing', () => {
@@ -169,18 +193,14 @@ describe('Mes appels list', () => {
 describe('call view', () => {
   it('shows tenant contact when the API returns it', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
-    mocks.fetchRequest.mockResolvedValue({
-      ...row(5, 'triaged'),
-      problem_summary: 'Fuite sous évier',
+    mocks.fetchRequest.mockResolvedValue(detail({
+      problems: 'Fuite sous évier',
       unit_label: '3',
-      building_name: null,
       ft_link: 'https://example.com/ft',
       ft_name: 'Fiche 123',
       caller_name: 'Jean Locataire',
       caller_phone: '418-555-1234',
-      caller_email: null,
-      followup_log: [],
-    });
+    }));
     wrap(['/tech/appels/5']);
     await waitFor(() => expect(screen.getByText('Jean Locataire')).toBeTruthy());
     const tel = screen.getByText('418-555-1234');
@@ -191,18 +211,7 @@ describe('call view', () => {
 
   it('hides tenant contact when the API nulls it (case-scoped rule)', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
-    mocks.fetchRequest.mockResolvedValue({
-      ...row(6, 'triaged'),
-      problem_summary: null,
-      unit_label: null,
-      building_name: null,
-      ft_link: null,
-      ft_name: null,
-      caller_name: null,
-      caller_phone: null,
-      caller_email: null,
-      followup_log: [],
-    });
+    mocks.fetchRequest.mockResolvedValue(detail({ request_id: 6, assigned_employee_id: 99 }));
     wrap(['/tech/appels/6']);
     await waitFor(() => expect(screen.getByText('Contact locataire')).toBeTruthy());
     expect(screen.queryByText(/tel:/)).toBeNull();
@@ -215,5 +224,160 @@ describe('call view', () => {
     mocks.fetchRequest.mockRejectedValue(new ApiError('NOT_FOUND', 'Request 999 not found'));
     wrap(['/tech/appels/999']);
     await waitFor(() => expect(screen.getByText('Appel introuvable')).toBeTruthy());
+  });
+
+  it('shows the tenant version from raw_caller_body and never the AI summary', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({
+      problem_summary: 'RÉSUMÉ IA — NE PAS AFFICHER',
+      raw_caller_body: {
+        problems: 'Mon robinet coule depuis hier',
+        entry_permission: 'Oui, entrez',
+        animals: 'Un chat',
+      },
+    }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() =>
+      expect(screen.getByText('Mon robinet coule depuis hier')).toBeTruthy()
+    );
+    expect(screen.getByText('Problème (version du locataire)')).toBeTruthy();
+    expect(screen.getByText('Oui, entrez')).toBeTruthy();
+    expect(screen.getByText('Un chat')).toBeTruthy();
+    expect(screen.queryByText('RÉSUMÉ IA — NE PAS AFFICHER')).toBeNull();
+  });
+
+  it('falls back to the raw problem field when raw_caller_body is absent', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({
+      problem_summary: 'RÉSUMÉ IA — NE PAS AFFICHER',
+      problems: 'Texte brut du calendrier',
+      raw_caller_body: null,
+    }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByText('Texte brut du calendrier')).toBeTruthy());
+    expect(screen.getByText('Problème')).toBeTruthy();
+    expect(screen.queryByText(/version du locataire/)).toBeNull();
+    expect(screen.queryByText('RÉSUMÉ IA — NE PAS AFFICHER')).toBeNull();
+  });
+
+  it('shows « Fiche technique non disponible » when both ft fields are null', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail());
+    wrap(['/tech/appels/5']);
+    await waitFor(() =>
+      expect(screen.getByText('Fiche technique non disponible')).toBeTruthy()
+    );
+  });
+
+  it('extracts the link when it is embedded in ft_name (data shape bug)', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({
+      ft_link: null,
+      ft_name: '3034-3038-3052-3054 Lechasseur (https://docs.google.com/spreadsheets/d/XYZ/edit?usp=drivesdk)',
+    }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() =>
+      expect(screen.getByText('3034-3038-3052-3054 Lechasseur')).toBeTruthy()
+    );
+    expect(screen.getByText('3034-3038-3052-3054 Lechasseur').getAttribute('href'))
+      .toBe('https://docs.google.com/spreadsheets/d/XYZ/edit?usp=drivesdk');
+  });
+});
+
+describe('en route (stop 2)', () => {
+  it('shows the button only on my assigned open call', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail());
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByTestId('en-route-btn')).toBeTruthy());
+  });
+
+  it('hides the button when the call is not assigned to me', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({ assigned_employee_id: 99 }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByText('Contact locataire')).toBeTruthy());
+    expect(screen.queryByTestId('en-route-btn')).toBeNull();
+  });
+
+  it('tap: sends null location when geolocation is unavailable, then shows the banner and the no-contact message', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail());
+    mocks.goEnRoute.mockResolvedValue(detail({
+      status: 'en_route',
+      en_route_at: new Date(Date.now() - 5 * 60000).toISOString(),
+    }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByTestId('en-route-btn')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('en-route-btn'));
+    await waitFor(() => expect(screen.getByTestId('no-contact-warning')).toBeTruthy());
+    expect(mocks.goEnRoute).toHaveBeenCalledWith(5, {
+      current_status: 'triaged',
+      current_start_date: '2026-10-20',
+      lat: null,
+      lng: null,
+    });
+    expect(screen.getByText(/En route depuis 5 min/)).toBeTruthy();
+    expect(screen.getByText('Aucun contact pour aviser le locataire')).toBeTruthy();
+    expect(screen.queryByTestId('en-route-btn')).toBeNull();
+  });
+
+  it('tap: sends the granted location', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail());
+    mocks.goEnRoute.mockResolvedValue(detail({ status: 'en_route' }));
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: {
+        getCurrentPosition: (ok: (p: unknown) => void) =>
+          ok({ coords: { latitude: 46.81, longitude: -71.21 } }),
+      },
+    });
+    try {
+      wrap(['/tech/appels/5']);
+      await waitFor(() => expect(screen.getByTestId('en-route-btn')).toBeTruthy());
+      fireEvent.click(screen.getByTestId('en-route-btn'));
+      await waitFor(() =>
+        expect(mocks.goEnRoute).toHaveBeenCalledWith(5, expect.objectContaining({
+          lat: 46.81,
+          lng: -71.21,
+        }))
+      );
+    } finally {
+      Object.defineProperty(navigator, 'geolocation', { configurable: true, value: undefined });
+    }
+  });
+
+  it('blocks with the open call shown when another call is already en route', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail());
+    const { ApiError } = await import('../api/client');
+    mocks.goEnRoute.mockRejectedValue(new ApiError(
+      'CONFLICT',
+      "Appel 77 déjà en route — clôturez-le d'abord",
+      undefined,
+      { open_request_id: 77, open_request_title: 'Premier appel' },
+    ));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByTestId('en-route-btn')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('en-route-btn'));
+    await waitFor(() =>
+      expect(screen.getByText(/Appel 77 déjà en route/)).toBeTruthy()
+    );
+    expect(screen.getByText(/Premier appel/)).toBeTruthy();
+  });
+
+  it('pinned list banner shows elapsed time', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequests.mockResolvedValue({
+      total: 1,
+      items: [row(11, 'en_route', {
+        en_route_at: new Date(Date.now() - 30 * 60000).toISOString(),
+      })],
+      unscheduled_items: [],
+    });
+    wrap(['/tech']);
+    await waitFor(() => expect(screen.getByText(/Appel en cours/)).toBeTruthy());
+    expect(screen.getByText(/En route depuis 30 min/)).toBeTruthy();
   });
 });

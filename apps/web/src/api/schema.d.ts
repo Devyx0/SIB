@@ -61,6 +61,8 @@ export interface ListRow {
   next_steps: string | null;
   last_followup_date: string | null;
   last_followup_text: string | null;
+  unit_label: string | null;
+  en_route_at: string | null;
 }
 
 export interface JustificationEntry {
@@ -87,7 +89,6 @@ export interface RequestDetail extends ListRow {
   occupants_raw: string | null;
   follow_up_expected: boolean | null;
   unit_id: number | null;
-  unit_label: string | null;
   project_id: number | null;
   project_label: string | null;
   html_link: string | null;
