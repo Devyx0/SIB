@@ -1,9 +1,9 @@
 # Technician portal — 3.5 En route + 3.6 Closeout (SoW 3.5, 3.6)
 
 Recorded 2026-10-19. Plan approved by client-side (Maaz) with changes; this doc is
-the plan of record. Build proceeds in three stops; **stop 1 built 2026-10-19**,
-stops 2–3 not started. Local only — nothing committed, no SMS/email sent, no
-Google writes.
+the plan of record. Build proceeds in three stops; **stops 1 and 2 built
+2026-10-19** (stop-1 review fixes applied same day), stop 3 not started. Local
+only — nothing committed, no SMS/email sent, no Google writes.
 
 Client sources: `docs/francois-milestone1-reference.md` §5 (En route), §6
 (Closeout), §9 (Majordome evidence); ticket decisions dated Oct 13 (mobile web,
@@ -64,6 +64,14 @@ triage_failed. `status_machine._TRANSITIONS` gains `X → en_route` for each
 2. `/tech/appels/:id` — read-only call view: address, problem, technical
    sheet link (`ft_link`/`ft_name` — added to the GET detail response),
    follow-up log, tenant contact per existing case-scoped rule.
+   Review fixes (post case 11603): the problem shown is the TENANT's version
+   from `raw_caller_body` (problems + entry permission + animals), never
+   `problem_summary` or other AI fields; fallback when `raw_caller_body` is
+   absent = raw `problems` labelled « Problème ». FT data comes in three
+   shapes (link in ft_link / name only / "name (url)" mashed into ft_name) —
+   the view extracts the URL from either field and shows « Fiche technique
+   non disponible » when there is none (request 15927: both fields null).
+   Unit (« app. X ») shown on every list card and on the call view address.
 3. En route — one tap; `navigator.geolocation` with short timeout, null on
    deny (Oct 13: points on actions, not tracking).
 4. `/tech/appels/:id/cloture` — 4 outcomes with verbatim labels; photos
@@ -109,14 +117,14 @@ satisfied by having no send path.
 
 ## Schema migrations (timestamped, one per stop; none applied yet)
 
-- Stop 2 — `202610191400xx_en_route.sql`: `request_visit` table
-  (visit_id identity, request_id FK, employee_id FK, en_route_at NOT NULL,
-  en_route_lat/lng, closeout_at NULL, closeout_lat/lng, outcome
-  closeout_outcome NULL; elapsed computed, not stored);
-  `CREATE UNIQUE INDEX request_visit_one_open_idx ON
-  request_visit(employee_id) WHERE closeout_at IS NULL` (one-open-call rule as
-  a DB constraint); `message_outbox`; RLS enabled, no policies (FastAPI /
-  service_role only — same as decision_justification_log).
+- Stop 2 — **built**: `supabase/migrations/20261019140000_en_route.sql`:
+  `request_visit` table (visit_id identity, request_id FK, employee_id FK,
+  en_route_at NOT NULL, en_route_lat/lng, closeout_at NULL, closeout_lat/lng,
+  outcome closeout_outcome NULL; elapsed computed, not stored);
+  `request_visit_one_open_idx` partial unique index (one-open-call rule as a
+  DB constraint); `message_outbox`; RLS enabled, no policies (FastAPI /
+  service_role only — same as decision_justification_log). Applied to local
+  dev and sib_test via psql; `supabase db diff --local` → no schema changes.
 - Stop 3 — `202610191401xx_closeout.sql`: `ALTER TYPE closeout_outcome ADD
   VALUE 'partial_expertise'`; `maintenance_request.closeout_urgent boolean`;
   `maintenance_attachment.attachment_id` → identity + setval; bucket
@@ -171,3 +179,7 @@ geolocation mocked; all against sib_test.
 6. Photo retention; 10 MiB cap.
 7. §9: "no source says Majordome = only Mahmoud" — other Majordome workers
    would need their own employee row + contractor role; no portal change.
+8. How a coordinator unblocks a technician who forgot to close a call — the
+   one-open-visit index blocks every new en route until the visit is closed.
+   Likely a coordinator action that closes the visit administratively
+   (closeout_at set, no outcome, provenance row). Not built; needs François.
