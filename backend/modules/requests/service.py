@@ -1,6 +1,7 @@
 """Business logic for the requests module. Calls requests.repository, enforces domain rules."""
 from __future__ import annotations
 
+import contextlib
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -414,8 +415,9 @@ def action_en_route(conn, request_id: int, body: EnRouteBody, user: CurrentUser)
 
 
 def action_upload_photo(conn, request_id: int, content: bytes, mime: str, user: CurrentUser) -> PhotoUploadResponse:
-    """Closeout photo: raw image body, mime in Content-Type. Row first, then
-    storage upload — an upload failure rolls the row back."""
+    """Closeout photo: raw image body, mime in Content-Type. File first, then
+    row — an attachment row must never exist without its stored object; if the
+    insert fails the uploaded file is deleted (best effort)."""
     row = _lock_or_404(conn, request_id)
     if row["assigned_employee_id"] != user.employee_id:
         raise PermissionDenied("Seul l'employé assigné peut ajouter des photos")
@@ -428,10 +430,18 @@ def action_upload_photo(conn, request_id: int, content: bytes, mime: str, user: 
     if len(content) > _MAX_PHOTO_BYTES:
         raise ValidationFailed("Photo trop lourde (max 10 Mo)")
 
-    attachment_id, path = repo.insert_photo(
-        conn, request_id=request_id, employee_id=user.employee_id, storage_ext=ext,
-    )
+    attachment_id = repo.next_attachment_id(conn)
+    path = f"closeout/{request_id}/{attachment_id}.{ext}"
     storage.upload_photo(path, content, mime)
+    try:
+        repo.insert_photo(
+            conn, attachment_id=attachment_id, request_id=request_id,
+            employee_id=user.employee_id, storage_path=path,
+        )
+    except Exception:
+        with contextlib.suppress(Exception):
+            storage.delete_photo(path)
+        raise
     return PhotoUploadResponse(attachment_id=attachment_id)
 
 

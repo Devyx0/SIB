@@ -66,5 +66,12 @@ class RequestEnRouteError(ConflictError):
     detail = "Appel en cours — le technicien doit d'abord clôturer"
 
 
+class StorageError(AppError):
+    # 502: the storage backend failed, not us — the client can safely retry
+    status_code = 502
+    code = "STORAGE_ERROR"
+    detail = "Échec de l'envoi de la photo — réessayez"
+
+
 # Legacy alias kept for any future references
 ForbiddenError = PermissionDenied

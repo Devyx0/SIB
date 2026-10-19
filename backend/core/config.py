@@ -53,12 +53,18 @@ class Settings(BaseSettings):
     SUPABASE_PROJECT_REF: str = ""
     DATABASE_PASSWORD: str = ""
     DATABASE_URL: str = ""
-    SERVICE_ROLE: str = ""
     SECRET_KEY: str = ""
 
-    # Supabase Storage API — defaults to the local stack; tests mock the
-    # storage module entirely.
+    # Supabase Storage API — URL and key MUST point at the same stack.
+    # Defaults are the local stack: the key is the public supabase-demo
+    # service key (same constant as scripts/seed_dev_users.py, only valid
+    # for 127.0.0.1:54321). Remote deploys override BOTH in .env.
     STORAGE_URL: str = "http://127.0.0.1:54321/storage/v1"
+    STORAGE_SERVICE_KEY: str = (
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+        ".eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0"
+        ".EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"
+    )
 
     # Anthropic — required at startup; prevents a silent triage_pending hang.
     ANTHROPIC_API_KEY: str = ""

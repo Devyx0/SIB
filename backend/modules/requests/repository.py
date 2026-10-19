@@ -410,27 +410,30 @@ def insert_outbox(
     )
 
 
+def next_attachment_id(conn) -> int:
+    """Reserve an attachment id so the storage path is known BEFORE the file
+    is uploaded — the row is only inserted after the upload succeeds."""
+    return conn.execute(
+        "SELECT nextval(pg_get_serial_sequence('maintenance_attachment', 'attachment_id')) AS id"
+    ).fetchone()["id"]
+
+
 def insert_photo(
-    conn, *, request_id: int, employee_id: int, storage_ext: str,
-) -> tuple[int, str]:
-    """Insert the attachment row, derive the storage path from its id, and
-    persist the path. Returns (attachment_id, storage_path)."""
-    row = conn.execute(
+    conn, *, attachment_id: int, request_id: int, employee_id: int, storage_path: str,
+) -> None:
+    """Insert the attachment row for an already-uploaded file. The explicit id
+    comes from next_attachment_id (same sequence — no drift)."""
+    conn.execute(
         """
         INSERT INTO maintenance_attachment
-            (request_id, file_type, photo_context, uploaded_by_employee_id)
-        VALUES (%(request_id)s, 'photo', 'closeout', %(employee_id)s)
-        RETURNING attachment_id
+            (attachment_id, request_id, file_type, photo_context,
+             uploaded_by_employee_id, storage_path)
+        VALUES (%(attachment_id)s, %(request_id)s, 'photo', 'closeout',
+                %(employee_id)s, %(storage_path)s)
         """,
-        {"request_id": request_id, "employee_id": employee_id},
-    ).fetchone()
-    attachment_id = row["attachment_id"]
-    path = f"closeout/{request_id}/{attachment_id}.{storage_ext}"
-    conn.execute(
-        "UPDATE maintenance_attachment SET storage_path = %(p)s WHERE attachment_id = %(id)s",
-        {"p": path, "id": attachment_id},
+        {"attachment_id": attachment_id, "request_id": request_id,
+         "employee_id": employee_id, "storage_path": storage_path},
     )
-    return attachment_id, path
 
 
 def get_photo(conn, request_id: int, attachment_id: int) -> dict | None:
