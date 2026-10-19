@@ -168,12 +168,15 @@ export default function DispatchBoard({ lang, me }: Props) {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <h1>{t(lang, 'Répartition', 'Dispatch')}</h1>
+        <div className={styles.titleBlock}>
+          <h1>{t(lang, 'Répartition', 'Dispatch')}</h1>
+          <p className={styles.subtitle}>{t(lang, 'Appels de service et assignations', 'Service calls and assignments')}</p>
+        </div>
         {isCoordOrDir && (
           <button
             data-testid="nouvel-appel-btn"
             onClick={() => setShowNewCall(true)}
-            style={{ fontWeight: 700, padding: '6px 16px', background: 'var(--color-accent)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 13 }}
+            className={styles.newCallBtn}
           >
             {t(lang, '+ Nouvel appel', '+ New call')}
           </button>
@@ -214,7 +217,7 @@ export default function DispatchBoard({ lang, me }: Props) {
 
       {(data?.unscheduled_items?.length ?? 0) > 0 && (
         <div className={styles.tableWrap} data-testid="unscheduled-group">
-          <h2 style={{ fontSize: 13, fontWeight: 600, padding: '8px 12px 4px', margin: 0, background: 'var(--color-bg-alt, #f5f5f5)' }}>
+          <h2 className={styles.groupHeading}>
             {t(lang, `À planifier (${data!.unscheduled_items.length})`, `To schedule (${data!.unscheduled_items.length})`)}
           </h2>
           <RequestTable

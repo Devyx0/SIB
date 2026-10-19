@@ -1,24 +1,26 @@
 .wrap {
   overflow-x: auto;
   margin-top: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-card);
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 13.5px;
 }
 
 .table thead th {
-  background: var(--glass-bg-strong);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-bottom: 2px solid var(--color-divider);
-  padding: 8px 12px;
+  background: var(--color-bg-alt);
+  border-bottom: 1px solid var(--color-border);
+  padding: 11px 14px;
   text-align: left;
   font-weight: 600;
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-neutral-700);
   white-space: nowrap;
@@ -33,12 +35,12 @@
 }
 
 .table thead th.sortable:hover {
-  color: var(--color-accent);
+  color: var(--navy-800);
 }
 
 .sortArrow {
   margin-left: 4px;
-  color: var(--color-accent);
+  color: var(--navy-800);
 }
 
 .row {
@@ -47,49 +49,53 @@
   transition: background var(--dur) var(--ease-out);
 }
 
+.row:last-child {
+  border-bottom: none;
+}
+
 .row:hover {
-  background: var(--color-accent-50, #f4f6ff);
+  background: var(--navy-50);
 }
 
 .row td {
-  padding: 8px 12px;
+  padding: 11px 14px;
   vertical-align: top;
   color: var(--color-text);
 }
 
-.selectedRow {
-  background: var(--color-accent-100) !important;
+.selectedRow,
+.selectedRow:hover {
+  background: var(--navy-100) !important;
+  box-shadow: inset 3px 0 0 var(--navy-800);
 }
 
 .ajdRow {
-  border-left: 3px solid var(--c-coral);
+  box-shadow: inset 3px 0 0 var(--color-danger);
 }
 
 .dayHeader {
   pointer-events: none;
+  border-bottom: 1px solid var(--color-divider);
 }
 
-.dayGroupOdd {
-  background: var(--color-surface);
-}
-
+.dayGroupOdd,
 .dayGroupEven {
-  background: var(--color-bg);
+  background: var(--color-bg-alt);
 }
 
 .dayHeaderCell {
-  padding: 6px 12px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  padding: 8px 14px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-neutral-600);
+  color: var(--navy-800);
 }
 
 .emptyState {
-  padding: 48px 12px;
+  padding: 56px 12px;
   text-align: center;
-  color: var(--color-neutral-500);
+  color: var(--color-neutral-600);
   font-size: 14px;
 }
 
@@ -98,8 +104,9 @@
 }
 
 .mono {
-  font-family: monospace;
-  font-size: 12px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12.5px;
+  color: var(--color-neutral-800);
 }
 
 .bold {
@@ -111,48 +118,48 @@
 }
 
 .titleCell {
-  max-width: 320px;
+  max-width: 340px;
+}
+
+.tagAJD,
+.tagAjd,
+.tagStatus,
+.tagCloseoutUrgent {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 .tagAJD {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  background: var(--c-coral-t);
-  color: oklch(0.45 0.17 25);
+  background: var(--color-danger-t);
+  color: var(--color-danger);
+  box-shadow: inset 0 0 0 1px var(--color-danger-border);
 }
 
 .tagAjd {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  background: oklch(0.95 0.01 265);
-  color: var(--color-text);
+  background: var(--color-bg);
+  color: var(--color-neutral-800);
 }
 
 .tagStatus {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
   font-weight: 500;
-  background: var(--color-accent-100);
-  color: var(--color-accent);
+  background: var(--navy-100);
+  color: var(--navy-800);
 }
 
 .skeleton td {
-  padding: 8px 12px;
+  padding: 12px 14px;
 }
 
 .skeletonCell {
   display: block;
-  height: 14px;
+  height: 12px;
   border-radius: 4px;
-  background: linear-gradient(90deg, var(--color-divider) 25%, var(--color-bg) 50%, var(--color-divider) 75%);
+  background: linear-gradient(90deg, var(--color-divider) 25%, var(--color-bg-alt) 50%, var(--color-divider) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s infinite;
   min-width: 60px;
@@ -165,31 +172,27 @@
 
 /* en_route highlighted — the calendar's "X" prefix equivalent */
 .tagStatus[data-status='en_route'] {
-  background: #b45309;
+  background: var(--color-warning);
   color: #fff;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 /* Urgent flag from closeout outcomes 3/4 */
 .tagCloseoutUrgent {
-  display: inline-block;
   margin-left: 4px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  background: #dc2626;
+  background: var(--color-danger);
   color: #fff;
+  letter-spacing: 0.02em;
 }
 
 @media (max-width: 639px) {
   .table {
-    font-size: 12px;
+    font-size: 12.5px;
   }
 
   .table thead th,
   .row td {
-    padding: 8px 8px;
+    padding: 9px 10px;
   }
 
   .titleCell {

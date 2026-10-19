@@ -1,42 +1,81 @@
 *, *::before, *::after { box-sizing: border-box; }
 
+/* Société immobilière Bélanger palette — navy primary, charcoal and stone
+   greys from the logo, flat white surfaces on a cool light-grey page. */
 :root {
-  --color-bg: oklch(0.96 0.012 250);
+  /* Navy ramp (primary) — 800 is the brand navy of the public site. */
+  --navy-50: #f4f7fb;
+  --navy-100: #e9eef6;
+  --navy-200: #d3deec;
+  --navy-300: #aebfd8;
+  --navy-400: #7893b9;
+  --navy-500: #46689a;
+  --navy-600: #224b80;
+  --navy-700: #123d72;
+  --navy-800: #0b3263;
+  --navy-900: #07234a;
+
+  --charcoal: #2b2e33;
+  --stone: #8c9096;
+
+  --color-bg: #eceff2;
+  --color-bg-alt: #f5f6f8;
   --color-surface: #fff;
-  --color-text: oklch(0.22 0.025 265);
-  --color-divider: oklch(0.88 0.015 265 / 0.7);
-  --color-neutral-500: oklch(0.62 0.02 265);
-  --color-neutral-700: oklch(0.5 0.02 265);
-  --color-neutral-800: oklch(0.38 0.02 265);
-  --color-accent: oklch(0.55 0.2 268);
-  --color-accent-100: oklch(0.97 0.02 268);
-  --color-accent-200: oklch(0.93 0.045 268);
-  --color-accent-300: oklch(0.86 0.08 268);
-  --color-accent-400: oklch(0.74 0.13 268);
-  --color-accent-500: oklch(0.62 0.18 268);
-  --color-accent-600: oklch(0.52 0.2 268);
-  --color-accent-700: oklch(0.46 0.19 268);
-  --color-accent-800: oklch(0.38 0.16 268);
-  --color-accent-900: oklch(0.3 0.12 268);
-  --c-coral: oklch(0.64 0.2 22);
-  --c-coral-t: oklch(0.96 0.03 22);
-  --c-green: oklch(0.68 0.15 155);
-  --c-green-t: oklch(0.96 0.035 155);
-  --r-lg: 16px;
-  --r-md: 10px;
-  --sh-card: 0 1px 2px oklch(0.3 0.03 265 / 0.04), 0 8px 28px -8px oklch(0.35 0.04 265 / 0.12);
-  --sh-pop: 0 24px 60px -20px oklch(0.25 0.05 265 / 0.35);
-  --glass-bg: oklch(1 0.008 265 / 0.55);
-  --glass-bg-strong: oklch(1 0.006 265 / 0.78);
-  --glass-border: oklch(1 0.01 265 / 0.55);
-  --glass-blur: blur(18px) saturate(1.35);
+  --color-text: #24272b;
+  --color-border: #d4d8dd;
+  --color-divider: #e2e5e9;
+  --color-neutral-400: #9a9fa6;
+  --color-neutral-500: #737880;
+  --color-neutral-600: #646970;
+  --color-neutral-700: #555a61;
+  --color-neutral-800: #3c4046;
+
+  --color-accent: var(--navy-800);
+  --color-accent-50: var(--navy-50);
+  --color-accent-100: var(--navy-100);
+  --color-accent-200: var(--navy-200);
+  --color-accent-300: var(--navy-300);
+  --color-accent-400: var(--navy-400);
+  --color-accent-500: var(--navy-500);
+  --color-accent-600: var(--navy-600);
+  --color-accent-700: var(--navy-700);
+  --color-accent-800: var(--navy-800);
+  --color-accent-900: var(--navy-900);
+
+  --color-danger: #b42318;
+  --color-danger-t: #fef3f2;
+  --color-danger-border: #f5c2bd;
+  --color-success: #1e7a46;
+  --color-success-t: #ecf7f0;
+  --color-success-border: #b7dfc6;
+  --color-warning: #b45309;
+  --color-warning-ink: #7a3a06;
+  --color-warning-t: #fff7e8;
+  --color-error: var(--color-danger);
+  --c-coral: var(--color-danger);
+  --c-coral-t: var(--color-danger-t);
+  --c-green: var(--color-success);
+  --c-green-t: var(--color-success-t);
+
+  --r-lg: 10px;
+  --r-md: 6px;
+  --r-sm: 4px;
+  --sh-card: 0 1px 2px rgb(16 24 40 / 0.05);
+  --sh-raised: 0 1px 3px rgb(16 24 40 / 0.08), 0 4px 12px -4px rgb(16 24 40 / 0.08);
+  --sh-pop: 0 20px 48px -12px rgb(7 35 74 / 0.28);
+  --ring: 0 0 0 3px var(--navy-200);
+
+  /* Former glass tokens, now solid surfaces (kept so older rules resolve). */
+  --glass-bg: var(--color-surface);
+  --glass-bg-strong: var(--color-surface);
+  --glass-border: var(--color-border);
+  --glass-blur: none;
+
+  --scrim: rgb(20 26 36 / 0.45);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --dur: 0.22s;
-  --bg-gradient:
-    radial-gradient(1200px 700px at 12% -10%, oklch(0.9 0.06 250 / 0.55), transparent 60%),
-    radial-gradient(900px 600px at 92% 8%, oklch(0.92 0.05 300 / 0.4), transparent 55%),
-    radial-gradient(800px 500px at 50% 110%, oklch(0.93 0.04 200 / 0.35), transparent 50%),
-    linear-gradient(165deg, oklch(0.97 0.01 250), oklch(0.94 0.018 265) 45%, oklch(0.96 0.012 230));
+  --dur: 0.18s;
+  --bg-gradient: var(--color-bg);
+  --font: 'Work Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
 html, body { margin: 0; padding: 0; }
@@ -46,10 +85,9 @@ html {
 }
 
 body {
-  background: var(--bg-gradient);
-  background-attachment: fixed;
+  background: var(--color-bg);
   color: var(--color-text);
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-family: var(--font);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -62,28 +100,41 @@ body.modal-open {
 }
 
 h1, h2, h3, h4 {
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-family: var(--font);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
   margin: 0;
 }
 
-h1 { font-size: 28px; }
-h2 { font-size: 22px; }
-h3 { font-size: 18px; }
-h4 { font-size: 15px; font-weight: 600; }
+h1 { font-size: 26px; }
+h2 { font-size: 20px; }
+h3 { font-size: 17px; }
+h4 { font-size: 15px; }
 
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-::selection { background: var(--color-accent-200); }
+::selection { background: var(--navy-200); }
 
-a { color: var(--color-accent-700); text-decoration: none; font-weight: 500; transition: color var(--dur) var(--ease-out); }
-a:hover { color: var(--color-accent-900); text-decoration: underline; }
+a { color: var(--navy-700); text-decoration: none; font-weight: 500; transition: color var(--dur) var(--ease-out); }
+a:hover { color: var(--navy-900); text-decoration: underline; text-underline-offset: 2px; }
 
 button { font: inherit; cursor: pointer; transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out), transform var(--dur) var(--ease-out), opacity var(--dur) var(--ease-out); }
 
+input[type='checkbox'], input[type='radio'] { accent-color: var(--color-accent); }
+
+select, input, textarea { font-family: inherit; }
+
 @media (max-width: 639px) {
-  h1 { font-size: 22px; }
+  h1 { font-size: 21px; }
   h2 { font-size: 18px; }
   h3 { font-size: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -49,9 +49,11 @@ export default function DossierDetail({ lang = 'fr' }: { lang?: Lang }) {
         ))}
       </dl>
 
-      <VisitsSection requestId={data.request_id} visits={data.visits ?? []} lang={lang} />
-      <FollowupLogSection entries={data.followup_log} lang={lang} />
-      <DecisionHistorySection entries={data.justification_log} lang={lang} />
+      <div className={styles.sections}>
+        <VisitsSection requestId={data.request_id} visits={data.visits ?? []} lang={lang} />
+        <FollowupLogSection entries={data.followup_log} lang={lang} />
+        <DecisionHistorySection entries={data.justification_log} lang={lang} />
+      </div>
     </div>
   );
 }
