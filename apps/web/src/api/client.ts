@@ -203,15 +203,15 @@ export function checkWeather(id: number): Promise<WeatherEvaluation> {
   return apiPost<WeatherEvaluation>(`/api/v1/requests/${id}/weather-check`, {});
 }
 
-export function dispatchSetFollowUpDate(id: number, body: { next_follow_up_date: string | null; current_next_follow_up_date: string | null }): Promise<RequestDetail> {
+export function dispatchSetFollowUpDate(id: number, body: { next_follow_up_date: string | null; current_next_follow_up_date: string | null; justification?: Justification }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/follow-up-date`, body);
 }
 
-export function dispatchSetNextSteps(id: number, body: { next_steps: string | null; current_next_steps: string | null }): Promise<RequestDetail> {
+export function dispatchSetNextSteps(id: number, body: { next_steps: string | null; current_next_steps: string | null; justification?: Justification }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/next-steps`, body);
 }
 
-export function dispatchSetCost(id: number, body: { estimated_cost: number | null; current_estimated_cost: number | null }): Promise<RequestDetail> {
+export function dispatchSetCost(id: number, body: { estimated_cost: number | null; current_estimated_cost: number | null; justification?: Justification }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/cost`, body);
 }
 
@@ -226,7 +226,7 @@ export function triggerTriage(
   return apiPost(`/api/v1/requests/${id}/triage`, { lang: opts?.lang ?? 'fr' });
 }
 
-export function routeRequest(id: number, body: { source_calendar: string; expected_source_calendar: string | null }): Promise<RequestDetail> {
+export function routeRequest(id: number, body: { source_calendar: string; expected_source_calendar: string | null; justification?: Justification }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/route`, body);
 }
 

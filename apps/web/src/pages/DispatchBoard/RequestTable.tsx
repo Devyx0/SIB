@@ -17,6 +17,8 @@ interface Props {
   total: number;
   showAllCols?: boolean;
   errorMsg?: string;
+  /** Rendered inside a scrolling parent: let the header stick to it. */
+  inScroller?: boolean;
 }
 
 interface ColDef {
@@ -60,7 +62,7 @@ function StatusTag({ status, lang = 'fr' }: { status: string; lang?: Lang }) {
 export default function RequestTable({
   lang = 'fr',
   rows, selectedId, sortBy, sortDir, onSort, onSelect,
-  isLoading, isError, showAllCols = false, errorMsg,
+  isLoading, isError, showAllCols = false, errorMsg, inScroller = false,
 }: Props) {
   const tbodyRef = useRef<HTMLTableSectionElement>(null);
   const cols = showAllCols ? [...MANDATORY_COLS, ...OPTIONAL_COLS] : MANDATORY_COLS;
@@ -79,9 +81,20 @@ export default function RequestTable({
     }
   }
 
-  function arrow(key: string) {
-    if (key !== sortBy) return null;
+  function arrow(c: ColDef) {
+    if (!c.sortable) return null;
+    if (c.key !== sortBy) return <span className={styles.sortHint} aria-hidden="true">↕</span>;
     return <span className={styles.sortArrow}>{sortDir === 'asc' ? '↑' : '↓'}</span>;
+  }
+
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
+  const dayFmt = new Intl.DateTimeFormat(lang === 'fr' ? 'fr-CA' : 'en-CA', {
+    weekday: 'long', day: 'numeric', month: 'long',
+  });
+  function dayLabel(ymd: string): string {
+    const [y, m, d] = ymd.split('-').map(Number);
+    const label = dayFmt.format(new Date(y, m - 1, d));
+    return label.charAt(0).toUpperCase() + label.slice(1);
   }
 
   function renderRows() {
@@ -106,7 +119,14 @@ export default function RequestTable({
       return (
         <tr>
           <td colSpan={colCount} className={styles.emptyState}>
-            {t(lang, 'Aucun appel dans cette plage.', 'No calls in this range.')}
+            <span className={styles.emptyTitle}>
+              {t(lang, 'Aucun appel dans cette plage.', 'No calls in this range.')}
+            </span>
+            <span className={styles.emptyHint}>
+              {t(lang,
+                'Élargissez la période ou retirez des filtres pour voir plus de résultats.',
+                'Widen the period or remove filters to see more results.')}
+            </span>
           </td>
         </tr>
       );
@@ -116,6 +136,10 @@ export default function RequestTable({
     const result: JSX.Element[] = [];
     let lastDate: string | null = null;
     let dayGroupIndex = 0;
+    const perDay = new Map<string, number>();
+    rows.forEach((r) => {
+      if (r.start_date) perDay.set(r.start_date, (perDay.get(r.start_date) ?? 0) + 1);
+    });
 
     rows.forEach((row) => {
       if (showDayHeaders && row.start_date !== lastDate) {
@@ -129,7 +153,13 @@ export default function RequestTable({
               data-testid="day-header"
             >
               <td colSpan={colCount} className={styles.dayHeaderCell}>
-                {row.start_date}
+                <span className={styles.dayName}>{dayLabel(row.start_date)}</span>
+                {row.start_date === today && (
+                  <span className={styles.todayTag}>{t(lang, "Aujourd'hui", 'Today')}</span>
+                )}
+                <span className={styles.dayCount}>
+                  {perDay.get(row.start_date) ?? 0} {t(lang, 'appel(s)', 'call(s)')}
+                </span>
               </td>
             </tr>,
           );
@@ -149,16 +179,21 @@ export default function RequestTable({
           ].join(' ')}
           aria-selected={isSelected}
           onClick={() => onSelect(row.request_id)}
+          onKeyDown={(e) => { if (e.key === 'Enter') onSelect(row.request_id); }}
           data-testid="request-row"
           tabIndex={0}
         >
           {/* mandatory cells */}
-          <td className={styles.nowrap}>{row.start_date ?? '—'}</td>
+          <td className={styles.nowrap + ' ' + styles.dateCell}>{row.start_date ?? '—'}</td>
           <td className={styles.nowrap + ' ' + styles.mono}>{row.asnu ?? '—'}</td>
           <td className={styles.nowrap}><UrgencyTag tier={row.urgency_tier} /></td>
-          <td className={styles.titleCell}>{row.raw_title ?? '—'}</td>
+          <td className={styles.titleCell}>
+            <span className={styles.clamp} title={row.raw_title ?? undefined}>{row.raw_title ?? '—'}</span>
+          </td>
           <td className={styles.nowrap}>{row.territoire ?? '—'}</td>
-          <td>{row.building_address ?? '—'}</td>
+          <td className={styles.buildingCell}>
+            <span className={styles.clamp} title={row.building_address ?? undefined}>{row.building_address ?? '—'}</span>
+          </td>
           <td className={styles.nowrap + ' ' + styles.bold}>{row.assigned_employee_name ?? '—'}</td>
           <td className={styles.nowrap}>{row.last_followup_date ?? '—'}</td>
           <td className={styles.nowrap}>
@@ -180,17 +215,21 @@ export default function RequestTable({
   }
 
   return (
-    <div className={styles.wrap}>
+    <div className={`${styles.wrap} ${inScroller ? styles.inScroller : ''}`}>
       <table className={styles.table}>
         <thead>
           <tr>
             {cols.map((c) => (
               <th
                 key={c.key}
+                scope="col"
                 onClick={c.sortable ? () => onSort(c.key) : undefined}
+                onKeyDown={c.sortable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(c.key); } } : undefined}
+                tabIndex={c.sortable ? 0 : undefined}
+                aria-sort={c.key === sortBy ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
                 className={c.sortable ? styles.sortable : ''}
               >
-                {t(lang, c.fr, c.en)}{arrow(c.key)}
+                {t(lang, c.fr, c.en)}{arrow(c)}
               </th>
             ))}
           </tr>
