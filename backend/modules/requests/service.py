@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from backend.core.exceptions import (
     ConflictError, InvalidTransition, NotFoundError, PermissionDenied,
-    RequestClosedError, StaleDataError, ValidationFailed,
+    RequestClosedError, RequestEnRouteError, StaleDataError, ValidationFailed,
 )
 from backend.domain.status_machine import transition
 from backend.core.security import CurrentUser
@@ -208,6 +208,10 @@ def _set_heating_hint(row: dict) -> None:
 def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) -> RequestDetail:
     row = _lock_or_404(conn, request_id)
     _check_not_closed(row)
+    # Reassigning or unassigning while the technician is en route would orphan
+    # his open visit (he could no longer close it; nobody else could either).
+    if row["status"] == "en_route":
+        raise RequestEnRouteError()
     if (row["assigned_employee_id"] != body.current_assigned_employee_id
             or row["start_date"] != body.current_start_date
             or _norm_urgency(row["urgency_tier"]) != _norm_urgency(body.current_urgency_tier)):

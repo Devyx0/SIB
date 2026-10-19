@@ -61,5 +61,10 @@ class RequestClosedError(ConflictError):
     detail = "No changes allowed on a closed request"
 
 
+class RequestEnRouteError(ConflictError):
+    code = "REQUEST_EN_ROUTE"
+    detail = "Appel en cours — le technicien doit d'abord clôturer"
+
+
 # Legacy alias kept for any future references
 ForbiddenError = PermissionDenied
