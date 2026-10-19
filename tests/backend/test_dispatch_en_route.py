@@ -131,6 +131,7 @@ def test_set_follow_up_date_en_route_allowed(en_route_call, db_conn):
     coord, rid = en_route_call
     r = coord.post(f"/api/v1/requests/{rid}/follow-up-date", json={
         "next_follow_up_date": str(today_local()), "current_next_follow_up_date": None,
+        "justification": _JUSTIF,
     })
     assert r.status_code == 200, r.text
     assert _visit_still_open(db_conn, rid)
@@ -140,6 +141,7 @@ def test_set_next_steps_en_route_allowed(en_route_call, db_conn):
     coord, rid = en_route_call
     r = coord.post(f"/api/v1/requests/{rid}/next-steps", json={
         "next_steps": "Vérifier le drain", "current_next_steps": None,
+        "justification": _JUSTIF,
     })
     assert r.status_code == 200, r.text
     assert _visit_still_open(db_conn, rid)
@@ -149,6 +151,7 @@ def test_set_cost_en_route_allowed(en_route_call, db_conn):
     coord, rid = en_route_call
     r = coord.post(f"/api/v1/requests/{rid}/cost", json={
         "estimated_cost": 125.5, "current_estimated_cost": None,
+        "justification": _JUSTIF,
     })
     assert r.status_code == 200, r.text
     assert _visit_still_open(db_conn, rid)
@@ -165,6 +168,7 @@ def test_route_en_route_allowed(en_route_call, db_conn):
     coord, rid = en_route_call
     r = coord.post(f"/api/v1/requests/{rid}/route", json={
         "source_calendar": "main", "expected_source_calendar": None,
+        "justification": _JUSTIF,
     })
     assert r.status_code == 200, r.text
     assert _visit_still_open(db_conn, rid)

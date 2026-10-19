@@ -1,33 +1,32 @@
 .bar {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   margin: 20px 28px 0;
-  padding: 16px 20px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--r-lg);
   box-shadow: var(--sh-card);
 }
 
+/* Row 1 — search + primary filters. */
 .row {
   display: flex;
   align-items: flex-end;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
+  padding: 14px 16px;
 }
 
-/* The territory row is a label + chips, not stacked fields. */
-.row:has(.chipGroup) {
-  align-items: center;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-divider);
-}
-
-.fieldGroup {
+.fieldGroup,
+.searchGroup {
   display: flex;
   flex-direction: column;
   gap: 5px;
+  min-width: 0;
+}
+
+.searchGroup {
+  flex: 1 1 180px;
 }
 
 .label {
@@ -37,20 +36,26 @@
 }
 
 .input,
-.searchInput {
+.searchInput,
+.dateRange {
   min-height: 38px;
-  padding: 6px 12px;
   font: inherit;
   font-size: 14px;
   color: var(--color-text);
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--r-md);
-  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out), background-color var(--dur) var(--ease-out);
   max-width: 100%;
 }
 
-select.input {
+.input,
+.searchInput {
+  padding: 6px 12px;
+}
+
+select.input,
+.dropdownTrigger {
   appearance: none;
   -webkit-appearance: none;
   padding-right: 34px;
@@ -61,28 +66,35 @@ select.input {
   cursor: pointer;
 }
 
+/* A select/trigger whose value narrows the results gets a navy tint. */
+.inputActive,
+.dropdownTriggerActive {
+  border-color: var(--navy-400);
+  background-color: var(--navy-50);
+  color: var(--navy-800);
+  font-weight: 500;
+}
+
+.employeeSelect {
+  min-width: 150px;
+}
+
 .input:hover,
-.searchInput:hover {
+.searchInput:hover,
+.dateRange:hover {
   border-color: var(--color-neutral-400);
 }
 
 .input:focus,
-.searchInput:focus {
+.searchInput:focus,
+.dateRange:focus-within {
   outline: none;
   border-color: var(--navy-800);
   box-shadow: var(--ring);
 }
 
-.searchGroup {
-  flex: 1 1 220px;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-}
-
 .searchInput {
   width: 100%;
-  max-width: 360px;
   padding-left: 36px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23737880' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='9' cy='9' r='5.5'/%3E%3Cpath d='M13.5 13.5L17 17'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
@@ -90,52 +102,216 @@ select.input {
   background-size: 16px;
 }
 
-.count {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-neutral-700);
-  align-self: flex-end;
-  white-space: nowrap;
-  padding-bottom: 9px;
+/* Joined Du → Au field. */
+.dateRange {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+}
+
+.dateInput {
+  font: inherit;
+  font-size: 14px;
+  color: var(--color-text);
+  border: none;
+  background: transparent;
+  padding: 6px 6px;
+  min-height: 36px;
+  width: 132px;
   font-variant-numeric: tabular-nums;
 }
 
-.statusRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-divider);
+.dateInput:focus {
+  outline: none;
 }
 
-.checkGroup {
-  display: flex;
-  gap: 6px 16px;
-  flex-wrap: wrap;
-  align-items: center;
+.dateInput:disabled {
+  color: var(--color-neutral-500);
 }
 
-.check {
+.dateSep {
+  color: var(--color-neutral-500);
+  font-size: 13px;
+  padding: 0 2px;
+}
+
+/* Status multi-select. */
+.dropdown {
+  position: relative;
+}
+
+.dropdownTrigger {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  font-size: 13px;
-  cursor: pointer;
-  color: var(--color-neutral-800);
+  gap: 8px;
+  min-width: 156px;
+  text-align: left;
 }
 
-.check input[type='checkbox'] {
-  accent-color: var(--navy-800);
+.dropdownSummary {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dropdownCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--navy-800);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  min-width: 230px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-pop);
+  animation: popIn 0.14s var(--ease-out);
+}
+
+.popoverList {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+
+.popoverOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: var(--r-md);
+  font-size: 14px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.popoverOption:hover {
+  background: var(--navy-50);
+}
+
+.popoverOption input {
   width: 16px;
   height: 16px;
   margin: 0;
+  accent-color: var(--navy-800);
 }
 
-.clearBtn,
+.popoverFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--color-divider);
+}
+
+.doneBtn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 32px;
+  padding: 4px 14px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--navy-800);
+  color: #fff;
+}
+
+.doneBtn:hover {
+  background: var(--navy-900);
+}
+
+.linkBtn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 32px;
+  padding: 4px 6px;
+  border: none;
+  background: none;
+  color: var(--navy-700);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.linkBtn:hover:not(:disabled) {
+  color: var(--navy-900);
+}
+
+.linkBtn:disabled {
+  color: var(--color-neutral-400);
+  text-decoration: none;
+  cursor: default;
+}
+
+.notes {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 0 16px 12px;
+  margin-top: -4px;
+}
+
+.dateNote {
+  font-size: 12px;
+  color: var(--color-neutral-600);
+  font-style: italic;
+}
+
+.dateError {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-danger);
+}
+
+/* Row 2 — territory chips on the left, toggles + count on the right. */
+.subRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--color-bg-alt);
+  border-top: 1px solid var(--color-divider);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+}
+
+.chipGroup {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+}
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
 .chip,
-.colsBtn {
+.colsBtn,
+.toggleChip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -149,11 +325,12 @@ select.input {
   color: var(--color-neutral-800);
   cursor: pointer;
   white-space: nowrap;
+  transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
 }
 
-.clearBtn:hover,
 .chip:hover,
-.colsBtn:hover {
+.colsBtn:hover,
+.toggleChip:hover {
   background: var(--navy-50);
   border-color: var(--navy-300);
   color: var(--navy-800);
@@ -169,17 +346,28 @@ select.input {
   font-weight: 500;
 }
 
-.colsBtn {
-  align-self: flex-end;
-  min-height: 38px;
-  border-radius: var(--r-md);
+.toggleChip input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--navy-800);
 }
 
-.chipGroup {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  align-items: center;
+.toggleChip:focus-within {
+  outline: 2px solid var(--navy-800);
+  outline-offset: 2px;
+}
+
+.toggleChipActive,
+.toggleChipActive:hover {
+  background: var(--color-warning-t);
+  border-color: #f3c27a;
+  color: var(--color-warning-ink);
+  font-weight: 500;
+}
+
+.toggleChipActive input {
+  accent-color: var(--color-warning);
 }
 
 .colorDot {
@@ -191,54 +379,88 @@ select.input {
   box-shadow: 0 0 0 1.5px var(--color-surface);
 }
 
-.dateNote {
-  font-size: 12px;
-  color: var(--color-neutral-600);
-  align-self: flex-end;
-  padding-bottom: 10px;
-  white-space: nowrap;
-  font-style: italic;
+.divider {
+  width: 1px;
+  height: 20px;
+  background: var(--color-border);
+  margin: 0 2px;
 }
 
-.dateError {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-danger);
-  align-self: flex-end;
-  padding-bottom: 10px;
+.count {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @media (max-width: 1023px) {
   .bar {
     margin: 16px 16px 0;
-    padding: 14px 16px;
   }
 }
 
 @media (max-width: 639px) {
   .bar {
     margin: 10px 10px 0;
+  }
+
+  .row {
     padding: 12px;
+    gap: 10px;
+  }
+
+  .searchGroup {
+    flex-basis: 100%;
   }
 
   .fieldGroup {
     flex: 1 1 140px;
   }
 
-  .fieldGroup .input {
+  .fieldGroup .input,
+  .dropdownTrigger,
+  .employeeSelect {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .fieldGroup:has(.dateRange) {
+    flex-basis: 100%;
+  }
+
+  .dateRange {
     width: 100%;
   }
 
-  .searchInput {
-    max-width: none;
+  .divider {
+    display: none;
   }
 
-  .count,
-  .dateNote,
-  .dateError {
-    align-self: flex-start;
-    padding-bottom: 0;
-    white-space: normal;
+  .dateInput {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .subRow {
+    padding: 10px 12px;
+  }
+
+  /* Chips scroll sideways instead of stacking into many lines. */
+  .chipGroup {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    width: 100%;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .tools {
+    margin-left: 0;
   }
 }

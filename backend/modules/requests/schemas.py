@@ -70,7 +70,7 @@ class AssignBody(BaseModel):
     current_assigned_employee_id: Optional[int] = None
     current_start_date: Optional[date] = None
     current_urgency_tier: Optional[str] = None
-    justification: Optional[JustificationBody] = None
+    justification: JustificationBody
 
 
 class RescheduleBody(BaseModel):
@@ -78,7 +78,7 @@ class RescheduleBody(BaseModel):
     current_start_date: Optional[date] = None
     current_assigned_employee_id: Optional[int] = None
     current_urgency_tier: Optional[str] = None
-    justification: Optional[JustificationBody] = None
+    justification: JustificationBody
 
 
 class EnRouteBody(BaseModel):
@@ -125,7 +125,7 @@ class SetUrgencyBody(BaseModel):
     current_urgency_tier: Optional[str] = None
     current_assigned_employee_id: Optional[int] = None
     current_start_date: Optional[date] = None
-    justification: Optional[JustificationBody] = None
+    justification: JustificationBody
     # Set when accepting a weather suggestion — recorded in the justification's
     # after_value for provenance. Does not change how urgency is written.
     weather_evaluation_id: Optional[int] = None
@@ -134,16 +134,19 @@ class SetUrgencyBody(BaseModel):
 class SetFollowUpDateBody(BaseModel):
     next_follow_up_date: Optional[date] = None
     current_next_follow_up_date: Optional[date] = None
+    justification: JustificationBody
 
 
 class SetNextStepsBody(BaseModel):
     next_steps: Optional[str] = None
     current_next_steps: Optional[str] = None
+    justification: JustificationBody
 
 
 class SetCostBody(BaseModel):
     estimated_cost: Optional[Decimal] = Field(None, ge=0)
     current_estimated_cost: Optional[Decimal] = None
+    justification: JustificationBody
 
 
 class AddLogBody(BaseModel):
@@ -153,6 +156,7 @@ class AddLogBody(BaseModel):
 class RouteBody(BaseModel):
     source_calendar: Literal["main", "st_maj"]
     expected_source_calendar: Optional[Literal["main", "st_maj"]]  # required; null = caller expected unrouted state
+    justification: JustificationBody
 
 
 class JustificationEntry(BaseModel):

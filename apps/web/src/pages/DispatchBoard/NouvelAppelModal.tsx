@@ -215,7 +215,20 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
   return (
     <div className={styles.overlay} role="dialog" aria-modal aria-label={t(lang, 'Nouvel appel', 'New call')}>
       <div className={styles.modal}>
-        <h2 className={styles.heading}>{t(lang, 'Nouvel appel', 'New call')}</h2>
+        <div className={styles.headRow}>
+          <h2 className={styles.heading}>{t(lang, 'Nouvel appel', 'New call')}</h2>
+          <button
+            type="button"
+            className={styles.closeBtn}
+            onClick={handleClose}
+            aria-label={t(lang, 'Fermer', 'Close')}
+            data-testid="nouvel-appel-close"
+          >
+            <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M5 5l10 10M15 5L5 15" />
+            </svg>
+          </button>
+        </div>
 
         <form className={styles.modalForm} onSubmit={handleSubmit} noValidate>
           <div className={styles.section}>

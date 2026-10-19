@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { STATUS_VALUES } from '../../api/statusValues';
-import { statusLabel, t } from '../../i18n';
+import { t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import type { SectorLookup, EmployeeLookup } from '../../api/schema.d.ts';
+import StatusSelect from './StatusSelect';
 import styles from './FilterBar.module.css';
 
 interface Props {
@@ -31,6 +31,9 @@ interface Props {
   dateNote?: string;
   redispatch?: boolean;
   onRedispatch?: (v: boolean) => void;
+  /** True when any filter differs from the page defaults. */
+  hasActiveFilters?: boolean;
+  onReset?: () => void;
 }
 
 export default function FilterBar({
@@ -47,6 +50,8 @@ export default function FilterBar({
   onAssignedEmployeeId = () => {},
   onToggleCols = () => {},
   onRedispatch = () => {},
+  hasActiveFilters = false,
+  onReset,
 }: Props) {
   const [draft, setDraft] = useState(q);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -90,16 +95,8 @@ export default function FilterBar({
     }
   }
 
-  function toggleStatus(value: string) {
-    if (status.includes(value)) {
-      onStatus(status.filter((s) => s !== value));
-    } else {
-      onStatus([...status, value]);
-    }
-  }
-
   const SOURCE_OPTS = [
-    { value: '', label: t(lang, 'Tous', 'All') },
+    { value: '', label: t(lang, 'Toutes', 'All') },
     { value: 'main', label: t(lang, 'Principal', 'Main') },
     { value: 'st_maj', label: t(lang, 'Butler/Majordome', 'Butler') },
     { value: 'unrouted', label: t(lang, 'À router', 'To route') },
@@ -125,52 +122,74 @@ export default function FilterBar({
     return null;
   })();
 
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // "/" jumps to the search field (unless already typing somewhere).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement;
+      if (el.closest('input, textarea, select, [contenteditable="true"]')) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
     <div className={styles.bar}>
-      {/* Row 1: date range, source, search, count, column toggle */}
+      {/* Row 1: search + the filters people change most */}
       <div className={styles.row}>
-        <div className={styles.fieldGroup}>
-          <label className={styles.label}>{t(lang, 'Du', 'From')}</label>
+        <div className={styles.searchGroup}>
+          <label className={styles.label} htmlFor="board-search">{t(lang, 'Recherche', 'Search')}</label>
           <input
-            type="date"
-            className={styles.input}
-            value={draftStart}
-            disabled={!!dateNote}
-            data-testid="start-date-input"
-            onChange={(e) => handleStartDate(e.target.value)}
+            id="board-search"
+            ref={searchRef}
+            type="search"
+            className={styles.searchInput}
+            placeholder={t(lang, 'ASNU, unité, immeuble, employé…', 'ASNU, unit, building, employee…')}
+            value={draft}
+            onChange={(e) => handleSearch(e.target.value)}
+            data-testid="search-input"
           />
-        </div>
-        <div className={styles.fieldGroup}>
-          <label className={styles.label}>{t(lang, 'Au', 'To')}</label>
-          <input
-            type="date"
-            className={styles.input}
-            value={draftEnd}
-            disabled={!!dateNote}
-            data-testid="end-date-input"
-            onChange={(e) => handleEndDate(e.target.value)}
-          />
-        </div>
-        {dateNote && <span className={styles.dateNote}>{dateNote}</span>}
-        {dateRangeError && <span className={styles.dateError} data-testid="date-range-error">{dateRangeError}</span>}
-
-        <div className={styles.fieldGroup}>
-          <label className={styles.label}>{t(lang, 'Source', 'Source')}</label>
-          <select
-            className={styles.input}
-            value={sourceCalendar}
-            onChange={(e) => onSourceCalendar(e.target.value)}
-          >
-            {SOURCE_OPTS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
         </div>
 
         <div className={styles.fieldGroup}>
-          <label className={styles.label}>{t(lang, 'Urgence', 'Urgency')}</label>
+          <span className={styles.label} id="board-period">{t(lang, 'Période', 'Period')}</span>
+          <div className={styles.dateRange} role="group" aria-labelledby="board-period">
+            <input
+              type="date"
+              className={styles.dateInput}
+              value={draftStart}
+              disabled={!!dateNote}
+              aria-label={t(lang, 'Du', 'From')}
+              data-testid="start-date-input"
+              onChange={(e) => handleStartDate(e.target.value)}
+            />
+            <span className={styles.dateSep} aria-hidden="true">→</span>
+            <input
+              type="date"
+              className={styles.dateInput}
+              value={draftEnd}
+              disabled={!!dateNote}
+              aria-label={t(lang, 'Au', 'To')}
+              data-testid="end-date-input"
+              onChange={(e) => handleEndDate(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className={styles.fieldGroup}>
+          <span className={styles.label}>{t(lang, 'Statut', 'Status')}</span>
+          <StatusSelect lang={lang} value={status} onChange={onStatus} />
+        </div>
+
+        <div className={styles.fieldGroup}>
+          <label className={styles.label} htmlFor="board-urgency">{t(lang, 'Urgence', 'Urgency')}</label>
           <select
-            className={styles.input}
+            id="board-urgency"
+            className={`${styles.input} ${urgency ? styles.inputActive : ''}`}
             value={urgency}
             onChange={(e) => onUrgency(e.target.value)}
           >
@@ -182,9 +201,10 @@ export default function FilterBar({
 
         {employees.length > 0 && (
           <div className={styles.fieldGroup}>
-            <label className={styles.label}>{t(lang, 'Employé', 'Employee')}</label>
+            <label className={styles.label} htmlFor="board-employee">{t(lang, 'Employé', 'Employee')}</label>
             <select
-              className={styles.input}
+              id="board-employee"
+              className={`${styles.input} ${styles.employeeSelect} ${assignedEmployeeId != null ? styles.inputActive : ''}`}
               value={assignedEmployeeId ?? ''}
               onChange={(e) => onAssignedEmployeeId(e.target.value ? Number(e.target.value) : null)}
             >
@@ -198,43 +218,46 @@ export default function FilterBar({
           </div>
         )}
 
-        <div className={styles.searchGroup}>
-          <input
-            type="search"
-            className={styles.searchInput}
-            placeholder={t(lang, 'Rechercher ASNU, unité, immeuble, employé…', 'Search ASNU, unit, building, employee…')}
-            value={draft}
-            onChange={(e) => handleSearch(e.target.value)}
-            data-testid="search-input"
-          />
+        <div className={styles.fieldGroup}>
+          <label className={styles.label} htmlFor="board-source">{t(lang, 'Source', 'Source')}</label>
+          <select
+            id="board-source"
+            className={`${styles.input} ${sourceCalendar ? styles.inputActive : ''}`}
+            value={sourceCalendar}
+            onChange={(e) => onSourceCalendar(e.target.value)}
+          >
+            {SOURCE_OPTS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
         </div>
-
-        <span className={styles.count}>{countLabel}</span>
-
-        <button
-          className={styles.colsBtn + (showAllCols ? ' ' + styles.colsBtnActive : '')}
-          onClick={onToggleCols}
-          title={t(lang, 'Afficher toutes les colonnes', 'Toggle all columns')}
-        >
-          {t(lang, 'Colonnes', 'Columns')} {showAllCols ? '−' : '+'}
-        </button>
       </div>
 
-      {/* Row 2: territory chips */}
-      {sectors.length > 0 && (
-        <div className={styles.row}>
-          <span className={styles.label}>{t(lang, 'Territoire', 'Territory')}</span>
-          <div className={styles.chipGroup}>
+      {(dateNote || dateRangeError) && (
+        <div className={styles.notes}>
+          {dateNote && <span className={styles.dateNote}>{dateNote}</span>}
+          {dateRangeError && <span className={styles.dateError} data-testid="date-range-error">{dateRangeError}</span>}
+        </div>
+      )}
+
+      {/* Row 2: territory chips · quick toggles · result count */}
+      <div className={styles.subRow}>
+        {sectors.length > 0 && (
+          <div className={styles.chipGroup} role="group" aria-label={t(lang, 'Territoire', 'Territory')}>
             <button
+              type="button"
               className={styles.chip + (sectorId === null ? ' ' + styles.chipActive : '')}
+              aria-pressed={sectorId === null}
               onClick={() => onSectorId(null)}
             >
-              {t(lang, 'Tous', 'All')}
+              {t(lang, 'Tous les territoires', 'All territories')}
             </button>
             {sectors.map((s) => (
               <button
+                type="button"
                 key={s.sector_id}
                 className={styles.chip + (sectorId === s.sector_id ? ' ' + styles.chipActive : '')}
+                aria-pressed={sectorId === s.sector_id}
                 onClick={() => onSectorId(sectorId === s.sector_id ? null : s.sector_id)}
               >
                 {s.color_code && (
@@ -247,29 +270,13 @@ export default function FilterBar({
               </button>
             ))}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Row 3: status checkboxes */}
-      <div className={styles.statusRow}>
-        <span className={styles.label}>{t(lang, 'Statut', 'Status')}</span>
-        <div className={styles.checkGroup}>
-          {STATUS_VALUES.map((s) => (
-            <label key={s} className={styles.check}>
-              <input
-                type="checkbox"
-                checked={status.includes(s)}
-                onChange={() => toggleStatus(s)}
-              />
-              {statusLabel(lang, s)}
-            </label>
-          ))}
-          {status.length > 0 && (
-            <button className={styles.clearBtn} onClick={() => onStatus([])}>
-              {t(lang, 'Effacer', 'Clear')}
-            </button>
-          )}
-          <label className={styles.check} data-testid="redispatch-filter">
+        <div className={styles.tools}>
+          <label
+            className={`${styles.toggleChip} ${redispatch ? styles.toggleChipActive : ''}`}
+            data-testid="redispatch-filter"
+          >
             <input
               type="checkbox"
               checked={redispatch}
@@ -277,6 +284,26 @@ export default function FilterBar({
             />
             {t(lang, 'À redispatcher', 'To re-dispatch')}
           </label>
+
+          <button
+            type="button"
+            className={styles.colsBtn + (showAllCols ? ' ' + styles.colsBtnActive : '')}
+            onClick={onToggleCols}
+            aria-pressed={showAllCols}
+            title={t(lang, 'Afficher toutes les colonnes', 'Toggle all columns')}
+          >
+            {showAllCols ? t(lang, 'Moins de colonnes', 'Fewer columns') : t(lang, 'Plus de colonnes', 'More columns')}
+          </button>
+
+          <span className={styles.divider} aria-hidden="true" />
+
+          <span className={styles.count} aria-live="polite">{countLabel}</span>
+
+          {hasActiveFilters && onReset && (
+            <button type="button" className={styles.linkBtn} onClick={onReset} data-testid="reset-filters">
+              {t(lang, 'Réinitialiser', 'Reset')}
+            </button>
+          )}
         </div>
       </div>
     </div>

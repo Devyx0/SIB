@@ -12,6 +12,11 @@ const DECISION_LABELS: Record<string, { fr: string; en: string }> = {
   assign:     { fr: 'Assignation',     en: 'Assignment' },
   reschedule: { fr: 'Reprogrammation', en: 'Reschedule' },
   urgency:    { fr: 'Urgence',         en: 'Urgency' },
+  follow_up_date: { fr: 'Prochain suivi',    en: 'Next follow-up' },
+  next_steps:     { fr: 'Prochaines étapes', en: 'Next steps' },
+  cost:           { fr: 'Coût estimé',       en: 'Estimated cost' },
+  route:          { fr: 'Acheminement',      en: 'Routing' },
+  closeout:       { fr: 'Clôture',           en: 'Closeout' },
 };
 
 const INPUT_LABELS: Record<string, { fr: string; en: string }> = {

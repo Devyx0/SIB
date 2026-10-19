@@ -1,8 +1,18 @@
 .page {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
   flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+/* The only scrolling region on the board: the call tables. */
+.scrollArea {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 12px;
 }
 
 .header {
@@ -54,17 +64,12 @@
 }
 
 .tableWrap {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  padding: 0 28px 24px;
+  padding: 0 28px 16px;
 }
 
-.tableWrap:has(+ .tableWrap) {
-  padding-bottom: 0;
-}
 
 .groupHeading {
-  margin: 20px 0 0;
+  margin: 4px 0 0;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -89,7 +94,7 @@
   }
 
   .tableWrap {
-    padding: 0 16px 20px;
+    padding: 0 16px 16px;
   }
 
   .errorFull {
@@ -114,5 +119,21 @@
 
   .tableWrap {
     padding: 0 10px 16px;
+  }
+}
+
+/* Phones and short windows: the filters would leave too little room for an
+   inner scroller, so fall back to normal page scrolling. */
+@media (max-width: 639px), (max-height: 560px) {
+  .page {
+    height: auto;
+  }
+
+  /* Grows to its content, so it never scrolls vertically — only sideways
+     when the table is wider than the screen. */
+  .scrollArea {
+    flex: none;
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 }

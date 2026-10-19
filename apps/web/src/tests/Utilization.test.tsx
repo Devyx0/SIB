@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -62,5 +62,28 @@ describe('Utilization', () => {
     const row = await screen.findByTestId('util-row-24');
     expect(row).toHaveTextContent('0'); // closed / visit zeros
     expect(screen.queryByText(/8\s*[-–àa]\s*14|utilisation %|capacity/i)).toBeNull();
+  });
+
+  it('filters rows by employee name and sorts by a column', async () => {
+    vi.mocked(fetchUtilization).mockResolvedValue({
+      ...body,
+      rows: [
+        body.rows[0],
+        { ...body.rows[0], employee_id: 25, nom_employe: 'Alice Roy', calls_assigned: 9 },
+      ],
+    });
+    wrap(<Utilization lang="fr" />);
+    const table = await screen.findByTestId('util-table');
+    // Default sort: most assigned first.
+    let rows = within(table).getAllByTestId(/util-row-/);
+    expect(rows[0]).toHaveAttribute('data-testid', 'util-row-25');
+
+    fireEvent.change(screen.getByTestId('util-sort'), { target: { value: 'name' } });
+    rows = within(table).getAllByTestId(/util-row-/);
+    expect(rows[0]).toHaveAttribute('data-testid', 'util-row-25'); // Alice < Test
+
+    fireEvent.change(screen.getByLabelText('Filtrer'), { target: { value: 'test' } });
+    expect(screen.queryByTestId('util-row-25')).toBeNull();
+    expect(screen.getByTestId('util-row-24')).toBeTruthy();
   });
 });
