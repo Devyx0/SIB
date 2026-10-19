@@ -197,3 +197,12 @@ geolocation mocked; all against sib_test.
    one-open-visit index blocks every new en route until the visit is closed.
    Likely a coordinator action that closes the visit administratively
    (closeout_at set, no outcome, provenance row). Not built; needs François.
+   Interim rule (fix 2026-10-19): **reassign and unassign are BLOCKED while
+   the call is en route** (409 REQUEST_EN_ROUTE, « Appel en cours — le
+   technicien doit d'abord clôturer »; assignee control disabled on the
+   board) — they would orphan the open visit and deadlock the call. All other
+   dispatch actions (date, urgency, routing, notes, costs) stay allowed on
+   en_route; they don't touch the visit. The triage background writers are
+   also guarded (`AND status = 'triage_pending'`) so a finished triage never
+   overwrites a human-set status. Stays this way until François decides the
+   unblock action.
