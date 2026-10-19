@@ -9,7 +9,14 @@ from backend.core.db import get_db_conn
 from backend.core.permissions import require_role
 
 from . import service
-from .schemas import BuildingDetail, ProjectDetail, SectorDetail, SectorSummary, UnitDetail
+from .schemas import (
+    BuildingDetail,
+    ProjectDetail,
+    SectorDetail,
+    SectorSummary,
+    TenantTurnover,
+    UnitDetail,
+)
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 _COORD_DIR = require_role("coordinator", "director")
@@ -43,3 +50,14 @@ def portfolio_get_building(building_id: int, user=_COORD_DIR, conn=Depends(get_d
 @router.get("/units/{unit_id}", operation_id="portfolio_get_unit", response_model=UnitDetail)
 def portfolio_get_unit(unit_id: int, user=_COORD_DIR, conn=Depends(get_db_conn)) -> UnitDetail:
     return service.get_unit(conn, unit_id, user)
+
+
+@router.get(
+    "/units/{unit_id}/tenants/{tenant_id}/turnover",
+    operation_id="portfolio_get_tenant_turnover",
+    response_model=TenantTurnover,
+)
+def portfolio_get_tenant_turnover(
+    unit_id: int, tenant_id: int, user=_COORD_DIR, conn=Depends(get_db_conn),
+) -> TenantTurnover:
+    return service.get_tenant_turnover(conn, unit_id, tenant_id, user)

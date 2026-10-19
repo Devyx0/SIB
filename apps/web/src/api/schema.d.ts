@@ -289,3 +289,177 @@ export interface UtilizationResponse {
     utilization_pct: number | null;
   }>;
 }
+
+// ── Portfolio browser (sector → project → building → unit → tenant) ─────────
+
+export interface PortfolioSectorSummary {
+  sector_id: number;
+  territoire: string | null;
+  color_code: string | null;
+  project_count: number;
+  building_count: number;
+  unit_count: number;
+  /** Units with a current lease that has at least one tenant. */
+  occupied_unit_count: number;
+  /** Up to three project names, largest first. */
+  top_projects: string[];
+}
+
+export interface PortfolioProjectSummary {
+  project_id: number;
+  nom_unique_projet: string | null;
+  adresse_quickbooks: string | null;
+  accounting_project_number: string | null;
+  building_count: number;
+}
+
+export interface PortfolioBuildingSummary {
+  building_id: number;
+  project_id: number;
+  sector_id: number;
+  adresse: string | null;
+  ville: string | null;
+  code_postal: string | null;
+  web_building_name: string | null;
+  actif_inactif: string | null;
+  unit_count: number;
+}
+
+export interface PortfolioUnitSummary {
+  unit_id: number;
+  numero_appartement: string | null;
+  rue: string | null;
+  grandeur: string | null;
+  tenant_name: string | null;
+  occupant_count: number;
+  lease_statut: string | null;
+}
+
+export interface PortfolioSectorDetail {
+  sector_id: number;
+  territoire: string | null;
+  color_code: string | null;
+  project_count: number;
+  building_count: number;
+  projects: PortfolioProjectSummary[];
+}
+
+export interface PortfolioProjectDetail {
+  project_id: number;
+  nom_unique_projet: string | null;
+  adresse_quickbooks: string | null;
+  accounting_project_number: string | null;
+  building_count: number;
+  buildings: PortfolioBuildingSummary[];
+}
+
+export interface PortfolioBuildingDetail {
+  building_id: number;
+  project_id: number;
+  sector_id: number;
+  adresse: string | null;
+  ville: string | null;
+  code_postal: string | null;
+  web_building_name: string | null;
+  actif_inactif: string | null;
+  nb_logements: string | null;
+  nb_etages: string | null;
+  annee_construction: string | null;
+  territoire: string | null;
+  nom_unique_projet: string | null;
+  unit_count: number;
+  units: PortfolioUnitSummary[];
+}
+
+export interface PortfolioLease {
+  lease_id: number;
+  debut_bail: string | null;
+  fin_bail: string | null;
+  statut: string | null;
+  langue_bail: string | null;
+}
+
+export interface PortfolioTenant {
+  tenant_id: number;
+  nom_complet: string | null;
+  telephone: string | null;
+  telephone_international: string | null;
+  courriel: string | null;
+  capacite: string | null;
+  /** True when at least one turnover on the unit names this tenant. */
+  has_turnover: boolean;
+}
+
+export interface PortfolioUnitDetail {
+  unit_id: number;
+  building_id: number;
+  project_id: number;
+  sector_id: number;
+  numero_appartement: string | null;
+  rue: string | null;
+  grandeur: string | null;
+  building_adresse: string | null;
+  web_building_name: string | null;
+  nom_unique_projet: string | null;
+  territoire: string | null;
+  lease: PortfolioLease | null;
+  tenants: PortfolioTenant[];
+}
+
+export interface TurnoverSettlement {
+  deposit_amount_owed: string | null;
+  deposit_received: boolean | null;
+  deposit_refund_status: string | null;
+  amount_owed_by_tenant: string | null;
+  tal_dossier_open: boolean | null;
+  edl_received: boolean | null;
+  edl_satisfactory: boolean | null;
+  notes: string | null;
+}
+
+export interface TurnoverFurniture {
+  appliance_type: string | null;
+  included_current: boolean | null;
+  included_new: boolean | null;
+}
+
+export interface Turnover {
+  turnover_id: number;
+  tenant_role: 'incoming' | 'outgoing' | null;
+  move_reason: string | null;
+  outgoing_tenant_name: string | null;
+  lease_end_date: string | null;
+  move_out_confirmed_date: string | null;
+  move_out_time: string | null;
+  key_return_method: string | null;
+  assignment_desired_date: string | null;
+  outgoing_loyer: string | null;
+  outgoing_fin_bail: string | null;
+  incoming_tenant_name: string | null;
+  lease_start_date: string | null;
+  move_in_confirmed_date: string | null;
+  move_in_time: string | null;
+  key_pickup_method: string | null;
+  intercom_status: string | null;
+  cleaning_status: string | null;
+  parking_remote_status: string | null;
+  parking_stall_current: string | null;
+  parking_stall_new: string | null;
+  internet_transfer_current: boolean | null;
+  internet_transfer_new: boolean | null;
+  furnished_status_current: string | null;
+  furnished_status_new: string | null;
+  room_count: string | null;
+  mattress_size: string | null;
+  pre_departure_inspection_notes: string | null;
+  general_notes: string | null;
+  settlement: TurnoverSettlement | null;
+  furniture: TurnoverFurniture[];
+}
+
+export interface TenantTurnover {
+  unit_id: number;
+  tenant: PortfolioTenant;
+  turnovers: Turnover[];
+  other_turnovers: Turnover[];
+}

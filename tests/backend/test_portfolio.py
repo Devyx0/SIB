@@ -90,7 +90,10 @@ def test_drill_sector_to_tenant(ac, db_conn):
 
     sectors = client.get("/api/v1/portfolio/sectors")
     assert sectors.status_code == 200
-    assert any(s["sector_id"] == seed["sector_id"] for s in sectors.json())
+    listed = next(s for s in sectors.json() if s["sector_id"] == seed["sector_id"])
+    # The seeded unit has a current lease with a tenant, so it counts as occupied.
+    assert listed["unit_count"] >= listed["occupied_unit_count"] >= 1
+    assert seed["nom_unique_projet"] in listed["top_projects"] or len(listed["top_projects"]) == 3
 
     sector = client.get(f"/api/v1/portfolio/sectors/{seed['sector_id']}")
     assert sector.status_code == 200
@@ -125,6 +128,7 @@ def test_drill_sector_to_tenant(ac, db_conn):
         "telephone_international": None,
         "courriel": "ada@example.test",
         "capacite": "named_on_lease",
+        "has_turnover": False,
     }]
 
 
@@ -164,3 +168,51 @@ def test_coordinator_cannot_see_other_sector(ac, db_conn):
     assert keep in ids
     assert hide not in ids
     assert client.get(f"/api/v1/portfolio/sectors/{hide}").status_code == 404
+
+
+def _seed_turnover(db_conn, unit_id, **cols) -> int:
+    with db_conn.cursor() as cur:
+        turnover_id = _nxt(cur, "unit_turnover", "turnover_id")
+        names = ", ".join(["turnover_id", "unit_id", *cols])
+        marks = ", ".join(["%s"] * (2 + len(cols)))
+        cur.execute(f"INSERT INTO unit_turnover ({names}) VALUES ({marks})",
+                    (turnover_id, unit_id, *cols.values()))
+    return turnover_id
+
+
+def test_tenant_turnover_matches_by_id_and_name(ac, db_conn):
+    seed = _seed(db_conn)
+    by_id = _seed_turnover(db_conn, seed["unit_id"], incoming_tenant_id=seed["tenant_id"],
+                           lease_start_date="2026-07-01", outgoing_tenant_name_raw="Old Tenant")
+    by_name = _seed_turnover(db_conn, seed["unit_id"], lease_end_date="2027-06-30",
+                             outgoing_tenant_name_raw="Ada Portfolio\nBob Roommate")
+    other = _seed_turnover(db_conn, seed["unit_id"], lease_start_date="2020-07-01",
+                           incoming_tenant_name_raw="Someone Else")
+
+    r = ac(_user(_DIRECTOR, "director")).get(
+        f"/api/v1/portfolio/units/{seed['unit_id']}/tenants/{seed['tenant_id']}/turnover")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["tenant"]["nom_complet"] == "Ada Portfolio"
+    roles = {t["turnover_id"]: t["tenant_role"] for t in body["turnovers"]}
+    assert roles == {by_id: "incoming", by_name: "outgoing"}
+    assert [t["turnover_id"] for t in body["other_turnovers"]] == [other]
+    incoming = next(t for t in body["turnovers"] if t["turnover_id"] == by_id)
+    assert incoming["incoming_tenant_name"] == "Ada Portfolio"
+    assert incoming["settlement"] is None and incoming["furniture"] == []
+
+    unit = ac(_user(_DIRECTOR, "director")).get(f"/api/v1/portfolio/units/{seed['unit_id']}").json()
+    assert [t["has_turnover"] for t in unit["tenants"]] == [True]
+
+
+def test_tenant_turnover_404_for_tenant_not_on_unit(ac, db_conn):
+    seed = _seed(db_conn)
+    other = _seed(db_conn)
+    r = ac(_user(_DIRECTOR, "director")).get(
+        f"/api/v1/portfolio/units/{seed['unit_id']}/tenants/{other['tenant_id']}/turnover")
+    assert r.status_code == 404
+
+
+def test_tenant_turnover_403_technician(ac):
+    r = ac(_user(_TECH, "technician")).get("/api/v1/portfolio/units/1/tenants/1/turnover")
+    assert r.status_code == 403
