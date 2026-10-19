@@ -8,6 +8,7 @@ import DossiersList from './pages/Dossiers';
 import DossierDetail from './pages/Dossiers/DossierDetail';
 import Dashboard from './pages/Dashboard';
 import Utilization from './pages/Utilization';
+import Portfolio from './pages/Portfolio';
 import TechList from './pages/TechPortal';
 import TechCallView from './pages/TechPortal/CallView';
 import CloseoutForm from './pages/TechPortal/CloseoutForm';
@@ -90,6 +91,7 @@ export default function App() {
                   <Route path="dossiers/:id" element={<DossierDetail lang={lang} />} />
                   <Route path="tableau-de-bord" element={<Dashboard lang={lang} />} />
                   <Route path="utilisation" element={<Utilization lang={lang} />} />
+                  <Route path="portfolio/*" element={<Portfolio lang={lang} />} />
                   <Route path="*" element={<Navigate to="board" replace />} />
                 </Routes>
               </AppShell>

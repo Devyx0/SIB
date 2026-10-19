@@ -61,6 +61,9 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
           <NavLink to="/dossiers" data-testid="nav-dossiers" className={navItemClass}>
             {t(lang, 'Dossiers', 'Cases')}
           </NavLink>
+          <NavLink to="/portfolio" data-testid="nav-portfolio" className={navItemClass}>
+            {t(lang, 'Portfolio', 'Portfolio')}
+          </NavLink>
           <span
             className={`${styles.navItem} ${styles.navDisabled}`}
             data-testid="nav-apres-heures"

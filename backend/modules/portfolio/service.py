@@ -18,6 +18,10 @@ from .schemas import (
     SectorDetail,
     SectorSummary,
     TenantOut,
+    TenantTurnover,
+    TurnoverFurnitureOut,
+    TurnoverOut,
+    TurnoverSettlementOut,
     UnitDetail,
     UnitSummary,
 )
@@ -30,7 +34,7 @@ def _in_scope(allowed: frozenset[int] | None, sector_id: int | None) -> bool:
 
 
 def list_sectors(conn, user: CurrentUser) -> list[SectorSummary]:
-    return [SectorSummary(**r) for r in repo.list_sectors(conn, allowed_sector_ids(conn, user))]
+    return [SectorSummary(**r) for r in repo.list_sectors(conn, allowed_sector_ids(conn, user), today_local())]
 
 
 def get_sector(conn, sector_id: int, user: CurrentUser) -> SectorDetail:
@@ -83,13 +87,51 @@ def get_unit(conn, unit_id: int, user: CurrentUser) -> UnitDetail:
             statut=row["statut"],
             langue_bail=row["langue_bail"],
         )
-        tenants = [TenantOut(**t) for t in repo.list_tenants(conn, row["lease_id"])]
+        rows = repo.list_tenants(conn, row["lease_id"])
+        flagged = repo.tenants_with_turnover(conn, unit_id, [t["tenant_id"] for t in rows])
+        tenants = [TenantOut(**t, has_turnover=t["tenant_id"] in flagged) for t in rows]
     payload = {k: row[k] for k in (
         "unit_id", "building_id", "project_id", "sector_id",
         "numero_appartement", "rue", "grandeur",
         "building_adresse", "web_building_name", "nom_unique_projet", "territoire",
     )}
     return UnitDetail(**payload, lease=lease, tenants=tenants)
+
+
+def get_tenant_turnover(conn, unit_id: int, tenant_id: int, user: CurrentUser) -> TenantTurnover:
+    unit = repo.get_unit(conn, unit_id, today_local())
+    if unit is None or not _in_scope(allowed_sector_ids(conn, user), unit["sector_id"]):
+        raise NotFoundError("Unité introuvable")
+    tenant = repo.get_unit_tenant(conn, unit_id, tenant_id)
+    if tenant is None:
+        raise NotFoundError("Locataire introuvable")
+
+    rows = repo.list_unit_turnovers(conn, unit_id, tenant_id)
+    ids = [r["turnover_id"] for r in rows]
+    settlements = {s["turnover_id"]: s for s in repo.list_turnover_settlements(conn, ids)}
+    furniture: dict[int, list[TurnoverFurnitureOut]] = {}
+    for f in repo.list_turnover_furniture(conn, ids):
+        furniture.setdefault(f["turnover_id"], []).append(TurnoverFurnitureOut(**f))
+
+    def build(r: dict) -> TurnoverOut:
+        s = settlements.get(r["turnover_id"])
+        fields = {k: r[k] for k in TurnoverOut.model_fields if k in r and k not in ("settlement", "furniture")}
+        for k in ("move_reason", "intercom_status"):
+            fields[k] = None if r[k] is None else str(r[k])
+        return TurnoverOut(
+            **fields,
+            settlement=TurnoverSettlementOut(**{k: v for k, v in s.items() if k != "turnover_id"}) if s else None,
+            furniture=furniture.get(r["turnover_id"], []),
+        )
+
+    turnovers = [build(r) for r in rows]
+    mine = [t for t in turnovers if t.tenant_role is not None]
+    return TenantTurnover(
+        unit_id=unit_id,
+        tenant=TenantOut(**tenant, has_turnover=bool(mine)),
+        turnovers=mine,
+        other_turnovers=[t for t in turnovers if t.tenant_role is None],
+    )
 
 
 def _unit_summary(row: dict) -> UnitSummary:

@@ -4,9 +4,10 @@ from __future__ import annotations
 from datetime import date
 
 
-def list_sectors(conn, sector_ids: frozenset[int] | None) -> list[dict]:
+def list_sectors(conn, sector_ids: frozenset[int] | None, today: date) -> list[dict]:
+    """Sectors with counts, current occupancy, and their largest projects' names."""
     scope = ""
-    params: dict = {}
+    params: dict = {"today": today}
     if sector_ids is not None:
         if not sector_ids:
             return []
@@ -14,14 +15,45 @@ def list_sectors(conn, sector_ids: frozenset[int] | None) -> list[dict]:
         params["ids"] = list(sector_ids)
     rows = conn.execute(
         f"""
+        WITH unit_occ AS (
+            -- Occupied = a lease covering today with at least one tenant on it.
+            SELECT
+                u.unit_id,
+                u.building_id,
+                EXISTS (
+                    SELECT 1
+                    FROM lease l
+                    JOIN tenancy_record tr ON tr.lease_id = l.lease_id
+                    WHERE l.unit_id = u.unit_id
+                      AND (l.debut_bail IS NULL OR l.debut_bail <= %(today)s)
+                      AND (l.fin_bail IS NULL OR l.fin_bail >= %(today)s)
+                ) AS occupied
+            FROM unit u
+        )
         SELECT
             s.sector_id,
             s.territoire,
             s.color_code,
             COUNT(DISTINCT b.project_id)::int AS project_count,
-            COUNT(b.building_id)::int AS building_count
+            COUNT(DISTINCT b.building_id)::int AS building_count,
+            COUNT(uo.unit_id)::int AS unit_count,
+            COUNT(uo.unit_id) FILTER (WHERE uo.occupied)::int AS occupied_unit_count,
+            COALESCE((
+                SELECT ARRAY_AGG(tp.nom ORDER BY tp.n DESC, tp.nom)
+                FROM (
+                    SELECT COALESCE(p.nom_unique_projet, 'Projet ' || p.project_id) AS nom,
+                           COUNT(*) AS n
+                    FROM building pb
+                    JOIN project p ON p.project_id = pb.project_id
+                    WHERE pb.sector_id = s.sector_id
+                    GROUP BY p.project_id, p.nom_unique_projet
+                    ORDER BY n DESC, nom
+                    LIMIT 3
+                ) tp
+            ), '{{}}') AS top_projects
         FROM sector s
         LEFT JOIN building b ON b.sector_id = s.sector_id
+        LEFT JOIN unit_occ uo ON uo.building_id = b.building_id
         {scope}
         GROUP BY s.sector_id, s.territoire, s.color_code
         ORDER BY s.territoire NULLS LAST, s.sector_id
@@ -258,5 +290,142 @@ def list_tenants(conn, lease_id: int) -> list[dict]:
             t.nom_complet
         """,
         {"lease_id": lease_id},
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_unit_tenant(conn, unit_id: int, tenant_id: int) -> dict | None:
+    """The tenant, if they were ever on a lease of this unit or named on one of its turnovers."""
+    row = conn.execute(
+        """
+        SELECT
+            t.tenant_id,
+            t.nom_complet,
+            t.telephone,
+            t.telephone_international,
+            t.courriel,
+            (
+                SELECT tr.capacite::text
+                FROM tenancy_record tr
+                JOIN lease l ON l.lease_id = tr.lease_id
+                WHERE tr.tenant_id = t.tenant_id AND l.unit_id = %(unit_id)s
+                ORDER BY l.debut_bail DESC NULLS LAST, l.lease_id DESC
+                LIMIT 1
+            ) AS capacite
+        FROM tenant t
+        WHERE t.tenant_id = %(tenant_id)s
+          AND (
+            EXISTS (
+                SELECT 1 FROM tenancy_record tr
+                JOIN lease l ON l.lease_id = tr.lease_id
+                WHERE tr.tenant_id = t.tenant_id AND l.unit_id = %(unit_id)s
+            )
+            OR EXISTS (
+                SELECT 1 FROM unit_turnover ut
+                WHERE ut.unit_id = %(unit_id)s
+                  AND %(tenant_id)s IN (ut.incoming_tenant_id, ut.outgoing_tenant_id)
+            )
+          )
+        """,
+        {"unit_id": unit_id, "tenant_id": tenant_id},
+    ).fetchone()
+    return dict(row) if row else None
+
+
+# A tenant's side of a turnover, for a tenant row aliased `me` with
+# `me.tenant_id` and `me.name` (unaccented, lower-cased full name). Most
+# turnovers predate tenant ids (only the raw names were imported), so a tenant
+# also matches when their full name appears in the raw name field.
+_TENANT_ROLE_SQL = """
+    CASE
+        WHEN ut.incoming_tenant_id = me.tenant_id THEN 'incoming'
+        WHEN ut.outgoing_tenant_id = me.tenant_id THEN 'outgoing'
+        WHEN me.name <> '' AND ut.incoming_tenant_id IS NULL
+             AND unaccent(lower(COALESCE(ut.incoming_tenant_name_raw, ''))) LIKE '%%' || me.name || '%%'
+            THEN 'incoming'
+        WHEN me.name <> '' AND ut.outgoing_tenant_id IS NULL
+             AND unaccent(lower(COALESCE(ut.outgoing_tenant_name_raw, ''))) LIKE '%%' || me.name || '%%'
+            THEN 'outgoing'
+    END
+"""
+
+_ME_SQL = "unaccent(lower(btrim(COALESCE(nom_complet, ''))))"
+
+
+def tenants_with_turnover(conn, unit_id: int, tenant_ids: list[int]) -> set[int]:
+    """Which of these tenants have at least one turnover on this unit."""
+    if not tenant_ids:
+        return set()
+    rows = conn.execute(
+        f"""
+        SELECT me.tenant_id
+        FROM (
+            SELECT tenant_id, {_ME_SQL} AS name
+            FROM tenant WHERE tenant_id = ANY(%(ids)s)
+        ) me
+        WHERE EXISTS (
+            SELECT 1 FROM unit_turnover ut
+            WHERE ut.unit_id = %(unit_id)s AND ({_TENANT_ROLE_SQL}) IS NOT NULL
+        )
+        """,
+        {"unit_id": unit_id, "ids": tenant_ids},
+    ).fetchall()
+    return {r["tenant_id"] for r in rows}
+
+
+def list_unit_turnovers(conn, unit_id: int, tenant_id: int) -> list[dict]:
+    """Every turnover of the unit, newest first, with this tenant's role in each."""
+    rows = conn.execute(
+        f"""
+        SELECT
+            ut.*,
+            COALESCE(ti.nom_complet, ut.incoming_tenant_name_raw) AS incoming_tenant_name,
+            COALESCE(tout.nom_complet, ut.outgoing_tenant_name_raw) AS outgoing_tenant_name,
+            {_TENANT_ROLE_SQL} AS tenant_role
+        FROM unit_turnover ut
+        CROSS JOIN (
+            SELECT tenant_id, {_ME_SQL} AS name
+            FROM tenant WHERE tenant_id = %(tenant_id)s
+        ) me
+        LEFT JOIN tenant ti ON ti.tenant_id = ut.incoming_tenant_id
+        LEFT JOIN tenant tout ON tout.tenant_id = ut.outgoing_tenant_id
+        WHERE ut.unit_id = %(unit_id)s
+        ORDER BY
+            COALESCE(ut.move_in_confirmed_date, ut.lease_start_date,
+                     ut.move_out_confirmed_date, ut.lease_end_date) DESC NULLS LAST,
+            ut.turnover_id DESC
+        """,
+        {"unit_id": unit_id, "tenant_id": tenant_id},
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_turnover_settlements(conn, turnover_ids: list[int]) -> list[dict]:
+    if not turnover_ids:
+        return []
+    rows = conn.execute(
+        """
+        SELECT turnover_id, deposit_amount_owed, deposit_received, deposit_refund_status,
+               amount_owed_by_tenant, tal_dossier_open, edl_received, edl_satisfactory, notes
+        FROM unit_turnover_settlement
+        WHERE turnover_id = ANY(%(ids)s)
+        ORDER BY settlement_id
+        """,
+        {"ids": turnover_ids},
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_turnover_furniture(conn, turnover_ids: list[int]) -> list[dict]:
+    if not turnover_ids:
+        return []
+    rows = conn.execute(
+        """
+        SELECT turnover_id, appliance_type, included_current, included_new
+        FROM unit_turnover_furniture_item
+        WHERE turnover_id = ANY(%(ids)s)
+        ORDER BY furniture_item_id
+        """,
+        {"ids": turnover_ids},
     ).fetchall()
     return [dict(r) for r in rows]

@@ -1,5 +1,5 @@
-import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse } from './schema.d.ts';
-export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse };
+import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover } from './schema.d.ts';
+export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover };
 import { supabase } from '../lib/supabase';
 
 // The portal never shows English generic errors — unknown failures map to this.
@@ -303,4 +303,31 @@ export function fetchFeedback(requestId: number): Promise<TriageFeedback> {
 
 export function upsertFeedback(requestId: number, body: { level: string; reason?: string | null }): Promise<TriageFeedback> {
   return apiPost<TriageFeedback>(`/api/v1/requests/${requestId}/feedback`, body);
+}
+
+// ── Portfolio browser ────────────────────────────────────────────────────────
+
+export function fetchPortfolioSectors(): Promise<PortfolioSectorSummary[]> {
+  return apiFetch('/api/v1/portfolio/sectors');
+}
+
+export function fetchPortfolioSector(sectorId: number): Promise<PortfolioSectorDetail> {
+  return apiFetch(`/api/v1/portfolio/sectors/${sectorId}`);
+}
+
+export function fetchPortfolioProject(projectId: number, sectorId?: number): Promise<PortfolioProjectDetail> {
+  const q = sectorId != null ? `?sector_id=${sectorId}` : '';
+  return apiFetch(`/api/v1/portfolio/projects/${projectId}${q}`);
+}
+
+export function fetchPortfolioBuilding(buildingId: number): Promise<PortfolioBuildingDetail> {
+  return apiFetch(`/api/v1/portfolio/buildings/${buildingId}`);
+}
+
+export function fetchPortfolioUnit(unitId: number): Promise<PortfolioUnitDetail> {
+  return apiFetch(`/api/v1/portfolio/units/${unitId}`);
+}
+
+export function fetchTenantTurnover(unitId: number, tenantId: number): Promise<TenantTurnover> {
+  return apiFetch(`/api/v1/portfolio/units/${unitId}/tenants/${tenantId}/turnover`);
 }
