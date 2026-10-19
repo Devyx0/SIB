@@ -18,5 +18,9 @@ class WeatherEvaluation(BaseModel):
     current_temp_c: Optional[float] = None
     wind_chill_c: Optional[float] = None
     current_urgency_tier: Optional[str] = None
+    # Urgency tier at the moment this forecast was evaluated — used to detect a
+    # stale suggestion (UI hides it; accept endpoint 409s) when urgency changes.
+    current_tier_at_eval: Optional[str] = None
+    forecast_time_local: Optional[str] = None  # snapshot fetched_at as HH:MM, app tz
     source: Optional[str] = None
     source_url: Optional[str] = None

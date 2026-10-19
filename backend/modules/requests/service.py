@@ -253,6 +253,9 @@ def action_set_urgency(conn, request_id: int, body: SetUrgencyBody, user: Curren
     if body.weather_evaluation_id is not None:
         ev = weather_repo.get_evaluation_provenance(conn, body.weather_evaluation_id)
         if ev is not None:
+            # The suggestion is stale if urgency changed since it was computed.
+            if _norm_urgency(ev["current_tier_at_eval"]) != _norm_urgency(row["urgency_tier"]):
+                raise ConflictError("Suggestion périmée — revérifiez la météo")
             after_value["weather"] = {
                 "evaluation_id": ev["evaluation_id"],
                 "band": ev["band_name"],

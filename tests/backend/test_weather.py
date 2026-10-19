@@ -296,6 +296,58 @@ def test_accept_records_justification_and_app_provenance(ac, db_conn, mkreq, wea
     assert prov["source_type"] == "app"
 
 
+def test_eval_stores_current_tier_and_forecast_time(ac, mkreq, weather_on, monkeypatch):
+    monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-20)))
+    rid = mkreq(urgency="ajd")
+    r = ac(_user(_COORD, "coordinator")).post(f"/api/v1/requests/{rid}/weather-check").json()
+    assert r["current_tier_at_eval"] == "ajd"
+    assert r["forecast_time_local"]  # non-empty HH:MM
+
+
+_STALE_MSG = "Suggestion périmée — revérifiez la météo"
+
+
+def test_accept_stale_after_urgency_change_409(ac, db_conn, mkreq, weather_on, monkeypatch):
+    monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-22)))
+    rid = mkreq(urgency="ajd")
+    c = ac(_user(_COORD, "coordinator"))
+    ev = c.post(f"/api/v1/requests/{rid}/weather-check").json()
+    # urgency changes after the evaluation was computed
+    db_conn.execute(
+        "UPDATE maintenance_request SET urgency_tier='AJD'::public.urgency_tier WHERE request_id=%s", [rid]
+    )
+    start = db_conn.execute(
+        "SELECT start_date::text AS d FROM maintenance_request WHERE request_id=%s", [rid]
+    ).fetchone()["d"]
+    r = c.post(f"/api/v1/requests/{rid}/urgency", json={
+        "urgency_tier": "AJD", "current_urgency_tier": "AJD",  # live tier → generic stale passes
+        "current_assigned_employee_id": None, "current_start_date": start,
+        "justification": _JUST, "weather_evaluation_id": ev["evaluation_id"],
+    })
+    assert r.status_code == 409
+    assert r.json()["error"]["message"] == _STALE_MSG
+
+
+def test_accept_twice_second_409(ac, db_conn, mkreq, weather_on, monkeypatch):
+    monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-22)))
+    rid = mkreq(urgency="ajd")
+    c = ac(_user(_COORD, "coordinator"))
+    ev = c.post(f"/api/v1/requests/{rid}/weather-check").json()
+    start = db_conn.execute(
+        "SELECT start_date::text AS d FROM maintenance_request WHERE request_id=%s", [rid]
+    ).fetchone()["d"]
+    base = {
+        "urgency_tier": "AJD", "current_assigned_employee_id": None,
+        "current_start_date": start, "justification": _JUST,
+        "weather_evaluation_id": ev["evaluation_id"],
+    }
+    r1 = c.post(f"/api/v1/requests/{rid}/urgency", json={**base, "current_urgency_tier": "ajd"})
+    assert r1.status_code == 200
+    r2 = c.post(f"/api/v1/requests/{rid}/urgency", json={**base, "current_urgency_tier": "AJD"})
+    assert r2.status_code == 409
+    assert r2.json()["error"]["message"] == _STALE_MSG
+
+
 def test_accept_stale_current_tier_409(ac, db_conn, mkreq, weather_on):
     rid = mkreq(urgency="ajd")
     start = db_conn.execute(

@@ -7,6 +7,7 @@ existing POST /requests/{id}/urgency action.
 from __future__ import annotations
 
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from backend.core.config import settings
 from backend.core.exceptions import NotFoundError
@@ -44,6 +45,13 @@ def _f(v: Any) -> Optional[float]:
     return float(v) if v is not None else None
 
 
+def _local_hhmm(dt: Any) -> Optional[str]:
+    """Format a tz-aware timestamp as HH:MM in the app timezone (same source as today_local)."""
+    if dt is None:
+        return None
+    return dt.astimezone(ZoneInfo(settings.TIMEZONE)).strftime("%H:%M")
+
+
 def check_weather(conn, request_id: int, user: CurrentUser) -> WeatherEvaluation:
     if not settings.WEATHER_ESCALATION_ENABLED:
         raise NotFoundError("Weather escalation is disabled")
@@ -56,9 +64,9 @@ def check_weather(conn, request_id: int, user: CurrentUser) -> WeatherEvaluation
     location = resolve_location(req["ville"], req["municipality"], req["sib_territory"])
     if location is None:
         ev = repo.insert_evaluation(conn, request_id=request_id, status="location_unknown",
-                                    evaluated_by=user.employee_id)
+                                    evaluated_by=user.employee_id, current_tier_at_eval=current)
         return WeatherEvaluation(evaluation_id=ev["evaluation_id"], status="location_unknown",
-                                 current_urgency_tier=current)
+                                 current_urgency_tier=current, current_tier_at_eval=current)
 
     snap = repo.get_cached_snapshot(conn, location)
     if snap is None:
@@ -66,9 +74,11 @@ def check_weather(conn, request_id: int, user: CurrentUser) -> WeatherEvaluation
             reading = fetch_forecast(location)
         except Exception:
             ev = repo.insert_evaluation(conn, request_id=request_id, status="source_failed",
-                                        location=location, evaluated_by=user.employee_id)
+                                        location=location, evaluated_by=user.employee_id,
+                                        current_tier_at_eval=current)
             return WeatherEvaluation(evaluation_id=ev["evaluation_id"], status="source_failed",
-                                     location=location, current_urgency_tier=current)
+                                     location=location, current_urgency_tier=current,
+                                     current_tier_at_eval=current)
         snap = repo.insert_snapshot(conn, location=location, site_code=SITE_CODES[location],
                                     reading=reading)
 
@@ -81,6 +91,7 @@ def check_weather(conn, request_id: int, user: CurrentUser) -> WeatherEvaluation
         band_name=band["name"] if band else None, suggested_tier=suggested,
         min_forecast_temp_24h_c=snap["min_forecast_temp_24h_c"],
         is_critical=is_critical, status="ok", evaluated_by=user.employee_id,
+        current_tier_at_eval=current,
     )
     return WeatherEvaluation(
         evaluation_id=ev["evaluation_id"], status="ok", location=location,
@@ -88,5 +99,7 @@ def check_weather(conn, request_id: int, user: CurrentUser) -> WeatherEvaluation
         direction=suggestion_direction(current, suggested), is_critical=is_critical,
         min_forecast_temp_24h_c=_f(snap["min_forecast_temp_24h_c"]),
         current_temp_c=_f(snap["current_temp_c"]), wind_chill_c=_f(snap["wind_chill_c"]),
-        current_urgency_tier=current, source=snap["source"], source_url=snap["source_url"],
+        current_urgency_tier=current, current_tier_at_eval=current,
+        forecast_time_local=_local_hhmm(snap.get("fetched_at")),
+        source=snap["source"], source_url=snap["source_url"],
     )

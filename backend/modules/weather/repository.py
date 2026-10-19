@@ -33,7 +33,7 @@ def get_cached_snapshot(conn, location: str) -> Optional[dict]:
     row = conn.execute(
         """
         SELECT snapshot_id, location, site_code, source, source_url,
-               current_temp_c, wind_chill_c, min_forecast_temp_24h_c
+               current_temp_c, wind_chill_c, min_forecast_temp_24h_c, fetched_at
         FROM weather_forecast_snapshot
         WHERE location = %s AND fetched_at > now() - interval '1 hour'
         ORDER BY fetched_at DESC
@@ -53,7 +53,7 @@ def insert_snapshot(conn, *, location: str, site_code: str, reading: dict) -> di
         VALUES (%(location)s, %(site_code)s, %(source)s, %(source_url)s,
                 %(current)s, %(wind)s, %(min24)s, %(raw)s::jsonb)
         RETURNING snapshot_id, location, site_code, source, source_url,
-                  current_temp_c, wind_chill_c, min_forecast_temp_24h_c
+                  current_temp_c, wind_chill_c, min_forecast_temp_24h_c, fetched_at
         """,
         {
             "location": location, "site_code": site_code,
@@ -70,6 +70,7 @@ def insert_snapshot(conn, *, location: str, site_code: str, reading: dict) -> di
 
 def insert_evaluation(
     conn, *, request_id: int, status: str, evaluated_by: int,
+    current_tier_at_eval: Optional[str] = None,
     snapshot_id: Optional[int] = None, location: Optional[str] = None,
     band_name: Optional[str] = None, suggested_tier: Optional[str] = None,
     min_forecast_temp_24h_c: Any = None, is_critical: bool = False,
@@ -78,9 +79,11 @@ def insert_evaluation(
         """
         INSERT INTO weather_evaluation
             (request_id, snapshot_id, location, band_name, suggested_tier,
-             min_forecast_temp_24h_c, is_critical, status, evaluated_by)
+             min_forecast_temp_24h_c, is_critical, status, evaluated_by,
+             current_tier_at_eval)
         VALUES (%(request_id)s, %(snapshot_id)s, %(location)s, %(band_name)s,
-                %(suggested_tier)s, %(min24)s, %(is_critical)s, %(status)s, %(evaluated_by)s)
+                %(suggested_tier)s, %(min24)s, %(is_critical)s, %(status)s, %(evaluated_by)s,
+                %(current_tier)s)
         RETURNING evaluation_id
         """,
         {
@@ -88,6 +91,7 @@ def insert_evaluation(
             "band_name": band_name, "suggested_tier": suggested_tier,
             "min24": min_forecast_temp_24h_c, "is_critical": is_critical,
             "status": status, "evaluated_by": evaluated_by,
+            "current_tier": current_tier_at_eval,
         },
     ).fetchone()
     return dict(row)
@@ -97,7 +101,8 @@ def get_evaluation_provenance(conn, evaluation_id: int) -> Optional[dict]:
     """Fields to embed in a decision_justification_log.after_value on accept."""
     row = conn.execute(
         """
-        SELECT e.evaluation_id, e.band_name, e.min_forecast_temp_24h_c, s.source_url
+        SELECT e.evaluation_id, e.band_name, e.min_forecast_temp_24h_c,
+               e.current_tier_at_eval, s.source_url
         FROM weather_evaluation e
         LEFT JOIN weather_forecast_snapshot s ON s.snapshot_id = e.snapshot_id
         WHERE e.evaluation_id = %s
