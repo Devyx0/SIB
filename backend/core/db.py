@@ -78,7 +78,7 @@ class DBTransactionMiddleware(BaseHTTPMiddleware):
                 status_code=503,
                 content={"error": {
                     "code":       "SERVICE_UNAVAILABLE",
-                    "message":    "Server is busy — please retry",
+                    "message":    "Serveur occupé — réessayez dans un instant",
                     "request_id": rid,
                     "details":    None,
                 }},
@@ -106,7 +106,7 @@ class DBTransactionMiddleware(BaseHTTPMiddleware):
                     status_code=500,
                     content={"error": {
                         "code":       "INTERNAL_ERROR",
-                        "message":    "An unexpected error occurred",
+                        "message":    "Une erreur est survenue — réessayez",
                         "request_id": rid,
                         "details":    None,
                     }},
