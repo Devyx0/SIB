@@ -381,3 +381,32 @@ describe('DetailPanel', () => {
     expect(screen.getByTestId('email-display').textContent).toBe('real@example.com');
   });
 });
+
+describe('visits section (stop 3)', () => {
+  it('shows each visit: outcome label, times, elapsed, comment, photos', async () => {
+    vi.spyOn(client, 'fetchPhotoUrl').mockResolvedValue({ url: 'https://signed.local/closeout/1/9.jpg' });
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: {
+        ...MOCK_REQUEST,
+        visits: [{
+          visit_id: 1, employee_id: 24, employee_name: 'Martin Poirier',
+          en_route_at: '2026-10-19T14:00:00Z', closeout_at: '2026-10-19T15:30:00Z',
+          outcome: 'partial_expertise', closeout_comment: 'Fuite réparée en partie',
+          photo_ids: [9],
+        }],
+      },
+      isPending: false, isError: false, error: null,
+    });
+    wrap(
+      <DetailPanel requestId={1} onClose={vi.fn()} lang="fr"
+        me={{ employee_id: 4, roles: ['coordinator'] } as any} />
+    );
+    expect(screen.getByTestId('visits-section')).toBeTruthy();
+    expect(screen.getByText(/Call partiellement fait, besoin d'une expertise/)).toBeTruthy();
+    expect(screen.getByText(/1 h 30/)).toBeTruthy();
+    expect(screen.getByText(/Fuite réparée en partie/)).toBeTruthy();
+    expect(screen.getByText('Martin Poirier', { exact: false })).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('visit-photo')).toBeTruthy());
+    expect(screen.getByTestId('visit-photo').getAttribute('src')).toContain('signed.local');
+  });
+});

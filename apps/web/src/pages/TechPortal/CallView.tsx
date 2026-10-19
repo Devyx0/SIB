@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRequest } from '../../hooks/useRequest';
 import { goEnRoute, ApiError } from '../../api/client';
@@ -124,6 +124,15 @@ export default function TechCallView({ lang, me, onSignOut }: Props) {
               >
                 {busy ? t(lang, 'Envoi…', 'Sending…') : t(lang, 'En route', 'En route')}
               </button>
+            )}
+            {req.status === 'en_route' && isAssignedToMe && (
+              <Link
+                to={`/tech/appels/${req.request_id}/cloture`}
+                className={`${styles.enRouteBtn} ${styles.btnLink}`}
+                data-testid="closeout-btn"
+              >
+                {t(lang, 'Clôturer', 'Close out')}
+              </Link>
             )}
             {enRouteError && <p className={styles.error}>{enRouteError}</p>}
 

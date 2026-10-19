@@ -63,6 +63,19 @@ export interface ListRow {
   last_followup_text: string | null;
   unit_label: string | null;
   en_route_at: string | null;
+  closeout_outcome: string | null;
+  closeout_urgent: boolean | null;
+}
+
+export interface VisitEntry {
+  visit_id: number;
+  employee_id: number;
+  employee_name: string | null;
+  en_route_at: string;
+  closeout_at: string | null;
+  outcome: string | null;
+  closeout_comment: string | null;
+  photo_ids: number[];
 }
 
 export interface JustificationEntry {
@@ -95,6 +108,7 @@ export interface RequestDetail extends ListRow {
   caller_type: string | null;
   followup_log: FollowupEntry[];
   justification_log: JustificationEntry[];
+  visits: VisitEntry[];
   caller_name: string | null;
   caller_phone: string | null;
   caller_phone_placeholder: boolean;

@@ -34,6 +34,8 @@ function makeRow(overrides: Partial<ListRow> = {}): ListRow {
     last_followup_text: null,
     unit_label: null,
     en_route_at: null,
+    closeout_outcome: null,
+    closeout_urgent: null,
     ...overrides,
   };
 }
@@ -118,5 +120,20 @@ describe('en route visibility (stop 2)', () => {
     );
     const tag = screen.getByText('En route');
     expect(tag.getAttribute('data-status')).toBe('en_route');
+  });
+});
+
+describe('closeout urgent badge (stop 3)', () => {
+  it('shows an URGENT badge when closeout_urgent is set', () => {
+    render(
+      <RequestTable {...defaultProps}
+        rows={[makeRow({ status: 'triaged', closeout_urgent: true })]} total={1} />
+    );
+    expect(screen.getByTestId('closeout-urgent-badge').textContent).toBe('URGENT');
+  });
+
+  it('no badge when closeout_urgent is null', () => {
+    render(<RequestTable {...defaultProps} rows={[makeRow()]} total={1} />);
+    expect(screen.queryByTestId('closeout-urgent-badge')).toBeNull();
   });
 });

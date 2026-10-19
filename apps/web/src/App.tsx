@@ -6,6 +6,7 @@ import AppShell from './components/AppShell';
 import DispatchBoard from './pages/DispatchBoard';
 import TechList from './pages/TechPortal';
 import TechCallView from './pages/TechPortal/CallView';
+import CloseoutForm from './pages/TechPortal/CloseoutForm';
 import Login from './pages/Login';
 import { fetchMe } from './api/client';
 import type { MeResponse } from './api/schema.d.ts';
@@ -67,6 +68,7 @@ export default function App() {
             <Routes>
               <Route path="tech" element={<TechList lang={lang} me={me} onSignOut={handleSignOut} />} />
               <Route path="tech/appels/:id" element={<TechCallView lang={lang} me={me} onSignOut={handleSignOut} />} />
+              <Route path="tech/appels/:id/cloture" element={<CloseoutForm lang={lang} me={me} onSignOut={handleSignOut} />} />
               <Route path="*" element={<Navigate to="/tech" replace />} />
             </Routes>
           ) : (

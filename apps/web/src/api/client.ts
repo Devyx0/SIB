@@ -29,6 +29,7 @@ export interface RequestListParams {
   sort_dir?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
+  redispatch?: boolean;
 }
 
 async function request<T>(path: string, method: string, body?: unknown): Promise<T> {
@@ -88,6 +89,7 @@ function buildQuery(params: RequestListParams): string {
   if (params.sort_dir) q.set('sort_dir', params.sort_dir);
   if (params.limit != null) q.set('limit', String(params.limit));
   if (params.offset != null) q.set('offset', String(params.offset));
+  if (params.redispatch) q.set('redispatch', 'true');
   return q.toString();
 }
 
@@ -115,6 +117,40 @@ export interface Justification { text: string; input_method: 'voice' | 'typed'; 
 
 export function goEnRoute(id: number, body: { current_status: string; current_start_date: string | null; lat: number | null; lng: number | null }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/en-route`, body);
+}
+
+// Raw image body — the mime travels in Content-Type (no multipart).
+export async function uploadPhoto(id: number, file: File): Promise<{ attachment_id: number }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers: Record<string, string> = { 'Content-Type': file.type };
+  if (session?.access_token) headers['authorization'] = `Bearer ${session.access_token}`;
+  const res = await fetch(`/api/v1/requests/${id}/photos`, { method: 'POST', headers, body: file });
+  if (!res.ok) {
+    let message = res.statusText;
+    try { message = (await res.json())?.error?.message ?? message; } catch { /* ignore */ }
+    throw new ApiError(`HTTP_${res.status}`, message);
+  }
+  return res.json();
+}
+
+export interface CloseoutBody {
+  outcome: 'complete' | 'partial_reschedule' | 'partial_expertise' | 'failed';
+  comment: string;
+  input_method: 'voice' | 'typed';
+  attachment_ids: number[];
+  next_date: string | null;
+  urgent: boolean;
+  current_status: string;
+  lat: number | null;
+  lng: number | null;
+}
+
+export function closeoutRequest(id: number, body: CloseoutBody): Promise<RequestDetail> {
+  return apiPost(`/api/v1/requests/${id}/closeout`, body);
+}
+
+export function fetchPhotoUrl(requestId: number, attachmentId: number): Promise<{ url: string }> {
+  return apiFetch(`/api/v1/requests/${requestId}/photos/${attachmentId}`);
 }
 
 export function dispatchAssign(id: number, body: { employee_id: number | null; current_assigned_employee_id: number | null; current_start_date: string | null; current_urgency_tier: string | null; justification: Justification }): Promise<RequestDetail> {

@@ -240,3 +240,56 @@
   font-weight: 600;
   margin: 0;
 }
+
+.outcomeOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  font-size: 0.95rem;
+}
+
+.photoThumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.photoThumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #dde;
+}
+
+.addPhotoBtn {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px dashed #99a;
+  border-radius: 8px;
+  background: #fff;
+  color: #334;
+  font-weight: 600;
+}
+
+.commentRow {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.commentRow textarea {
+  flex: 1;
+  border: 1px solid #ccd;
+  border-radius: 8px;
+  padding: 0.5rem;
+  font: inherit;
+}
+
+.btnLink {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+}

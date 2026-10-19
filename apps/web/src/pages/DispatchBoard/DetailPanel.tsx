@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRequest } from '../../hooks/useRequest';
 import {
-  ApiError, fetchEmployees,
+  ApiError, fetchEmployees, fetchPhotoUrl,
   dispatchAssign, dispatchReschedule, dispatchSetUrgency,
   dispatchSetFollowUpDate, dispatchSetNextSteps, dispatchSetCost, dispatchAddLog,
   triggerTriage, routeRequest, checkWeather,
 } from '../../api/client';
 import TriageFeedbackWidget from '../../components/TriageFeedbackWidget';
-import type { MeResponse, WeatherEvaluation } from '../../api/schema.d.ts';
-import { roleLabel, statusLabel, timeEstimateLabel, sourceCalendarLabel, t } from '../../i18n';
+import type { MeResponse, WeatherEvaluation, VisitEntry } from '../../api/schema.d.ts';
+import { closeoutOutcomeLabel, roleLabel, statusLabel, timeEstimateLabel, sourceCalendarLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import JustificationModal from '../../components/JustificationModal';
 import styles from './DetailPanel.module.css';
@@ -27,6 +27,30 @@ const INPUT_LABELS: Record<string, { fr: string; en: string }> = {
 
 function decisionLabel(lang: Lang, type: string): string {
   return DECISION_LABELS[type]?.[lang] ?? type;
+}
+
+function visitElapsed(v: VisitEntry): string | null {
+  if (!v.closeout_at) return null;
+  const mins = Math.max(0, Math.round(
+    (new Date(v.closeout_at).getTime() - new Date(v.en_route_at).getTime()) / 60000));
+  return mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, '0')}`;
+}
+
+function formatTime(iso: string | null, lang: Lang): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA', {
+    dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Toronto',
+  });
+}
+
+function VisitPhoto({ requestId, attachmentId }: { requestId: number; attachmentId: number }) {
+  const { data } = useQuery({
+    queryKey: ['photo-url', requestId, attachmentId],
+    queryFn: () => fetchPhotoUrl(requestId, attachmentId),
+    staleTime: 4 * 60 * 1000, // signed URLs live 5 min
+  });
+  if (!data) return null;
+  return <img src={data.url} alt="" className={styles.visitPhoto} data-testid="visit-photo" />;
 }
 
 function inputLabel(lang: Lang, method: string | null | undefined): string {
@@ -534,6 +558,35 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                       {t(lang, 'Garder sur Principal', 'Keep on Main')}
                     </button>
                   </div>
+                </section>
+              )}
+
+              {(data.visits?.length ?? 0) > 0 && (
+                <section className={styles.followupSection} data-testid="visits-section">
+                  <h3 className={styles.followupHeading}>
+                    {t(lang, 'Visites', 'Visits')}
+                  </h3>
+                  {data.visits.map((v) => (
+                    <div key={v.visit_id} className={styles.followupEntry}>
+                      <span className={styles.followupMeta}>
+                        {v.employee_name ?? `#${v.employee_id}`}
+                        {' · '}{t(lang, 'En route', 'En route')} {formatTime(v.en_route_at, lang)}
+                        {v.closeout_at && <>{' · '}{t(lang, 'Clôturé', 'Closed')} {formatTime(v.closeout_at, lang)}</>}
+                        {visitElapsed(v) && <>{' · '}{visitElapsed(v)}</>}
+                      </span>
+                      <p className={styles.followupText}>
+                        {closeoutOutcomeLabel(lang, v.outcome)}
+                        {v.closeout_comment ? ` — ${v.closeout_comment}` : ''}
+                      </p>
+                      {v.photo_ids.length > 0 && (
+                        <div className={styles.visitPhotos}>
+                          {v.photo_ids.map((pid) => (
+                            <VisitPhoto key={pid} requestId={data.request_id} attachmentId={pid} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </section>
               )}
 

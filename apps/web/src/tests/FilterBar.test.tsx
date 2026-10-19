@@ -158,3 +158,15 @@ describe('FilterBar', () => {
     vi.useRealTimers();
   });
 });
+
+describe('À redispatcher filter (stop 3)', () => {
+  it('toggles the redispatch filter', () => {
+    const onRedispatch = vi.fn();
+    render(
+      <FilterBar {...defaultProps} redispatch={false} onRedispatch={onRedispatch} />
+    );
+    const box = screen.getByTestId('redispatch-filter').querySelector('input') as HTMLInputElement;
+    fireEvent.click(box);
+    expect(onRedispatch).toHaveBeenCalledWith(true);
+  });
+});

@@ -381,3 +381,24 @@ describe('en route (stop 2)', () => {
     expect(screen.getByText(/En route depuis 30 min/)).toBeTruthy();
   });
 });
+
+describe('closeout entry (stop 3)', () => {
+  it('shows « Clôturer » on my en_route call', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({
+      status: 'en_route',
+      en_route_at: new Date(Date.now() - 60000).toISOString(),
+    }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByTestId('closeout-btn')).toBeTruthy());
+    expect(screen.getByTestId('closeout-btn').getAttribute('href')).toBe('/tech/appels/5/cloture');
+  });
+
+  it('no « Clôturer » on a call not assigned to me', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({ status: 'en_route', assigned_employee_id: 99 }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByText('Contact locataire')).toBeTruthy());
+    expect(screen.queryByTestId('closeout-btn')).toBeNull();
+  });
+});

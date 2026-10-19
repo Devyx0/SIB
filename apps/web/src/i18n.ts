@@ -41,6 +41,20 @@ export function sourceCalendarLabel(lang: Lang, calendar: string | null | undefi
   return pair ? pair[lang === 'fr' ? 0 : 1] : calendar;
 }
 
+// Verbatim labels from François's notes (reference §6.1).
+const _CLOSEOUT_OUTCOME_LABELS: Record<string, readonly [string, string]> = {
+  complete:           ['Call fermé, terminé complètement', 'Call closed, fully completed'],
+  partial_reschedule: ['Call partiellement fait, je dois revenir', 'Partially done, I must come back'],
+  partial_expertise:  ["Call partiellement fait, besoin d'une expertise", 'Partially done, needs expertise'],
+  failed:             ["Call pas du tout fait, besoin d'une expertise / envoyer à dispatch", 'Not done at all, needs expertise / send to dispatch'],
+};
+
+export function closeoutOutcomeLabel(lang: Lang, outcome: string | null | undefined): string {
+  if (!outcome) return '—';
+  const pair = _CLOSEOUT_OUTCOME_LABELS[outcome];
+  return pair ? pair[lang === 'fr' ? 0 : 1] : outcome;
+}
+
 export function statusLabel(lang: Lang, status: string): string {
   const map: Record<string, readonly [string, string]> = {
     intake_received:  ['Reçu',           'Received'],

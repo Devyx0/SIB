@@ -29,6 +29,8 @@ interface Props {
   onAssignedEmployeeId?: (v: number | null) => void;
   onToggleCols?: () => void;
   dateNote?: string;
+  redispatch?: boolean;
+  onRedispatch?: (v: boolean) => void;
 }
 
 export default function FilterBar({
@@ -38,11 +40,13 @@ export default function FilterBar({
   employees = [], assignedEmployeeId = null,
   showAllCols = false,
   dateNote,
+  redispatch = false,
   onStartDate, onEndDate, onStatus, onSourceCalendar, onQ,
   onSectorId = () => {},
   onUrgency = () => {},
   onAssignedEmployeeId = () => {},
   onToggleCols = () => {},
+  onRedispatch = () => {},
 }: Props) {
   const [draft, setDraft] = useState(q);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -265,6 +269,14 @@ export default function FilterBar({
               {t(lang, 'Effacer', 'Clear')}
             </button>
           )}
+          <label className={styles.check} data-testid="redispatch-filter">
+            <input
+              type="checkbox"
+              checked={redispatch}
+              onChange={(e) => onRedispatch(e.target.checked)}
+            />
+            {t(lang, 'À redispatcher', 'To re-dispatch')}
+          </label>
         </div>
       </div>
     </div>

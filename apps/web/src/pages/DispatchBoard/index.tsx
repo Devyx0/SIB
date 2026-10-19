@@ -45,6 +45,7 @@ export default function DispatchBoard({ lang, me }: Props) {
   const assignedEmployeeId = searchParams.get('assigned_employee_id')
     ? Number(searchParams.get('assigned_employee_id'))
     : undefined;
+  const redispatch = searchParams.get('redispatch') === '1';
 
   const params = {
     start_date: startDate,
@@ -59,6 +60,7 @@ export default function DispatchBoard({ lang, me }: Props) {
     sector_id: sectorId,
     urgency: urgency || undefined,
     assigned_employee_id: assignedEmployeeId,
+    redispatch: redispatch || undefined,
   };
 
   const isDateRangeValid = (() => {
@@ -174,6 +176,8 @@ export default function DispatchBoard({ lang, me }: Props) {
         employees={employees ?? []}
         assignedEmployeeId={assignedEmployeeId ?? null}
         showAllCols={showAllCols}
+        redispatch={redispatch}
+        onRedispatch={(v) => setFilter('redispatch', v ? '1' : null)}
         onStartDate={(v) => setFilter('start_date', v)}
         onEndDate={(v) => setFilter('end_date', v)}
         onStatus={setStatusFilter}

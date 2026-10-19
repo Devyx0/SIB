@@ -161,7 +161,12 @@ export default function RequestTable({
           <td>{row.building_address ?? '—'}</td>
           <td className={styles.nowrap + ' ' + styles.bold}>{row.assigned_employee_name ?? '—'}</td>
           <td className={styles.nowrap}>{row.last_followup_date ?? '—'}</td>
-          <td className={styles.nowrap}><StatusTag status={row.status} lang={lang} /></td>
+          <td className={styles.nowrap}>
+            <StatusTag status={row.status} lang={lang} />
+            {row.closeout_urgent && (
+              <span className={styles.tagCloseoutUrgent} data-testid="closeout-urgent-badge">URGENT</span>
+            )}
+          </td>
           {/* optional cells */}
           {showAllCols && <td className={styles.nowrap}>{row.subcontractor_name ?? '—'}</td>}
           {showAllCols && <td className={styles.nowrap}>{row.time_estimate_bucket ?? '—'}</td>}
