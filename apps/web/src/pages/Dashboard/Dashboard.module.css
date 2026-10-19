@@ -148,6 +148,11 @@
   font-weight: 600;
 }
 
+/* By territory: subtle dividers between the column names. */
+.territoryTable thead th + th {
+  border-left: 1px solid var(--color-divider);
+}
+
 @media (max-width: 639px) {
   .page {
     padding: 12px 12px 28px;

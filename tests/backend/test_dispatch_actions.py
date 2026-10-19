@@ -636,3 +636,87 @@ def test_assign_rolls_back_on_failed_justification(monkeypatch):
         with get_pool().connection() as cleanup:
             cleanup.execute("DELETE FROM maintenance_request WHERE request_id = %s", [request_id])
             cleanup.commit()
+
+
+# ── Justification on the remaining dispatcher decisions ──────────────────────
+
+def _justification_rows(db_conn, request_id):
+    return db_conn.execute(
+        "SELECT decision_type, before_value, after_value, justification_text, input_method "
+        "FROM decision_justification_log WHERE request_id = %s",
+        [request_id],
+    ).fetchall()
+
+
+def test_follow_up_date_stores_justification(ac, db_conn, test_request):
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{test_request}/follow-up-date", json={
+        "next_follow_up_date": _DATE_B,
+        "current_next_follow_up_date": None,
+        "justification": {"text": "Locataire absente jusqu'à jeudi", "input_method": "voice"},
+    })
+    assert r.status_code == 200
+    rows = _justification_rows(db_conn, test_request)
+    assert len(rows) == 1
+    assert rows[0]["decision_type"] == "follow_up_date"
+    assert rows[0]["after_value"] == {"next_follow_up_date": _DATE_B}
+    assert rows[0]["input_method"] == "voice"
+
+
+def test_next_steps_stores_justification(ac, db_conn, test_request):
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{test_request}/next-steps", json={
+        "next_steps": "Commander la pièce",
+        "current_next_steps": None,
+        "justification": {"text": "Pièce introuvable sur place", "input_method": "typed"},
+    })
+    assert r.status_code == 200
+    rows = _justification_rows(db_conn, test_request)
+    assert [row["decision_type"] for row in rows] == ["next_steps"]
+
+
+def test_cost_stores_justification(ac, db_conn, test_request):
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{test_request}/cost", json={
+        "estimated_cost": 250,
+        "current_estimated_cost": None,
+        "justification": {"text": "Soumission du plombier reçue", "input_method": "typed"},
+    })
+    assert r.status_code == 200
+    rows = _justification_rows(db_conn, test_request)
+    assert [row["decision_type"] for row in rows] == ["cost"]
+
+
+def test_route_stores_justification(ac, db_conn, test_request):
+    db_conn.execute(
+        "UPDATE maintenance_request SET source_calendar = NULL WHERE request_id = %s", [test_request],
+    )
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{test_request}/route", json={
+        "source_calendar": "st_maj",
+        "expected_source_calendar": None,
+        "justification": {"text": "Petit travail pour le majordome", "input_method": "voice"},
+    })
+    assert r.status_code == 200
+    rows = _justification_rows(db_conn, test_request)
+    assert [row["decision_type"] for row in rows] == ["route"]
+    assert rows[0]["after_value"] == {"source_calendar": "st_maj"}
+
+
+def test_cost_without_justification_still_succeeds(ac, db_conn, test_request):
+    """Backward compatible: the field stays optional server-side."""
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{test_request}/cost", json={
+        "estimated_cost": 90, "current_estimated_cost": None,
+    })
+    assert r.status_code == 200
+    assert _justification_rows(db_conn, test_request) == []
+
+
+def test_short_justification_on_next_steps_422(ac, test_request):
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{test_request}/next-steps", json={
+        "next_steps": "x", "current_next_steps": None,
+        "justification": {"text": "court", "input_method": "typed"},
+    })
+    assert r.status_code == 422

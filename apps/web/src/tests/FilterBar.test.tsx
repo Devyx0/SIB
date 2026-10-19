@@ -42,22 +42,53 @@ describe('FilterBar', () => {
     vi.useRealTimers();
   });
 
-  it('renders all status checkboxes', () => {
+  it('status checkboxes live in a dropdown, hidden until opened', async () => {
     render(<FilterBar {...defaultProps} />);
+    expect(screen.queryByText('Reçu')).toBeNull();
+    expect(screen.getByTestId('status-select').textContent).toMatch(/Tous les statuts/);
+    await userEvent.click(screen.getByTestId('status-select'));
     expect(screen.getByText('Reçu')).toBeTruthy();
     expect(screen.getByText('En triage')).toBeTruthy();
   });
 
-  it('shows clear button when statuses are selected', () => {
-    render(<FilterBar {...defaultProps} status={['triaged']} />);
-    expect(screen.getByText('Effacer')).toBeTruthy();
+  it('checking a status in the dropdown calls onStatus', async () => {
+    const onStatus = vi.fn();
+    render(<FilterBar {...defaultProps} status={['triaged']} onStatus={onStatus} />);
+    await userEvent.click(screen.getByTestId('status-select'));
+    await userEvent.click(screen.getByLabelText('Reçu'));
+    expect(onStatus).toHaveBeenCalledWith(['triaged', 'intake_received']);
+  });
+
+  it('trigger summarises the selection', () => {
+    const { rerender } = render(<FilterBar {...defaultProps} status={['triaged']} />);
+    expect(screen.getByTestId('status-select').textContent).toMatch(/Trié/);
+    rerender(<FilterBar {...defaultProps} status={['triaged', 'closed']} />);
+    expect(screen.getByTestId('status-select').textContent).toMatch(/2 statuts/);
   });
 
   it('calls onStatus with cleared array when clear is clicked', async () => {
     const onStatus = vi.fn();
     render(<FilterBar {...defaultProps} status={['triaged']} onStatus={onStatus} />);
+    await userEvent.click(screen.getByTestId('status-select'));
     await userEvent.click(screen.getByText('Effacer'));
     expect(onStatus).toHaveBeenCalledWith([]);
+  });
+
+  it('closes the status dropdown on Escape', async () => {
+    render(<FilterBar {...defaultProps} />);
+    await userEvent.click(screen.getByTestId('status-select'));
+    expect(screen.getByText('Reçu')).toBeTruthy();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByText('Reçu')).toBeNull();
+  });
+
+  it('shows a reset link only when filters are active', async () => {
+    const onReset = vi.fn();
+    const { rerender } = render(<FilterBar {...defaultProps} onReset={onReset} />);
+    expect(screen.queryByTestId('reset-filters')).toBeNull();
+    rerender(<FilterBar {...defaultProps} onReset={onReset} hasActiveFilters />);
+    await userEvent.click(screen.getByTestId('reset-filters'));
+    expect(onReset).toHaveBeenCalled();
   });
 
   it('typing in AU never calls onStartDate (no cross-field clamping)', () => {

@@ -1,94 +1,709 @@
+/* Fills the app's main area; only the table area scrolls (see .tableWrap). */
 .page {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+/* ── Header ─────────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 16px;
-  padding: 20px 28px 40px;
-  min-height: 100%;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  padding: 22px 28px 18px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .title {
   margin: 0;
-  font-size: 20px;
+  font-size: 26px;
 }
 
-.filters {
+.subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-neutral-600);
+}
+
+.controls {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
-  align-items: flex-end;
+  flex-wrap: wrap;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.presets {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--color-bg);
+  border-radius: var(--r-md);
 }
 
-.field label {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+.preset {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
   color: var(--color-neutral-700);
 }
 
-.field input {
-  font: inherit;
-  font-size: 13px;
-  padding: 6px 10px;
-  border: 1px solid var(--color-divider);
-  border-radius: var(--r-md);
-  background: var(--glass-bg-strong);
+.preset:hover {
+  color: var(--navy-800);
 }
 
-.tableWrap {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
+.presetActive,
+.presetActive:hover {
+  background: var(--color-surface);
+  color: var(--navy-800);
+  box-shadow: var(--sh-raised);
+}
+
+.dateRange {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+}
+
+.dateRange:focus-within {
+  border-color: var(--navy-800);
+  box-shadow: var(--ring);
+}
+
+.dateRange input {
+  font: inherit;
+  font-size: 14px;
+  width: 136px;
+  padding: 6px;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.dateRange input:focus {
+  outline: none;
+}
+
+.dateSep {
+  color: var(--color-neutral-500);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ── Body ───────────────────────────────────────────────────────── */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  padding: 20px 28px 20px;
+}
+
+.body > * {
+  flex-shrink: 0;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--navy-800);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-card);
+}
+
+.kpiLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-neutral-600);
+}
+
+.kpiValue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  white-space: nowrap;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.kpiSub {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-neutral-600);
+}
+
+/* The card hugs its rows but may shrink to the space left on screen;
+   then only the table area scrolls (both ways). */
+.body > .card {
+  flex: 0 1 auto;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--r-lg);
-  padding: 4px;
+  box-shadow: var(--sh-card);
+  overflow: hidden;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 20px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.search {
+  font: inherit;
+  font-size: 14px;
+  flex: 0 1 320px;
+  min-height: 36px;
+  padding: 6px 12px 6px 34px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  color: var(--color-text);
+  background: var(--color-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23737880' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='9' cy='9' r='5.5'/%3E%3Cpath d='M13.5 13.5L17 17'/%3E%3C/svg%3E") no-repeat left 10px center / 16px;
+}
+
+.search:focus,
+.sortControl select:focus {
+  outline: none;
+  border-color: var(--navy-800);
+  box-shadow: var(--ring);
+}
+
+.sortControl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sortControl label {
+  font-size: 13px;
+  color: var(--color-neutral-700);
+  white-space: nowrap;
+}
+
+.sortControl select {
+  font: inherit;
+  font-size: 14px;
+  min-height: 36px;
+  padding: 6px 34px 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  color: var(--color-text);
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  background: var(--color-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23555a61' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 10px center / 16px;
+}
+
+.dirBtn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--navy-800);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.dirBtn:hover {
+  background: var(--navy-50);
+  border-color: var(--navy-300);
+}
+
+/* ── Table ──────────────────────────────────────────────────────── */
+
+.tableWrap {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .table {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+}
+
+/* Header row stays pinned while the rows scroll. */
+.table thead {
+  position: sticky;
+  top: 0;
+  z-index: 3;
 }
 
 .table th,
 .table td {
-  padding: 8px 10px;
+  padding: 14px 18px;
   text-align: left;
+  vertical-align: middle;
   border-bottom: 1px solid var(--color-divider);
+}
+
+/* Calm, sentence-case headers: a title plus a one-line caption. */
+.table thead th {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  background: var(--color-surface);
+  border-bottom: 2px solid var(--color-border);
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.table thead th + th,
+.table tbody td {
+  border-left: 1px solid var(--color-divider);
+}
+
+.colTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.colHint {
+  display: block;
+  margin-top: 1px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-neutral-600);
+}
+
+.sortMark {
+  color: var(--navy-800);
+  font-size: 13px;
+}
+
+/* Zebra + hover so a row reads as one unit across the whole width. */
+.table tbody tr:nth-child(even) > * {
+  background: var(--color-bg-alt);
+}
+
+.table tbody tr:hover > * {
+  background: var(--navy-50);
+}
+
+.table tbody tr:last-child > * {
+  border-bottom: none;
+}
+
+/* Employee column stays visible while scrolling sideways. */
+.stickyCol {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--color-surface);
+  box-shadow: inset -1px 0 0 var(--color-border);
+  min-width: 220px;
+  font-weight: 400;
+}
+
+.person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--navy-100);
+  color: var(--navy-800);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.personText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.personName {
+  font-weight: 600;
+  color: var(--color-text);
   white-space: nowrap;
 }
 
-.table th {
+.territory {
+  align-self: flex-start;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--color-bg);
+  color: var(--color-neutral-700);
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.big {
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-neutral-600);
+}
+
+.muted {
+  color: var(--color-neutral-500);
+  font-size: 13px;
+}
+
+/* Calls: "11 / 14" over a close-rate meter */
+.calls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 170px;
+}
+
+.callsFig {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.of {
+  font-size: 14px;
+  color: var(--color-neutral-600);
+}
+
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.meterTrack {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-divider);
+  overflow: hidden;
+}
+
+.meterFill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-success);
+}
+
+.meterLabel {
+  min-width: 42px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Time: two labelled bars, on site and planned */
+.time {
+  display: grid;
+  /* Fixed bar width so bars compare across rows. */
+  grid-template-columns: auto 120px auto;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 300px;
+}
+
+.timeLabel {
+  font-size: 12px;
+  color: var(--color-neutral-600);
+  white-space: nowrap;
+}
+
+.timeBar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-divider);
+  overflow: hidden;
+}
+
+.timeBar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.barPlanned {
+  background: var(--navy-300);
+}
+
+.barVisit {
+  background: var(--navy-800);
+}
+
+.timeValue {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Outcome breakdown */
+.outcomes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.stack {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--color-divider);
+}
+
+.stack span {
+  flex-basis: 0;
+  min-width: 4px;
+}
+
+.outcomeCounts {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  justify-content: start;
+  gap: 3px 16px;
+  font-size: 12.5px;
+  color: var(--color-neutral-800);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.outcomeCounts > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.zero {
+  color: var(--color-neutral-400);
+}
+
+.zero .dot {
+  opacity: 0.35;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.oComplete { background: var(--color-success); }
+.oReschedule { background: var(--navy-400); }
+.oExpertise { background: #d98a1f; }
+.oFailed { background: var(--color-danger); }
+
+.empty {
+  padding: 48px 12px !important;
+  text-align: center !important;
+  color: var(--color-neutral-600);
+}
+
+/* Below the card: outcome colour key, then the planned-time note. */
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
   color: var(--color-neutral-700);
 }
 
-.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend strong {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.legendFull::before {
+  content: '— ';
 }
 
 .footnote {
   font-size: 12px;
-  color: var(--color-neutral-700);
+  color: var(--color-neutral-600);
   margin: 0;
 }
 
 .error {
-  color: var(--c-coral);
-  font-weight: 600;
+  color: var(--color-danger);
+  background: var(--color-danger-t);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  font-weight: 500;
+  margin: 0;
+}
+
+@media (max-width: 1023px) {
+  .header {
+    padding: 18px 20px 14px;
+  }
+
+  .body {
+    padding: 16px;
+  }
+}
+
+/* Phones and short windows: too little room for an inner scroller, so the
+   page scrolls normally and the table only scrolls sideways. */
+@media (max-width: 639px), (max-height: 560px) {
+  .page {
+    height: auto;
+  }
+
+  .body {
+    flex: none;
+  }
+
+  .body > .card {
+    min-height: 0;
+  }
+
+  .tableWrap {
+    overflow-y: hidden;
+  }
 }
 
 @media (max-width: 639px) {
-  .page {
-    padding: 12px 12px 28px;
+  .header {
+    padding: 12px 14px;
+  }
+
+  .title {
+    font-size: 21px;
+  }
+
+  .subtitle {
+    display: none;
+  }
+
+  .controls,
+  .dateRange {
+    width: 100%;
+  }
+
+  .dateRange input {
+    flex: 1;
+    min-width: 0;
+    width: auto;
+  }
+
+  .body {
+    padding: 12px 10px 24px;
+  }
+
+  .kpis {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .kpiValue {
+    font-size: 20px;
+  }
+
+  .search {
+    flex-basis: 100%;
+  }
+
+  .stickyCol {
+    min-width: 170px;
+  }
+
+  .legendFull {
+    display: none;
   }
 }

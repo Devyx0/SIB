@@ -7,6 +7,24 @@
   box-shadow: var(--sh-card);
 }
 
+/* Inside a scrolling parent the wrap must not clip, or the sticky header
+   would stick to the wrap instead of the parent's viewport. fit-content
+   lets the card grow with a wide column set, which the parent then
+   scrolls sideways. */
+.inScroller {
+  overflow: visible;
+  width: fit-content;
+  min-width: 100%;
+}
+
+.inScroller .table thead th:first-child {
+  border-top-left-radius: var(--r-lg);
+}
+
+.inScroller .table thead th:last-child {
+  border-top-right-radius: var(--r-lg);
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -16,7 +34,7 @@
 .table thead th {
   background: var(--color-bg-alt);
   border-bottom: 1px solid var(--color-border);
-  padding: 11px 14px;
+  padding: 10px 12px;
   text-align: left;
   font-weight: 600;
   font-size: 11.5px;
@@ -36,6 +54,29 @@
 
 .table thead th.sortable:hover {
   color: var(--navy-800);
+  background: var(--navy-50);
+}
+
+/* Subtle column dividers. */
+.table thead th + th,
+.row td + td {
+  border-left: 1px solid var(--color-divider);
+}
+
+.table thead th[aria-sort] {
+  color: var(--navy-800);
+}
+
+.sortHint {
+  margin-left: 4px;
+  color: var(--color-neutral-400);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease-out);
+}
+
+.table thead th.sortable:hover .sortHint,
+.table thead th.sortable:focus-visible .sortHint {
+  opacity: 1;
 }
 
 .sortArrow {
@@ -57,8 +98,13 @@
   background: var(--navy-50);
 }
 
+.row:focus-visible {
+  outline: 2px solid var(--navy-800);
+  outline-offset: -2px;
+}
+
 .row td {
-  padding: 11px 14px;
+  padding: 10px 12px;
   vertical-align: top;
   color: var(--color-text);
 }
@@ -84,12 +130,36 @@
 }
 
 .dayHeaderCell {
-  padding: 8px 14px;
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  padding: 9px 14px;
+  font-size: 13px;
   color: var(--navy-800);
+  border-top: 1px solid var(--color-border);
+}
+
+.dayHeader:first-child .dayHeaderCell {
+  border-top: none;
+}
+
+.dayName {
+  font-weight: 600;
+}
+
+.todayTag {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--navy-800);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+.dayCount {
+  margin-left: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-neutral-600);
 }
 
 .emptyState {
@@ -97,6 +167,38 @@
   text-align: center;
   color: var(--color-neutral-600);
   font-size: 14px;
+}
+
+.emptyTitle {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+
+.emptyHint {
+  display: block;
+  font-size: 13px;
+}
+
+.dateCell {
+  color: var(--color-neutral-700);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Long text wraps to two lines at most; full value in the tooltip. */
+.clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.buildingCell {
+  min-width: 130px;
+  max-width: 190px;
 }
 
 .nowrap {
@@ -118,7 +220,9 @@
 }
 
 .titleCell {
-  max-width: 340px;
+  min-width: 180px;
+  max-width: 320px;
+  font-weight: 500;
 }
 
 .tagAJD,

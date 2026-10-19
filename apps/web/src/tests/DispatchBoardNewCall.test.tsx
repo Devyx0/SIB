@@ -46,6 +46,13 @@ describe('DispatchBoard ?nouvel-appel=1', () => {
     expect(screen.getByTestId('location').textContent).toBe('/board');
   });
 
+  it('the top-right cross closes the modal', async () => {
+    wrap('/board?nouvel-appel=1');
+    await waitFor(() => screen.getByRole('dialog'));
+    await userEvent.click(screen.getByRole('button', { name: 'Fermer' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
   it('does not open the modal without the param', async () => {
     wrap('/board');
     await waitFor(() => expect(screen.getByTestId('location')).toBeTruthy());

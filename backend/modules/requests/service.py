@@ -306,6 +306,18 @@ def action_set_urgency(conn, request_id: int, body: SetUrgencyBody, user: Curren
     return _after_action(conn, request_id, user)
 
 
+def _write_optional_justification(conn, request_id: int, user: CurrentUser, body, *,
+                                  decision_type: str, before_value: dict, after_value: dict) -> None:
+    """Log the decision's justification when the caller sent one."""
+    if body.justification is None:
+        return
+    repo.write_justification(conn,
+        request_id=request_id, employee_id=user.employee_id, decision_type=decision_type,
+        before_value=before_value, after_value=after_value,
+        text=body.justification.text, input_method=body.justification.input_method,
+    )
+
+
 def action_set_follow_up_date(conn, request_id: int, body: SetFollowUpDateBody, user: CurrentUser) -> RequestDetail:
     row = _lock_or_404(conn, request_id)
     _check_not_closed(row)
@@ -313,6 +325,10 @@ def action_set_follow_up_date(conn, request_id: int, body: SetFollowUpDateBody, 
         raise StaleDataError()
 
     repo.update_field(conn, request_id, "next_follow_up_date", body.next_follow_up_date)
+    _write_optional_justification(conn, request_id, user, body, decision_type="follow_up_date",
+        before_value={"next_follow_up_date": _to_str(row["next_follow_up_date"])},
+        after_value={"next_follow_up_date": _to_str(body.next_follow_up_date)},
+    )
     repo.write_provenance(conn,
         target_table="maintenance_request", target_pk=str(request_id),
         target_column="next_follow_up_date", employee_id=user.employee_id,
@@ -329,6 +345,10 @@ def action_set_next_steps(conn, request_id: int, body: SetNextStepsBody, user: C
         raise StaleDataError()
 
     repo.update_field(conn, request_id, "next_steps", body.next_steps)
+    _write_optional_justification(conn, request_id, user, body, decision_type="next_steps",
+        before_value={"next_steps": row["next_steps"]},
+        after_value={"next_steps": body.next_steps},
+    )
     repo.write_provenance(conn,
         target_table="maintenance_request", target_pk=str(request_id),
         target_column="next_steps", employee_id=user.employee_id,
@@ -347,6 +367,10 @@ def action_set_cost(conn, request_id: int, body: SetCostBody, user: CurrentUser)
         raise StaleDataError()
 
     repo.update_field(conn, request_id, "estimated_cost", body.estimated_cost)
+    _write_optional_justification(conn, request_id, user, body, decision_type="cost",
+        before_value={"estimated_cost": _to_str(current_db)},
+        after_value={"estimated_cost": _to_str(body.estimated_cost)},
+    )
     repo.write_provenance(conn,
         target_table="maintenance_request", target_pk=str(request_id),
         target_column="estimated_cost", employee_id=user.employee_id,
@@ -586,6 +610,10 @@ def action_route(conn, request_id: int, body: RouteBody, user: CurrentUser) -> R
         source_calendar=body.source_calendar,
         old_source_calendar=row["source_calendar"],
         employee_id=user.employee_id,
+    )
+    _write_optional_justification(conn, request_id, user, body, decision_type="route",
+        before_value={"source_calendar": row["source_calendar"]},
+        after_value={"source_calendar": body.source_calendar},
     )
     return _after_action(conn, request_id, user)
 

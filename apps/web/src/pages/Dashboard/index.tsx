@@ -126,7 +126,7 @@ export default function Dashboard({ lang = 'fr' }: { lang?: Lang }) {
       <section className={styles.tile}>
         <h2>{t(lang, 'Par territoire', 'By territory')}</h2>
         <div className={styles.tableWrap}>
-          <table className={styles.table} data-testid="territory-table">
+          <table className={`${styles.table} ${styles.territoryTable}`} data-testid="territory-table">
             <thead>
               <tr>
                 <th>{t(lang, 'Territoire', 'Territory')}</th>

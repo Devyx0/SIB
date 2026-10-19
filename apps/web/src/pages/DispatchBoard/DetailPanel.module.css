@@ -1,108 +1,140 @@
+/* Centered dialog: header pinned on top, two-column body that scrolls. */
 .backdrop {
   position: fixed;
   inset: 0;
   background: var(--scrim);
   z-index: 100;
-  animation: fadeIn 0.2s var(--ease-out);
+  animation: fadeIn 0.18s var(--ease-out);
+}
+
+.frame {
+  position: fixed;
+  inset: 0;
+  z-index: 101;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  pointer-events: none;
 }
 
 .panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 460px;
-  max-width: min(92vw, 100%);
-  background: var(--color-surface);
-  border-top: 4px solid var(--navy-800);
-  border-left: 1px solid var(--color-border);
-  box-shadow: var(--sh-pop);
-  z-index: 101;
+  pointer-events: auto;
+  width: 100%;
+  max-width: 1080px;
+  max-height: min(90vh, 90dvh);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: slideIn 0.28s var(--ease-out);
+  background: var(--color-bg-alt);
+  border-top: 4px solid var(--navy-800);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-pop);
+  animation: popIn 0.22s var(--ease-out);
 }
+
+/* ── Header ─────────────────────────────────────────────────────── */
 
 .header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 14px 20px;
-  background: var(--color-bg-alt);
-  border-bottom: 1px solid var(--color-divider);
+  gap: 16px;
+  padding: 18px 24px 16px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
-.requestId {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--navy-800);
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  letter-spacing: 0.02em;
+.headMain {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 
-.closeBtn {
-  background: transparent;
-  border: none;
-  font-size: 20px;
-  cursor: pointer;
-  color: var(--color-neutral-700);
-  line-height: 1;
-  width: 36px;
-  height: 36px;
-  display: inline-flex;
+.headMeta {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  border-radius: var(--r-md);
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.closeBtn:hover {
-  background: var(--color-accent-100);
-  color: var(--color-accent);
+.requestId {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-neutral-600);
 }
 
-.body {
-  overflow-y: auto;
-  flex: 1;
-  padding: 20px;
+.statusBadge,
+.urgentBadge,
+.softBadge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
-.loading {
-  color: var(--color-neutral-500);
-  font-size: 13px;
+.statusBadge {
+  background: var(--navy-100);
+  color: var(--navy-800);
 }
 
-.error {
-  color: var(--c-coral);
-  font-size: 13px;
+.statusBadge[data-status='en_route'] {
+  background: var(--color-warning);
+  color: #fff;
+}
+
+.statusBadge[data-status='closed'] {
+  background: var(--color-bg);
+  color: var(--color-neutral-700);
+}
+
+.urgentBadge {
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.softBadge {
+  background: var(--color-bg);
+  color: var(--color-neutral-800);
 }
 
 .title {
-  font-size: 18px;
+  font-size: 21px;
   font-weight: 600;
-  margin: 0 0 20px;
-  color: var(--color-text);
-  line-height: 1.4;
-}
-
-.dl {
-  display: grid;
-  grid-template-columns: 128px 1fr;
-  gap: 10px 14px;
-  font-size: 13px;
-}
-
-.dl dt {
-  font-weight: 500;
-  color: var(--color-neutral-600);
-  align-self: start;
-}
-
-.dl dd {
+  line-height: 1.3;
   margin: 0;
   color: var(--color-text);
-  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.headFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  margin: 0;
+}
+
+.headFacts > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.headFacts dt {
+  font-size: 12px;
+  color: var(--color-neutral-600);
+}
+
+.headFacts dd {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--color-text);
 }
 
 .mono {
@@ -110,13 +142,59 @@
   font-size: 12.5px;
 }
 
-.followupSection {
-  margin-top: 24px;
-  border-top: 1px solid var(--color-divider);
-  padding-top: 16px;
+.closeBtn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--color-neutral-700);
 }
 
-.followupHeading {
+.closeBtn:hover {
+  background: var(--navy-50);
+  border-color: var(--navy-300);
+  color: var(--navy-800);
+}
+
+/* ── Body ───────────────────────────────────────────────────────── */
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px 24px 24px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(300px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.colMain,
+.colSide {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  padding: 16px 18px;
+  box-shadow: var(--sh-card);
+}
+
+.cardTitle {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -125,44 +203,203 @@
   margin: 0 0 12px;
 }
 
-/* ── Edit controls (coordinator / director only) ───────────────────── */
-
-.editSection {
-  margin-top: 24px;
-  border-top: 1px solid var(--color-divider);
-  padding-top: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.editSectionHeading {
-  font-size: 12px;
+.subTitle {
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--navy-800);
-  margin: 0 0 8px;
+  margin: 14px 0 4px;
+  color: var(--color-text);
 }
 
-.editField {
+.prose {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+}
+
+/* Label / value pairs inside the side cards. */
+.facts {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) 1fr;
+  gap: 0;
+  margin: 0;
+  font-size: 14px;
+}
+
+.facts dt,
+.facts dd {
+  padding: 7px 0;
+  border-top: 1px solid var(--color-divider);
+}
+
+.facts dt:first-of-type,
+.facts dt:first-of-type + dd {
+  border-top: none;
+  padding-top: 0;
+}
+
+.facts dt {
+  padding-right: 16px;
+  color: var(--color-neutral-600);
+}
+
+.facts dd {
+  margin: 0;
+  font-weight: 500;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+/* Tenant vs AI comparison */
+.compare + .compare {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-divider);
+}
+
+.compareLabel {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.compareCols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.compareCols > div {
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-divider);
+}
+
+.compareCols .compareAi {
+  background: var(--navy-50);
+  border-color: var(--navy-200);
+}
+
+.compareWho {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--color-neutral-600);
+  margin-bottom: 4px;
+}
+
+.compareAi .compareWho {
+  color: var(--navy-700);
+}
+
+/* History card hosts the shared visit / log / decision sections. */
+.historyCard > section:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.emptyHistory {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-neutral-600);
+}
+
+.loading {
+  color: var(--color-neutral-600);
+  font-size: 14px;
+}
+
+.error {
+  color: var(--color-danger);
+  font-size: 13px;
+}
+
+.staleMsg {
+  font-size: 13px;
+  color: var(--color-danger);
+  background: var(--color-danger-t);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--r-md);
+  padding: 8px 12px;
+  margin: 0 0 16px;
+}
+
+/* ── Dispatcher actions ─────────────────────────────────────────── */
+
+/* Full width under both columns, fields laid out as a grid of tiles. */
+.actionsCard {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.actionsCard .cardTitle {
+  margin-bottom: 0;
+}
+
+.actionsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+/* Free-text fields get two tiles' width when there is room. */
+@media (min-width: 901px) {
+  .actionsGrid > .editField:has(textarea) {
+    grid-column: span 2;
+  }
+}
+
+/* Label on top; input and its "Appliquer" button side by side. */
+.editField {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-auto-rows: min-content;
+  align-content: start;
+  gap: 6px 8px;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--r-md);
+}
+
+.editField > * {
+  grid-column: 1 / -1;
+}
+
+.editField > :is(.editInput, .editTextarea):has(+ .applyBtn) {
+  grid-column: 1;
+}
+
+.editField > .applyBtn {
+  grid-column: 2;
+  margin-top: 0;
+  align-self: stretch;
+}
+
+.editField > .editTextarea + .applyBtn {
+  align-self: end;
 }
 
 .editLabel {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--color-neutral-700);
 }
 
 .editInput {
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
+  min-height: 38px;
   border: 1px solid var(--color-border);
   border-radius: var(--r-md);
-  min-height: 38px;
   padding: 7px 11px;
   color: var(--color-text);
   background: var(--color-surface);
@@ -176,72 +413,76 @@
   box-shadow: var(--ring);
 }
 
+.editInput:disabled {
+  background: var(--color-bg-alt);
+  color: var(--color-neutral-600);
+}
+
 .editTextarea {
   composes: editInput;
   resize: vertical;
-  min-height: 60px;
+  min-height: 64px;
 }
 
-.urgencyPills {
+.urgencyPills,
+.btnRow {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
 }
 
-.pill:hover {
+.pill {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  min-height: 34px;
+  padding: 4px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-neutral-800);
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+
+.pill:hover:not(:disabled) {
   border-color: var(--navy-300);
   background: var(--navy-50);
   color: var(--navy-800);
 }
 
-.pill {
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  min-height: 32px;
-  padding: 4px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background: transparent;
-  color: var(--color-neutral-700);
-  cursor: pointer;
-  letter-spacing: 0.04em;
-}
-
 .pillActive,
-.pillActive:hover {
-  background: var(--color-accent);
+.pillActive:hover:not(:disabled) {
+  background: var(--navy-800);
   color: #fff;
-  border-color: var(--color-accent);
+  border-color: var(--navy-800);
 }
 
 .applyBtn {
   font: inherit;
   font-size: 13px;
   font-weight: 500;
-  min-height: 36px;
+  min-height: 38px;
   padding: 6px 16px;
   background: var(--navy-800);
   color: #fff;
   border: none;
   border-radius: var(--r-md);
   cursor: pointer;
-  align-self: flex-start;
-  margin-top: 4px;
+  white-space: nowrap;
 }
 
-.applyBtn:hover {
+.applyBtn:hover:not(:disabled) {
   background: var(--navy-900);
 }
 
-.staleMsg {
-  font-size: 12px;
-  color: var(--color-danger);
-  margin-top: 4px;
+.applyBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .closedNotice {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--color-neutral-700);
   background: var(--color-bg-alt);
   border: 1px solid var(--color-border);
@@ -250,19 +491,18 @@
   margin: 0;
 }
 
-/* ── Log entry form ────────────────────────────────────────────────── */
-
 .logForm {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: end;
 }
 
 .logSubmit {
   composes: applyBtn;
 }
 
-/* ── Weather escalation (SoW 3.4, draft) ───────────────────────────── */
+/* ── Weather (SoW 3.4, draft) ───────────────────────────────────── */
 
 .weatherHint {
   font-size: 12px;
@@ -272,14 +512,13 @@
 }
 
 .weatherResult {
-  margin-top: 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
 .weatherContext {
-  font-size: 13px;
+  font-size: 14px;
   margin: 0;
 }
 
@@ -299,7 +538,6 @@
   padding: 2px 8px;
 }
 
-/* Raise: accent/attention. */
 .weatherHigher {
   font-size: 13px;
   font-weight: 600;
@@ -307,7 +545,6 @@
   margin: 0;
 }
 
-/* Lower: deliberately neutral/grey — not an alarm. */
 .weatherLower {
   font-size: 13px;
   color: var(--color-neutral-700);
@@ -315,7 +552,7 @@
 }
 
 .weatherLicence {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--color-neutral-500);
   margin: 2px 0 0;
 }
@@ -327,7 +564,7 @@
 }
 
 .weatherDraft {
-  font-size: 11px;
+  font-size: 11.5px;
   font-style: italic;
   color: var(--color-neutral-500);
   margin: 2px 0 0;
@@ -338,31 +575,53 @@
   to { opacity: 1; }
 }
 
-@keyframes slideIn {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* Tablet: one column, still a centered dialog. */
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .frame {
+    padding: 20px 16px;
+  }
+}
+
+/* Phone: full-screen sheet. */
 @media (max-width: 639px) {
+  .frame {
+    padding: 0;
+    align-items: stretch;
+  }
+
   .panel {
-    width: 100%;
     max-width: 100%;
-  }
-
-  .dl {
-    grid-template-columns: 1fr;
-    gap: 4px;
-  }
-
-  .dl dt {
-    margin-top: 6px;
-  }
-
-  .body {
-    padding: 16px;
+    max-height: none;
+    height: 100%;
+    border-radius: 0;
   }
 
   .header {
-    padding: 14px 16px;
+    padding: 14px 16px 12px;
+  }
+
+  .title {
+    font-size: 18px;
+  }
+
+  .body {
+    padding: 14px 12px 24px;
+  }
+
+  .card {
+    padding: 14px;
+  }
+
+  .compareCols {
+    grid-template-columns: 1fr;
   }
 }

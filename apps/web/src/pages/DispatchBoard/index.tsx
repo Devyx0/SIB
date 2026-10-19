@@ -10,6 +10,7 @@ import RequestTable from './RequestTable';
 import DetailPanel from './DetailPanel';
 import NouvelAppelModal from './NouvelAppelModal';
 import Pagination from '../../components/Pagination';
+import { DEMO_ROW, isDemoEnabled } from '../../dev/demoRequest';
 import styles from './index.module.css';
 
 import type { MeResponse } from '../../api/schema.d.ts';
@@ -126,6 +127,22 @@ export default function DispatchBoard({ lang, me }: Props) {
     });
   }
 
+  // URL params that narrow the list (sort and paging are not filters).
+  const FILTER_KEYS = [
+    'start_date', 'end_date', 'status', 'source_calendar', 'q',
+    'sector_id', 'urgency', 'assigned_employee_id', 'redispatch',
+  ];
+  const hasActiveFilters = FILTER_KEYS.some((k) => searchParams.has(k));
+
+  function resetFilters() {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      FILTER_KEYS.forEach((k) => next.delete(k));
+      next.delete('offset');
+      return next;
+    });
+  }
+
   function setPage(newOffset: number) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -174,7 +191,10 @@ export default function DispatchBoard({ lang, me }: Props) {
           ? t(lang, 'La date de fin ne peut pas précéder la date de début', error.message)
           : (error instanceof ApiError ? error.message : t(lang, 'Erreur', 'Error'));
 
-  const total = data?.total ?? 0;
+  // Dev-only: ?demo=1 puts one fake call at the top of the main table.
+  const demo = isDemoEnabled(searchParams);
+  const mainRows = demo ? [DEMO_ROW, ...(data?.items ?? [])] : (data?.items ?? []);
+  const total = (data?.total ?? 0) + (demo ? 1 : 0);
 
   return (
     <div className={styles.page}>
@@ -224,44 +244,51 @@ export default function DispatchBoard({ lang, me }: Props) {
           ? t(lang, 'dates ignorées — 90 derniers jours', 'dates ignored — last 90 days')
           : undefined}
         onToggleCols={() => setShowAllCols((b) => !b)}
+        hasActiveFilters={hasActiveFilters}
+        onReset={resetFilters}
       />
 
-      {(data?.unscheduled_items?.length ?? 0) > 0 && (
-        <div className={styles.tableWrap} data-testid="unscheduled-group">
-          <h2 className={styles.groupHeading}>
-            {t(lang, `À planifier (${data!.unscheduled_items.length})`, `To schedule (${data!.unscheduled_items.length})`)}
-          </h2>
+      {/* Only this area scrolls; header, filters and paging stay put. */}
+      <div className={styles.scrollArea} data-testid="board-scroll">
+        {(data?.unscheduled_items?.length ?? 0) > 0 && (
+          <div className={styles.tableWrap} data-testid="unscheduled-group">
+            <h2 className={styles.groupHeading}>
+              {t(lang, `À planifier (${data!.unscheduled_items.length})`, `To schedule (${data!.unscheduled_items.length})`)}
+            </h2>
+            <RequestTable
+              lang={lang}
+              inScroller
+              rows={data!.unscheduled_items}
+              selectedId={selectedId}
+              sortBy={sortBy}
+              sortDir={sortDir}
+              onSort={() => {}}
+              onSelect={setSelectedId}
+              isLoading={false}
+              isError={false}
+              total={data!.unscheduled_items.length}
+              showAllCols={showAllCols}
+            />
+          </div>
+        )}
+
+        <div className={styles.tableWrap}>
           <RequestTable
             lang={lang}
-            rows={data!.unscheduled_items}
+            inScroller
+            rows={mainRows}
             selectedId={selectedId}
             sortBy={sortBy}
             sortDir={sortDir}
-            onSort={() => {}}
+            onSort={handleSort}
             onSelect={setSelectedId}
-            isLoading={false}
-            isError={false}
-            total={data!.unscheduled_items.length}
+            isLoading={isPending && !demo}
+            isError={isError && !demo}
+            total={total}
             showAllCols={showAllCols}
+            errorMsg={errorMsg}
           />
         </div>
-      )}
-
-      <div className={styles.tableWrap}>
-        <RequestTable
-          lang={lang}
-          rows={data?.items ?? []}
-          selectedId={selectedId}
-          sortBy={sortBy}
-          sortDir={sortDir}
-          onSort={handleSort}
-          onSelect={setSelectedId}
-          isLoading={isPending}
-          isError={isError}
-          total={total}
-          showAllCols={showAllCols}
-          errorMsg={errorMsg}
-        />
       </div>
 
       <Pagination

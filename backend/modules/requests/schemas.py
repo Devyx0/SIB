@@ -134,16 +134,19 @@ class SetUrgencyBody(BaseModel):
 class SetFollowUpDateBody(BaseModel):
     next_follow_up_date: Optional[date] = None
     current_next_follow_up_date: Optional[date] = None
+    justification: Optional[JustificationBody] = None
 
 
 class SetNextStepsBody(BaseModel):
     next_steps: Optional[str] = None
     current_next_steps: Optional[str] = None
+    justification: Optional[JustificationBody] = None
 
 
 class SetCostBody(BaseModel):
     estimated_cost: Optional[Decimal] = Field(None, ge=0)
     current_estimated_cost: Optional[Decimal] = None
+    justification: Optional[JustificationBody] = None
 
 
 class AddLogBody(BaseModel):
@@ -153,6 +156,7 @@ class AddLogBody(BaseModel):
 class RouteBody(BaseModel):
     source_calendar: Literal["main", "st_maj"]
     expected_source_calendar: Optional[Literal["main", "st_maj"]]  # required; null = caller expected unrouted state
+    justification: Optional[JustificationBody] = None
 
 
 class JustificationEntry(BaseModel):
