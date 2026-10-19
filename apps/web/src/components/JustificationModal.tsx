@@ -9,9 +9,10 @@ interface Props {
   onSave: (text: string, inputMethod: 'voice' | 'typed') => void;
   onCancel: () => void;
   lang?: Lang;
+  context?: string;
 }
 
-export default function JustificationModal({ open, onSave, onCancel, lang = 'fr' }: Props) {
+export default function JustificationModal({ open, onSave, onCancel, lang = 'fr', context }: Props) {
   const [text, setText] = useState('');
   const inputMethodRef = useRef<'voice' | 'typed'>('typed');
 
@@ -29,6 +30,9 @@ export default function JustificationModal({ open, onSave, onCancel, lang = 'fr'
     <div className={styles.overlay} role="dialog" aria-modal aria-label={t(lang, 'Justification', 'Justification')}>
       <div className={styles.modal}>
         <h2 className={styles.heading}>{t(lang, 'Justification requise', 'Justification required')}</h2>
+        {context && (
+          <p className={styles.context} data-testid="justification-context">{context}</p>
+        )}
         <p className={styles.hint}>{t(lang, 'Minimum 10 caractères.', 'Minimum 10 characters.')}</p>
 
         <textarea

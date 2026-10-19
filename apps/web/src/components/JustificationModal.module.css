@@ -96,3 +96,13 @@
 .saveBtn:not(:disabled):hover {
   filter: brightness(1.08);
 }
+
+.context {
+  font-size: 12px;
+  color: var(--color-neutral-700, #444);
+  background: var(--color-accent-100, #f0f4ff);
+  border: 1px solid var(--color-divider, #e0e0e0);
+  border-radius: var(--r-md, 6px);
+  padding: 8px 10px;
+  margin: 0 0 8px;
+}

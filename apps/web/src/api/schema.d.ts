@@ -118,6 +118,8 @@ export interface WeatherEvaluation {
   current_temp_c: number | null;
   wind_chill_c: number | null;
   current_urgency_tier: string | null;
+  current_tier_at_eval: string | null;
+  forecast_time_local: string | null;
   source: string | null;
   source_url: string | null;
 }

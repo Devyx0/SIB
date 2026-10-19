@@ -67,13 +67,20 @@ interface Props {
 type PendingAction =
   | { type: 'assign'; employeeId: number | null }
   | { type: 'reschedule'; date: string }
-  | { type: 'urgency'; tier: string | null; weatherEvaluationId?: number };
+  | { type: 'urgency'; tier: string | null; weatherEvaluationId?: number; contextText?: string };
 
 const URGENCY_OPTIONS: Array<{ value: string | null }> = [
   { value: 'AJD' },
   { value: 'ajd' },
   { value: null },
 ];
+
+const BAND_FR: Record<string, string> = {
+  critical: 'critique', emergency: 'urgence', priority: 'priorité', normal: 'normal',
+};
+const LOC_FR: Record<string, string> = { quebec: 'Québec', levis: 'Lévis' };
+const normTier = (v: string | null | undefined): string | null =>
+  (v == null || v === 'none') ? null : v;
 
 export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Props) {
   const [polling, setPolling] = useState(false);
@@ -403,47 +410,63 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                     </p>
                   )}
 
-                  {weatherEval?.status === 'ok' && (
-                    <div className={styles.weatherResult} data-testid="weather-result">
-                      <p className={styles.weatherContext}>
-                        {t(lang, 'Météo', 'Weather')} : {weatherEval.min_forecast_temp_24h_c}&nbsp;°C {t(lang, 'prévu (24 h)', 'forecast (24 h)')}
-                        {weatherEval.wind_chill_c != null
-                          ? ` · ${t(lang, 'refroidissement éolien', 'wind chill')} ${weatherEval.wind_chill_c} °C`
-                          : ''}
-                      </p>
-                      {weatherEval.is_critical && (
-                        <span className={styles.astreinteBadge} data-testid="weather-astreinte">
-                          {t(lang, 'Astreinte / garde', 'On-call')}
-                        </span>
-                      )}
-                      {weatherEval.direction === 'higher' && (
-                        <p className={styles.weatherHigher}>
-                          {t(lang, 'Hausse suggérée', 'Raise suggested')} → {weatherEval.suggested_tier ?? t(lang, 'Aucune', 'None')} {t(lang, '(brouillon)', '(draft)')}
+                  {weatherEval?.status === 'ok' && (() => {
+                    const stale = normTier(data.urgency_tier) !== normTier(weatherEval.current_tier_at_eval);
+                    const bandFr = weatherEval.band_name ? (BAND_FR[weatherEval.band_name] ?? weatherEval.band_name) : '';
+                    const locFr = weatherEval.location ? (LOC_FR[weatherEval.location] ?? weatherEval.location) : '';
+                    const tierLabel = weatherEval.suggested_tier ?? t(lang, 'aucune', 'none');
+                    const showSuggestion = !stale && (weatherEval.direction === 'higher' || weatherEval.direction === 'lower');
+                    return (
+                      <div className={styles.weatherResult} data-testid="weather-result">
+                        <p className={styles.weatherContext}>
+                          {t(lang, 'Météo', 'Weather')} — {locFr} : {weatherEval.min_forecast_temp_24h_c}&nbsp;°C {t(lang, 'prévu (24 h)', 'forecast (24 h)')}, {t(lang, 'palier', 'band')} {bandFr}
+                          {weatherEval.wind_chill_c != null
+                            ? ` · ${t(lang, 'refroidissement éolien', 'wind chill')} ${weatherEval.wind_chill_c} °C`
+                            : ''}
                         </p>
-                      )}
-                      {weatherEval.direction === 'lower' && (
-                        <p className={styles.weatherLower}>
-                          {t(lang, 'Baisse possible', 'Lower possible')} → {weatherEval.suggested_tier ?? t(lang, 'Aucune', 'None')} {t(lang, '(brouillon)', '(draft)')}
+                        {weatherEval.forecast_time_local && (
+                          <p className={styles.weatherTime}>
+                            {t(lang, 'prévision de', 'forecast from')} {weatherEval.forecast_time_local}
+                          </p>
+                        )}
+                        {weatherEval.is_critical && (
+                          <span className={styles.astreinteBadge} data-testid="weather-astreinte">
+                            {t(lang, 'Astreinte / garde', 'On-call')}
+                          </span>
+                        )}
+                        {showSuggestion && weatherEval.direction === 'higher' && (
+                          <p className={styles.weatherHigher}>
+                            {t(lang, 'Hausse suggérée', 'Raise suggested')} → {tierLabel}
+                          </p>
+                        )}
+                        {showSuggestion && weatherEval.direction === 'lower' && (
+                          <p className={styles.weatherLower}>
+                            {t(lang, 'Baisse possible', 'Lower possible')} → {tierLabel}
+                          </p>
+                        )}
+                        {showSuggestion && (
+                          <button
+                            className={styles.applyBtn}
+                            data-testid="weather-accept"
+                            onClick={() => setPendingAction({
+                              type: 'urgency',
+                              tier: weatherEval.suggested_tier,
+                              weatherEvaluationId: weatherEval.evaluation_id,
+                              contextText: `${t(lang, 'Suite à la suggestion météo', 'Following the weather suggestion')} : ${weatherEval.min_forecast_temp_24h_c} °C, ${t(lang, 'palier', 'band')} ${bandFr} → ${tierLabel}`,
+                            })}
+                          >
+                            {t(lang, 'Accepter la suggestion', 'Accept suggestion')}
+                          </button>
+                        )}
+                        <p className={styles.weatherDraft}>
+                          {t(lang, 'Seuils provisoires — à valider', 'Provisional thresholds — to validate')}
                         </p>
-                      )}
-                      {(weatherEval.direction === 'higher' || weatherEval.direction === 'lower') && (
-                        <button
-                          className={styles.applyBtn}
-                          data-testid="weather-accept"
-                          onClick={() => setPendingAction({
-                            type: 'urgency',
-                            tier: weatherEval.suggested_tier,
-                            weatherEvaluationId: weatherEval.evaluation_id,
-                          })}
-                        >
-                          {t(lang, 'Accepter la suggestion', 'Accept suggestion')}
-                        </button>
-                      )}
-                      <p className={styles.weatherLicence} data-testid="weather-licence">
-                        {t(lang, 'Source : Environnement et Changement climatique Canada', 'Source: Environment and Climate Change Canada')}
-                      </p>
-                    </div>
-                  )}
+                        <p className={styles.weatherLicence} data-testid="weather-licence">
+                          {t(lang, 'Source : Environnement et Changement climatique Canada', 'Source: Environment and Climate Change Canada')}
+                        </p>
+                      </div>
+                    );
+                  })()}
                 </section>
               )}
 
@@ -730,6 +753,7 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
         onSave={handleJustificationSave}
         onCancel={handleCancelJustification}
         lang={lang}
+        context={pendingAction?.type === 'urgency' ? pendingAction.contextText : undefined}
       />
     </>
   );

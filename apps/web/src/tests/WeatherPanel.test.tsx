@@ -33,7 +33,8 @@ const OK_HIGHER = {
   evaluation_id: 7, status: 'ok', location: 'quebec', band_name: 'critical',
   suggested_tier: 'AJD', direction: 'higher', is_critical: true,
   min_forecast_temp_24h_c: -22, current_temp_c: -18, wind_chill_c: -29,
-  current_urgency_tier: null, source: 'msc_citypage', source_url: 'https://dd.weather.gc.ca/x.xml',
+  current_urgency_tier: null, current_tier_at_eval: null, forecast_time_local: '14:05',
+  source: 'msc_citypage', source_url: 'https://dd.weather.gc.ca/x.xml',
 };
 
 beforeEach(() => { vi.restoreAllMocks(); });
@@ -73,25 +74,32 @@ describe('Weather panel', () => {
     expect(screen.getByTestId('weather-astreinte')).toBeTruthy();
     expect(screen.getByText(/Environnement et Changement climatique Canada/)).toBeTruthy();
     expect(screen.getByTestId('weather-accept')).toBeTruthy();
+    // Location + French band + forecast time + single draft-threshold note
+    expect(screen.getByText(/Météo — Québec/)).toBeTruthy();
+    expect(screen.getByText(/palier critique/)).toBeTruthy();
+    expect(screen.getByText(/prévision de 14:05/)).toBeTruthy();
+    expect(screen.getByText(/Seuils provisoires — à valider/)).toBeTruthy();
+    expect(screen.queryByText(/\(brouillon\)/)).toBeNull();
   });
 
   it('lower suggestion is neutral and still offers accept', async () => {
     mockData({ urgency_tier: 'AJD' });
     vi.spyOn(client, 'checkWeather').mockResolvedValue({
       ...OK_HIGHER, band_name: 'normal', suggested_tier: null, direction: 'lower',
-      is_critical: false, min_forecast_temp_24h_c: 15,
+      is_critical: false, min_forecast_temp_24h_c: 15, current_tier_at_eval: 'AJD',
     } as never);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} me={COORD} />);
     await userEvent.click(screen.getByTestId('weather-check-btn'));
     await waitFor(() => expect(screen.getByText(/Baisse possible/)).toBeTruthy());
     expect(screen.queryByTestId('weather-astreinte')).toBeNull();
+    expect(screen.getByText(/palier normal/)).toBeTruthy();
     expect(screen.getByTestId('weather-accept')).toBeTruthy();
   });
 
   it('equal suggestion shows context only, no accept', async () => {
     mockData({ urgency_tier: 'AJD' });
     vi.spyOn(client, 'checkWeather').mockResolvedValue({
-      ...OK_HIGHER, direction: 'equal',
+      ...OK_HIGHER, direction: 'equal', current_tier_at_eval: 'AJD',
     } as never);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} me={COORD} />);
     await userEvent.click(screen.getByTestId('weather-check-btn'));
@@ -127,11 +135,34 @@ describe('Weather panel', () => {
     await userEvent.click(screen.getByTestId('weather-check-btn'));
     await waitFor(() => expect(screen.getByTestId('weather-accept')).toBeTruthy());
     await userEvent.click(screen.getByTestId('weather-accept'));
+    // Read-only weather context above the textarea; textarea NOT prefilled.
+    expect(screen.getByTestId('justification-context').textContent).toMatch(/Suite à la suggestion météo/);
+    expect((screen.getByTestId('justification-text') as HTMLTextAreaElement).value).toBe('');
     await userEvent.type(screen.getByTestId('justification-text'), 'Météo -22 °C prévu sur 24 h.');
     await userEvent.click(screen.getByTestId('justification-save'));
     await waitFor(() => expect(setUrgency).toHaveBeenCalled());
     const [, body] = setUrgency.mock.calls[0];
     expect(body.urgency_tier).toBe('AJD');
     expect(body.weather_evaluation_id).toBe(7);
+  });
+
+  it('hides suggestion and accept when urgency changed since the check', async () => {
+    mockData({ urgency_tier: 'AJD' });  // differs from eval tier below
+    vi.spyOn(client, 'checkWeather').mockResolvedValue({ ...OK_HIGHER, current_tier_at_eval: 'ajd' } as never);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} me={COORD} />);
+    await userEvent.click(screen.getByTestId('weather-check-btn'));
+    await waitFor(() => expect(screen.getByTestId('weather-result')).toBeTruthy());
+    expect(screen.queryByTestId('weather-accept')).toBeNull();
+    expect(screen.queryByText(/Hausse suggérée/)).toBeNull();
+    expect(screen.getByText(/Météo — Québec/)).toBeTruthy();  // context still shown
+  });
+
+  it('hides suggestion after accept (urgency now equals suggested, not eval tier)', async () => {
+    mockData({ urgency_tier: 'AJD' });  // urgency became the suggested AJD after accepting
+    vi.spyOn(client, 'checkWeather').mockResolvedValue({ ...OK_HIGHER, current_tier_at_eval: null } as never);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} me={COORD} />);
+    await userEvent.click(screen.getByTestId('weather-check-btn'));
+    await waitFor(() => expect(screen.getByTestId('weather-result')).toBeTruthy());
+    expect(screen.queryByTestId('weather-accept')).toBeNull();
   });
 });
