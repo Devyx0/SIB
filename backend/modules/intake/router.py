@@ -1,7 +1,7 @@
 """FastAPI router for the intake module."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 
 from backend.core.db import get_db_conn
 from backend.core.permissions import require_role
@@ -37,7 +37,14 @@ def intake_match_address(
 )
 def intake_manual_create(
     body: ManualCreateBody,
+    background_tasks: BackgroundTasks,
     user: CurrentUser = _COORD_DIR,
     conn=Depends(get_db_conn),
 ) -> ManualCreateResponse:
-    return service.create_manual(conn, body, user)
+    result = service.create_manual(conn, body, user)
+    # Auto-triage: same path as POST /requests/{id}/triage
+    from backend.modules.requests import service as req_service
+    from backend.modules.requests.router import _run_triage_background
+    req_service.action_trigger_triage(conn, result.request_id)
+    background_tasks.add_task(_run_triage_background, result.request_id)
+    return result

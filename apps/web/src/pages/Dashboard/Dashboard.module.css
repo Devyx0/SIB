@@ -1,0 +1,155 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px 28px 40px;
+  min-height: 100%;
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.meta {
+  font-size: 13px;
+  color: var(--color-neutral-700);
+  margin: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.tile {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  padding: 14px 16px;
+  box-shadow: var(--sh-card);
+}
+
+.tile h2 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-neutral-700);
+}
+
+.statRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  padding: 3px 0;
+}
+
+.statCount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.linkTile {
+  composes: tile;
+  text-decoration: none;
+  color: inherit;
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+
+.linkTile:hover {
+  text-decoration: none;
+  transform: translateY(-1px);
+  box-shadow: var(--sh-card), 0 8px 24px -12px oklch(0.35 0.04 265 / 0.2);
+}
+
+.bigCount {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.cta {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-accent);
+  margin-top: 8px;
+}
+
+.na {
+  font-size: 13px;
+  color: var(--color-neutral-500);
+  font-style: italic;
+  margin: 0;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th,
+.table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-neutral-700);
+}
+
+.table tbody tr {
+  cursor: pointer;
+}
+
+.table tbody tr:hover {
+  background: var(--color-accent-100);
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--color-neutral-500);
+  margin: 6px 0 0;
+}
+
+.weatherLine {
+  font-size: 14px;
+  margin: 0;
+}
+
+.credit {
+  font-size: 11px;
+  color: var(--color-neutral-500);
+  margin: 4px 0 0;
+}
+
+.error {
+  color: var(--c-coral);
+  font-weight: 600;
+}
+
+@media (max-width: 639px) {
+  .page {
+    padding: 12px 12px 28px;
+  }
+}

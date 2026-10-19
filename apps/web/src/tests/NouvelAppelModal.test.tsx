@@ -4,50 +4,36 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import NouvelAppelModal from '../pages/DispatchBoard/NouvelAppelModal';
 
-const mockMatchAddress = vi.fn();
 const mockFetchSectors = vi.fn().mockResolvedValue([{ sector_id: 1, territoire: 'Secteur A', color_code: null }]);
 const mockFetchBuildings = vi.fn().mockResolvedValue([{ building_id: 10, adresse: '1580 Perigord', web_building_name: null, sector_id: 1 }]);
 const mockFetchUnits = vi.fn().mockResolvedValue([{ unit_id: 100, numero_appartement: '101', rue: '1580, rue Perigord' }]);
 const mockCreateManualRequest = vi.fn();
 
 vi.mock('../api/client', () => ({
-  matchAddress: (...args: unknown[]) => mockMatchAddress(...args),
   fetchSectors: (...args: unknown[]) => mockFetchSectors(...args),
   fetchBuildings: (...args: unknown[]) => mockFetchBuildings(...args),
   fetchUnits: (...args: unknown[]) => mockFetchUnits(...args),
   createManualRequest: (...args: unknown[]) => mockCreateManualRequest(...args),
 }));
 
-const EXACT_MATCH = {
-  match_status: 'exact', building_id: 5, unit_id: 100,
-  building_adresse: '1580 Perigord', candidate_building_ids: [], candidate_buildings: [],
-};
-
-const NO_MATCH = {
-  match_status: 'no_match', building_id: null, unit_id: null,
-  building_adresse: null, candidate_building_ids: [], candidate_buildings: [],
-};
-
-const AMBIGUOUS_MATCH = {
-  match_status: 'ambiguous', building_id: null, unit_id: null,
-  building_adresse: null, candidate_building_ids: [20, 21],
-  candidate_buildings: [
-    { building_id: 20, adresse: '1175 Chamonix (1 à 26)' },
-    { building_id: 21, adresse: '1175 Chamonix (27 à 52)' },
-  ],
-};
-
 function wrap(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
 
-async function fillAndSubmitForm(opts: { civic?: string; street?: string } = {}) {
+async function selectBuilding(buildingId = '10') {
+  await waitFor(() => expect(mockFetchSectors).toHaveBeenCalled());
+  const sectorSelect = screen.getByTestId('sector-select');
+  await userEvent.selectOptions(sectorSelect, '1');
+  const buildingSelect = await screen.findByTestId('building-select');
+  await userEvent.selectOptions(buildingSelect, buildingId);
+}
+
+async function fillRequired(opts: { phone?: string; problem?: string } = {}) {
   await userEvent.type(screen.getByTestId('caller-name'), 'Jean Tenant');
-  await userEvent.type(screen.getByTestId('civic'), opts.civic ?? '1580');
-  await userEvent.type(screen.getByTestId('street'), opts.street ?? 'Perigord');
-  await userEvent.type(screen.getByTestId('problem'), 'Fuite sous évier');
-  await userEvent.click(screen.getByTestId('submit-btn'));
+  await userEvent.type(screen.getByTestId('phone-1'), opts.phone ?? '418-555-0101');
+  await userEvent.type(screen.getByTestId('problem'), opts.problem ?? 'Fuite sous évier');
+  await selectBuilding();
 }
 
 describe('NouvelAppelModal', () => {
@@ -63,117 +49,85 @@ describe('NouvelAppelModal', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('renders the form when open', () => {
+  it('renders the form when open', async () => {
     wrap(<NouvelAppelModal open onClose={vi.fn()} />);
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(screen.getByTestId('caller-name')).toBeTruthy();
-    expect(screen.getByTestId('problem')).toBeTruthy();
-    expect(screen.getByTestId('submit-btn')).toBeTruthy();
+    expect(screen.getByTestId('phone-1')).toBeTruthy();
+    expect(screen.getByTestId('phone-2')).toBeTruthy();
+    expect(screen.getByTestId('access-group')).toBeTruthy();
+    expect(screen.getByTestId('animals-group')).toBeTruthy();
+    expect(screen.getByTestId('category')).toBeTruthy();
+    await waitFor(() => expect(mockFetchSectors).toHaveBeenCalled());
   });
 
-  it('shows validation error when name is empty on submit', async () => {
+  it('shows validation error when phone is empty', async () => {
     wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await userEvent.type(screen.getByTestId('problem'), 'Robinet qui coule');
+    await userEvent.type(screen.getByTestId('caller-name'), 'Jean');
+    await userEvent.type(screen.getByTestId('problem'), 'Fuite');
+    await selectBuilding();
     await userEvent.click(screen.getByTestId('submit-btn'));
     expect(screen.getByTestId('error-msg')).toBeTruthy();
-  });
-
-  it('shows validation error when civic/street is empty on submit', async () => {
-    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await userEvent.type(screen.getByTestId('caller-name'), 'Jean Tenant');
-    await userEvent.type(screen.getByTestId('problem'), 'Robinet qui coule');
-    // civic and street left empty
-    await userEvent.click(screen.getByTestId('submit-btn'));
-    expect(screen.getByTestId('error-msg')).toBeTruthy();
-    expect(mockMatchAddress).not.toHaveBeenCalled();
-  });
-
-  it('step 1 calls matchAddress (not createManualRequest)', async () => {
-    mockMatchAddress.mockResolvedValue(EXACT_MATCH);
-    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await fillAndSubmitForm();
-    await waitFor(() => expect(mockMatchAddress).toHaveBeenCalledOnce());
     expect(mockCreateManualRequest).not.toHaveBeenCalled();
   });
 
-  it('exact match shows confirm phase with building address', async () => {
-    mockMatchAddress.mockResolvedValue(EXACT_MATCH);
+  it('rejects mismatched email confirmation', async () => {
     wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await fillAndSubmitForm();
-    await waitFor(() => expect(screen.getByText(/Adresse trouvée exactement/)).toBeTruthy());
-    expect(screen.getByText(/1580 Perigord/)).toBeTruthy();
+    await fillRequired();
+    await userEvent.type(screen.getByTestId('caller-email'), 'a@example.com');
+    await userEvent.type(screen.getByTestId('caller-email-confirm'), 'b@example.com');
+    await userEvent.click(screen.getByTestId('submit-btn'));
+    expect(screen.getByTestId('error-msg').textContent).toMatch(/courriels|emails/i);
+    expect(mockCreateManualRequest).not.toHaveBeenCalled();
   });
 
-  it('exact match: confirm calls createManualRequest once with building_id_override', async () => {
-    mockMatchAddress.mockResolvedValue(EXACT_MATCH);
-    mockCreateManualRequest.mockResolvedValue({ request_id: 42, building_id: 5, unit_id: 100, match_status: 'exact' });
+  it('requires access instructions when yes_instructions selected', async () => {
     wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await fillAndSubmitForm();
-    await waitFor(() => screen.getByText(/Adresse trouvée exactement/));
-    // Confirmer et créer button
+    await fillRequired();
+    const radios = screen.getByTestId('access-group').querySelectorAll('input[type="radio"]');
+    await userEvent.click(radios[1]); // yes_instructions
+    await waitFor(() => expect(screen.getByTestId('access-details')).toBeTruthy());
+    await userEvent.click(screen.getByTestId('submit-btn'));
+    expect(screen.getByTestId('error-msg')).toBeTruthy();
+    expect(mockCreateManualRequest).not.toHaveBeenCalled();
+  });
+
+  it('creates with phone_2, secondary contact, category', async () => {
+    mockCreateManualRequest.mockResolvedValue({ request_id: 42, building_id: 10, unit_id: 100, match_status: 'exact' });
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    await fillRequired();
+    await userEvent.type(screen.getByTestId('phone-2'), '418-555-0202');
+    await userEvent.type(screen.getByTestId('caller-email'), 'a@example.com');
+    await userEvent.type(screen.getByTestId('caller-email-confirm'), 'a@example.com');
+    await userEvent.type(screen.getByTestId('secondary-name'), 'Marie');
+    await userEvent.type(screen.getByTestId('secondary-email'), 'marie@example.com');
+    await waitFor(() => expect(screen.getByTestId('unit-select')).toBeTruthy());
+    await userEvent.selectOptions(screen.getByTestId('unit-select'), '100');
     await userEvent.click(screen.getByTestId('submit-btn'));
     await waitFor(() => expect(mockCreateManualRequest).toHaveBeenCalledOnce());
     const body = mockCreateManualRequest.mock.calls[0][0];
-    expect(body.building_id_override).toBe(5);
-    expect(body.unit_id_override).toBe(100);
-    expect(body.caller_name).toBe('Jean Tenant');
-    expect(body.problem).toBe('Fuite sous évier');
+    expect(body.building_id).toBe(10);
+    expect(body.unit_id).toBe(100);
+    expect(body.phone_1).toBe('418-555-0101');
+    expect(body.phone_2).toBe('418-555-0202');
+    expect(body.caller_email).toBe('a@example.com');
+    expect(body.secondary_name).toBe('Marie');
+    expect(body.secondary_email).toBe('marie@example.com');
+    expect(body.category).toBe('Entretien général et maintenance');
+    expect(body.access).toBe('yes');
   });
 
-  it('submit button disabled while saving (double-submit protection)', async () => {
-    mockMatchAddress.mockResolvedValue(EXACT_MATCH);
+  it('submit button disabled while saving', async () => {
     let resolveSave!: () => void;
     mockCreateManualRequest.mockReturnValue(
-      new Promise(r => { resolveSave = () => r({ request_id: 42, building_id: 5, unit_id: 100, match_status: 'exact' }); })
+      new Promise(r => { resolveSave = () => r({ request_id: 42, building_id: 10, unit_id: null, match_status: 'building_only' }); })
     );
     wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await fillAndSubmitForm();
-    await waitFor(() => screen.getByText(/Adresse trouvée exactement/));
+    await fillRequired({ problem: 'Fuite' });
     await userEvent.click(screen.getByTestId('submit-btn'));
-    // Button must be disabled while the save promise is unresolved
     expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(true);
     resolveSave();
     await waitFor(() => expect(mockCreateManualRequest).toHaveBeenCalledOnce());
-  });
-
-  it('no_match shows manual picker, not success message or créée sans bâtiment', async () => {
-    mockMatchAddress.mockResolvedValue(NO_MATCH);
-    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await fillAndSubmitForm({ civic: '9999', street: 'RueInconnue' });
-    await waitFor(() => expect(screen.getByText(/Adresse introuvable/)).toBeTruthy());
-    expect(screen.queryByTestId('success-msg')).toBeNull();
-    // Confirm button disabled without a building selection
-    const confirmBtn = screen.getByTestId('submit-btn') as HTMLButtonElement;
-    expect(confirmBtn.disabled).toBe(true);
-  });
-
-  it('ambiguous shows "Plusieurs bâtiments correspondent" with candidate labels', async () => {
-    mockMatchAddress.mockResolvedValue(AMBIGUOUS_MATCH);
-    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await fillAndSubmitForm({ civic: '1175', street: 'Chamonix' });
-    await waitFor(() => expect(screen.getByText(/Plusieurs bâtiments correspondent/)).toBeTruthy());
-    expect(screen.getByText(/1175 Chamonix \(1 à 26\)/)).toBeTruthy();
-    expect(screen.getByText(/1175 Chamonix \(27 à 52\)/)).toBeTruthy();
-  });
-
-  it('ambiguous: confirm button disabled until building selected', async () => {
-    mockMatchAddress.mockResolvedValue(AMBIGUOUS_MATCH);
-    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await fillAndSubmitForm({ civic: '1175', street: 'Chamonix' });
-    await waitFor(() => screen.getByText(/Plusieurs bâtiments correspondent/));
-    const confirmBtn = screen.getByTestId('submit-btn') as HTMLButtonElement;
-    expect(confirmBtn.disabled).toBe(true);
-  });
-
-  it('← Modifier goes back to form and does not re-submit', async () => {
-    mockMatchAddress.mockResolvedValue(EXACT_MATCH);
-    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await fillAndSubmitForm();
-    await waitFor(() => screen.getByText(/Adresse trouvée exactement/));
-    await userEvent.click(screen.getByText(/Modifier/));
-    // Back to form: submit-btn text changes to "Vérifier l'adresse"
-    expect(screen.getByTestId('caller-name')).toBeTruthy();
-    expect(mockCreateManualRequest).not.toHaveBeenCalled();
   });
 
   it('calls onClose when Cancel is clicked', async () => {
@@ -183,74 +137,17 @@ describe('NouvelAppelModal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('shows units-error when fetchUnits rejects — never a silent empty list', async () => {
-    mockMatchAddress.mockResolvedValue(EXACT_MATCH);
+  it('shows units-error when fetchUnits rejects', async () => {
     mockFetchUnits.mockRejectedValue(new Error('Network error'));
     wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await fillAndSubmitForm();
-    await waitFor(() => screen.getByText(/Adresse trouvée exactement/));
+    await selectBuilding();
     await waitFor(() => expect(screen.getByTestId('units-error')).toBeTruthy());
   });
 
-  it('unit option label uses civic en-dash apt format', async () => {
-    mockMatchAddress.mockResolvedValue({ ...EXACT_MATCH, match_status: 'building_only', unit_id: null });
-    mockFetchUnits.mockResolvedValue([{ unit_id: 100, numero_appartement: '5', rue: '3034, rue Lechasseur' }]);
-    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await fillAndSubmitForm();
-    await waitFor(() => screen.getByText(/Bâtiment trouvé/));
-    await waitFor(() => {
-      const select = screen.getByTestId('unit-select');
-      const opt = Array.from(select.querySelectorAll('option')).find((o) => o.value === '100');
-      expect(opt?.textContent).toBe('3034 – 5');
-    });
-  });
-
-  it('units rendered in API order — frontend preserves backend numeric sort', async () => {
-    // Backend returns numerically sorted: 2 before 10. Frontend must not re-order.
-    mockMatchAddress.mockResolvedValue({ ...EXACT_MATCH, match_status: 'building_only', unit_id: null });
-    mockFetchUnits.mockResolvedValue([
-      { unit_id: 201, numero_appartement: '2', rue: '3034, rue Lechasseur' },
-      { unit_id: 200, numero_appartement: '10', rue: '3034, rue Lechasseur' },
-    ]);
-    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await fillAndSubmitForm();
-    await waitFor(() => screen.getByText(/Bâtiment trouvé/));
-    await waitFor(() => {
-      const select = screen.getByTestId('unit-select');
-      const opts = Array.from(select.querySelectorAll('option')).filter((o) => o.value !== '');
-      expect(opts[0].textContent).toBe('3034 – 2');
-      expect(opts[1].textContent).toBe('3034 – 10');
-    });
-  });
-
   it('shows Aucune unité message when building has no units', async () => {
-    mockMatchAddress.mockResolvedValue({ ...EXACT_MATCH, match_status: 'building_only', unit_id: null });
     mockFetchUnits.mockResolvedValue([]);
     wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await fillAndSubmitForm();
-    await waitFor(() => screen.getByText(/Bâtiment trouvé/));
-    await waitFor(() => expect(screen.getByTestId('no-units-msg')).toBeTruthy());
-    expect(screen.queryByTestId('unit-select')).toBeNull();
-  });
-
-  it('shows Aucune unité message via no_match path — real shape for bldg 152 ([])', async () => {
-    // Real API for 117 Ste-Anne: no_match → manual picker → building 152 → []
-    mockMatchAddress.mockResolvedValue(NO_MATCH);
-    mockFetchSectors.mockResolvedValue([{ sector_id: 3, territoire: 'Vieux-Québec', color_code: null }]);
-    mockFetchBuildings.mockResolvedValue([
-      { building_id: 152, adresse: '117 Ste-Anne', web_building_name: null, sector_id: 3 },
-    ]);
-    mockFetchUnits.mockResolvedValue([]); // real API shape: bare []
-    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
-    await fillAndSubmitForm({ civic: '117', street: 'Ste-Anne' });
-    await waitFor(() => screen.getByText(/Adresse introuvable/));
-    // Select sector
-    const sectorSelect = screen.getByRole('combobox', { name: /secteur/i });
-    await userEvent.selectOptions(sectorSelect, '3');
-    // Building list loads; select building 152
-    const buildingSelect = await screen.findByTestId('building-select');
-    await userEvent.selectOptions(buildingSelect, '152');
-    // After fetch completes with [], message must appear
+    await selectBuilding();
     await waitFor(() => expect(screen.getByTestId('no-units-msg')).toBeTruthy());
     expect(screen.queryByTestId('unit-select')).toBeNull();
   });

@@ -97,6 +97,22 @@ def insert_evaluation(
     return dict(row)
 
 
+def get_latest_evaluation(conn, request_id: int) -> Optional[dict]:
+    """Newest evaluation for a request — read-only display on the detail panel."""
+    row = conn.execute(
+        """
+        SELECT evaluation_id, status, location, band_name, suggested_tier,
+               is_critical, min_forecast_temp_24h_c, current_tier_at_eval, evaluated_at
+        FROM weather_evaluation
+        WHERE request_id = %s
+        ORDER BY evaluated_at DESC, evaluation_id DESC
+        LIMIT 1
+        """,
+        [request_id],
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def get_evaluation_provenance(conn, evaluation_id: int) -> Optional[dict]:
     """Fields to embed in a decision_justification_log.after_value on accept."""
     row = conn.execute(

@@ -12,7 +12,6 @@ from backend.core.config import settings
 from backend.core.db import get_db_conn
 from backend.core.security import CurrentUser, get_current_user
 from backend.modules.weather import service
-from backend.modules.weather.keywords import matches_heating_keywords
 from backend.modules.weather.location import resolve_location
 from backend.modules.weather.source import parse_citypage_xml
 
@@ -147,16 +146,6 @@ def test_parse_citypage_xml_min_and_windchill():
     assert r["wind_chill_c"] == -9
 
 
-def test_keyword_hint_matches():
-    assert matches_heating_keywords("Locataire signale: pas de chauffage depuis hier") is True
-    assert matches_heating_keywords("Panne de chauffage au 3e") is True
-
-
-def test_keyword_hint_no_match():
-    assert matches_heating_keywords("Robinet qui fuit sous l'évier") is False
-    assert matches_heating_keywords("") is False
-
-
 # ── Endpoint: feature flag ────────────────────────────────────────────────────
 
 def test_feature_off_returns_404_and_writes_nothing(ac, db_conn, mkreq, monkeypatch):
@@ -245,18 +234,37 @@ def test_cache_reuse_no_second_fetch(ac, mkreq, weather_on, monkeypatch):
     assert counter["n"] == 1
 
 
-# ── get_request: keyword hint surfaced on the detail ───────────────────────────
+# ── get_request: latest weather evaluation surfaced on the detail ──────────────
 
-def test_detail_exposes_heating_hint_true(ac, mkreq):
-    rid = mkreq(problem="Pas de chauffage dans l'appartement")
+def test_detail_includes_latest_weather_evaluation(ac, mkreq, weather_on, monkeypatch):
+    rid = mkreq()
+    monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-18.0)))
+    ac(_user(_COORD, "coordinator")).post(f"/api/v1/requests/{rid}/weather-check")
     r = ac(_user(_COORD, "coordinator")).get(f"/api/v1/requests/{rid}").json()
-    assert r["heating_keyword_hint"] is True
+    ev = r["weather_evaluation"]
+    assert ev["status"] == "ok"
+    assert ev["band_name"] == "critical"
+    assert ev["is_critical"] is True
+    assert ev["min_forecast_temp_24h_c"] == -18.0
 
 
-def test_detail_exposes_heating_hint_false(ac, mkreq):
-    rid = mkreq(problem="Robinet qui fuit")
+def test_detail_weather_evaluation_null_when_never_evaluated(ac, mkreq):
+    rid = mkreq()
     r = ac(_user(_COORD, "coordinator")).get(f"/api/v1/requests/{rid}").json()
-    assert r["heating_keyword_hint"] is False
+    assert r["weather_evaluation"] is None
+
+
+def test_detail_hides_weather_evaluation_from_technician(ac, db_conn, mkreq, weather_on, monkeypatch):
+    rid = mkreq()
+    db_conn.execute(
+        "UPDATE maintenance_request SET assigned_employee_id = %s WHERE request_id = %s",
+        [_TECH, rid],
+    )
+    monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-18.0)))
+    ac(_user(_COORD, "coordinator")).post(f"/api/v1/requests/{rid}/weather-check")
+    r = ac(_user(_TECH, "technician")).get(f"/api/v1/requests/{rid}")
+    assert r.status_code == 200
+    assert r.json()["weather_evaluation"] is None
 
 
 # ── Accept flow: justification after_value + 'app' provenance ──────────────────
@@ -359,6 +367,196 @@ def test_accept_stale_current_tier_409(ac, db_conn, mkreq, weather_on):
         "justification": _JUST, "weather_evaluation_id": None,
     })
     assert r.status_code == 409
+
+
+# ── Triage integration: automatic escalation (no button) ───────────────────────
+
+@pytest.fixture
+def esc_conn(db_conn, monkeypatch):
+    """Route the escalation hook's own pool connection to the rolled-back test conn."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _fake():
+        yield db_conn
+
+    monkeypatch.setattr(service, "_escalation_conn", _fake)
+
+
+def _parsed(urgency=None, heating=True, notes=None):
+    return {"urgency_tier": urgency, "heating_failure": heating, "other_notes": notes}
+
+
+def _eval_rows(db_conn, rid):
+    return db_conn.execute(
+        "SELECT * FROM weather_evaluation WHERE request_id = %s", [rid]
+    ).fetchall()
+
+
+def test_escalation_floors_urgency_and_cites_civil_code(db_conn, mkreq, weather_on, esc_conn, monkeypatch):
+    rid = mkreq()
+    monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-18.0)))
+    parsed = _parsed(urgency=None)
+    service.apply_triage_escalation(parsed, rid)
+    assert parsed["urgency_tier"] == "AJD"
+    assert "1864" in parsed["other_notes"] and "1865" in parsed["other_notes"]
+    rows = _eval_rows(db_conn, rid)
+    assert len(rows) == 1
+    ev = rows[0]
+    assert ev["status"] == "ok" and ev["is_critical"] is True
+    assert ev["evaluated_by"] is None  # system evaluation, no human
+
+
+def test_escalation_appends_note_after_existing_notes(mkreq, weather_on, esc_conn, monkeypatch):
+    rid = mkreq()
+    monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-18.0)))
+    parsed = _parsed(urgency=None, notes="Note existante.")
+    service.apply_triage_escalation(parsed, rid)
+    assert parsed["other_notes"].startswith("Note existante.")
+    assert "1864" in parsed["other_notes"]
+
+
+def test_escalation_never_lowers(db_conn, mkreq, weather_on, esc_conn, monkeypatch):
+    rid = mkreq()
+    monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(15.0)))  # normal band
+    parsed = _parsed(urgency="AJD")
+    service.apply_triage_escalation(parsed, rid)
+    assert parsed["urgency_tier"] == "AJD"
+    assert parsed["other_notes"] is None
+    assert len(_eval_rows(db_conn, rid)) == 1  # audit trail still recorded
+
+
+def test_escalation_equal_tier_no_note(db_conn, mkreq, weather_on, esc_conn, monkeypatch):
+    rid = mkreq()
+    monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-18.0)))  # suggests AJD
+    parsed = _parsed(urgency="AJD")
+    service.apply_triage_escalation(parsed, rid)
+    assert parsed["urgency_tier"] == "AJD"
+    assert parsed["other_notes"] is None
+
+
+@pytest.mark.parametrize("flag", [None, False])
+def test_escalation_requires_model_flag(db_conn, mkreq, weather_on, esc_conn, monkeypatch, flag):
+    rid = mkreq()
+    monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-18.0)))
+    parsed = _parsed(urgency=None, heating=flag)
+    service.apply_triage_escalation(parsed, rid)
+    assert parsed["urgency_tier"] is None
+    assert parsed["other_notes"] is None
+    assert len(_eval_rows(db_conn, rid)) == 0
+
+
+def test_escalation_feature_off_noop(db_conn, mkreq, esc_conn, monkeypatch):
+    monkeypatch.setattr(settings, "WEATHER_ESCALATION_ENABLED", False)
+    rid = mkreq()
+    parsed = _parsed(urgency=None)
+    service.apply_triage_escalation(parsed, rid)
+    assert parsed["urgency_tier"] is None
+    assert len(_eval_rows(db_conn, rid)) == 0
+
+
+def test_escalation_source_failure_never_blocks(db_conn, mkreq, weather_on, esc_conn, monkeypatch):
+    rid = mkreq()
+
+    def _boom(location):
+        raise RuntimeError("MSC down")
+
+    monkeypatch.setattr(service, "fetch_forecast", _boom)
+    parsed = _parsed(urgency=None)
+    service.apply_triage_escalation(parsed, rid)  # must not raise
+    assert parsed["urgency_tier"] is None
+    assert parsed["other_notes"] is None
+    rows = _eval_rows(db_conn, rid)
+    assert len(rows) == 1 and rows[0]["status"] == "source_failed"
+
+
+def test_escalation_unknown_location_noop(db_conn, mkreq, weather_on, esc_conn, monkeypatch):
+    rid = mkreq(building_id=None)
+    monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-18.0)))
+    parsed = _parsed(urgency=None)
+    service.apply_triage_escalation(parsed, rid)
+    assert parsed["urgency_tier"] is None
+    rows = _eval_rows(db_conn, rid)
+    assert len(rows) == 1 and rows[0]["status"] == "location_unknown"
+
+
+_MODEL_JSON = {
+    "verdict": "single", "duplicate_of_request_id": None, "addition_to_request_id": None,
+    "title": "Pas de chauffage", "problems": ["Aucun chauffage dans le logement"],
+    "entry_permission": None, "animals": None, "urgency_tier": None,
+    "heating_failure": True,
+    "complexity_tier": "C2", "congestion_level": "N2",
+    "time_estimate_bucket": "H1_TO_2H", "delegable_status": "NO",
+    "report_status": "CANNOT_WAIT", "routing_rule": "A0", "subcontractor_name": None,
+    "vendor_id": None, "synergy_request_ids": [], "other_notes": None,
+}
+
+
+def test_triage_run_applies_weather_escalation(db_conn, mkreq, weather_on, esc_conn, monkeypatch):
+    """End-to-end wiring: triage() with a canned model response floors urgency.
+
+    The request row is committed via psycopg2 (triage runs on a legacy conn and
+    commits internally); weather reads/writes ride the rolled-back db_conn via
+    esc_conn. Cleanup deletes the committed rows.
+    """
+    import json as _json
+    import psycopg2
+    from types import SimpleNamespace
+
+    import backend.triage.service as tsvc
+
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-test", raising=False)
+
+    class _FakeClient:
+        def __init__(self, **kw):
+            self.messages = SimpleNamespace(create=lambda **kwargs: SimpleNamespace(
+                content=[SimpleNamespace(text=_json.dumps(_MODEL_JSON))],
+                usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+            ))
+
+    monkeypatch.setattr(tsvc.anthropic, "Anthropic", _FakeClient)
+    monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-18.0)))
+
+    mkreq()  # pins building location on db_conn (visible to the hook via esc_conn)
+
+    c2 = psycopg2.connect(
+        host=settings.LOCAL_DB_HOST, port=settings.LOCAL_DB_PORT,
+        user=settings.LOCAL_DB_USER, password=settings.LOCAL_DB_PASSWORD,
+        dbname=settings.LOCAL_DB_NAME,
+    )
+    rid = None
+    try:
+        with c2.cursor() as cur:
+            cur.execute(
+                "INSERT INTO maintenance_request (status, building_id, sector_id, start_date)"
+                " VALUES ('intake_received', %s, %s, CURRENT_DATE) RETURNING request_id",
+                [_BLDG, _SECTOR],
+            )
+            rid = cur.fetchone()[0]
+        c2.commit()
+
+        result = tsvc.triage(c2, rid)
+        assert result["result"] == "triaged", result
+
+        with c2.cursor() as cur:
+            cur.execute(
+                "SELECT status, urgency_tier::text, other_notes FROM maintenance_request WHERE request_id = %s",
+                [rid],
+            )
+            status, urgency, notes = cur.fetchone()
+        assert status == "triaged"
+        assert urgency == "AJD"
+        assert "1864" in notes
+        assert len(_eval_rows(db_conn, rid)) == 1
+    finally:
+        db_conn.rollback()  # drop uncommitted weather rows before deleting the request
+        if rid is not None:
+            with c2.cursor() as cur:
+                cur.execute("DELETE FROM triage_log WHERE request_id = %s", [rid])
+                cur.execute("DELETE FROM data_provenance WHERE target_table = 'maintenance_request' AND target_pk = %s", [str(rid)])
+                cur.execute("DELETE FROM maintenance_request WHERE request_id = %s", [rid])
+            c2.commit()
+        c2.close()
 
 
 # ── RLS ────────────────────────────────────────────────────────────────────────

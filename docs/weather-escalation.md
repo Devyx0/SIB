@@ -1,10 +1,10 @@
 # Weather-triggered escalation (SoW 3.4) — research + plan
 
-**Status: DRAFT (pending Charles Bergeron). Built in STEP 2 — migrations applied to the
-local dev DB and `sib_test` only; feature off by default; never committed, never deployed.**
+**Status: DRAFT (pending Charles Bergeron). STEP 2 (button + tables) + STEP 3 (triage
+auto-escalation) built locally; feature off by default; never committed, never deployed.**
 Every rule below is a *provisional default* stored as data (not code), marked `draft`, with
-its source here. The client has **not** confirmed any threshold. See "STEP 2 — what was
-built" below for how the approved plan changed.
+its source here. The client has **not** confirmed any threshold. See "STEP 2" / "STEP 3"
+notes below for how the approved plan changed.
 
 **Source of the thresholds:** client doc `Francois Notes Maintenance` (Drive `1gFlEa4Bi…`),
 section *"Notes Claude Latchel" §2.3 — « La vérification météo »*, draft table labelled
@@ -16,23 +16,21 @@ pasted by François, **not** François's own words and **not** a client decision
 
 ## What it does
 
-When the feature is enabled, a coordinator/director clicks **« Vérifier la météo »** on a
-call. The app resolves the building's city (Québec or Lévis), fetches the 24-hour outdoor
-forecast, maps the lowest forecast temperature to a draft severity band, and compares that
-band's tier to the call's current tier:
+When the feature is enabled (`WEATHER_ESCALATION_ENABLED`), triage may automatically escalate
+urgency for **no-heat** calls:
 
-- band tier **higher** than current → **« Hausse suggérée »** (accent-coloured);
-- band tier **lower** → **« Baisse possible »** (neutral/grey — not an alarm);
-- **equal** → temperature context only, no suggestion.
+1. The triage model sets `heating_failure: true | false | null` (null = unsure — never guess).
+2. After the output gate accepts, if the flag is **true**, the app evaluates weather for the
+   building (Québec / Lévis), maps the lowest 24 h forecast temp to a draft band, and — if the
+   band's suggested tier ranks **higher** than the model's `urgency_tier` — floors urgency up
+   before write, and appends one French line to `other_notes` citing the forecast, band, and
+   **art. 1864–1865 C.c.Q.** Raise only; lowering stays an open question for Charles.
+3. Weather failures never block triage (B10); the evaluation row still records
+   `source_failed` / `location_unknown`.
 
-It never writes urgency. Accepting *either* direction goes through the existing
-`JustificationModal` → `POST /requests/{id}/urgency`, with the same `current_*` stale-data
-checks as every other action. The critical band also shows an **astreinte / garde** badge.
-The forecast panel always shows the licence credit **« Source : Environnement et Changement
-climatique Canada »**. No SMS, email, or call is sent. If the source is unreachable the call
-is unaffected and the panel says the check failed. If the location can't be resolved the panel
-shows **« Emplacement inconnu »**. A **« Appel de chauffage possible »** hint appears next to
-the button when the tenant's problem text matches the focused "no heat" keyword list.
+The detail panel shows a **read-only** summary of the latest evaluation (band, min temp,
+astreinte badge when critical, ECCC licence credit). The **« Vérifier la météo »** button and
+keyword hint are removed. `POST /requests/{id}/weather-check` remains for manual re-check.
 
 ---
 
@@ -156,40 +154,33 @@ that only decides whether to **show the "Vérifier la météo" affordance** (nev
 > through the justification modal. **Open question: may weather *lower* urgency at all?** Lowering
 > is shown as a non-alarming option, never auto-applied, pending Charles.
 >
-> ### STEP 2 — what was built (approved changes to the plan)
-> - **Bidirectional** suggestions (replaces "raise only").
-> - Detection is **button-only** — a « Vérifier la météo » button on every call
->   (coordinator/director; technician/contractor → 403). **No** triage-prompt change, **no**
->   `heating_failure` column, **no** backtest. A focused-keyword hint « Appel de chauffage
->   possible » shows next to the button when the tenant's problem text matches. Evaluation runs
->   **only on click** (the "run at triage completion" trigger was removed).
-> - Accepting is a **human app edit**: `data_provenance.source_type = 'app'` (existing value, no
->   new `'weather'` value); the weather evaluation id + min temp + band + source URL go in
->   `decision_justification_log.after_value`. Current `source_type` counts (dev DB):
->   `app`=11, `triage`=11 — the handover's note that triage writes `'triage'` is confirmed.
-> - The `'feature_off'` evaluation status was dropped: when the env var is off the button and panel
->   don't render and nothing is written (the endpoint returns 404).
-> - Licence credit shown in the panel: « Source : Environnement et Changement climatique Canada ».
-> - Env var to enable locally: **`WEATHER_ESCALATION_ENABLED`** (`=true`).
-> - Kept from the plan: MSC CityPage XML (hour-dir listing + previous-hour fallback), site codes
->   `s0000620`/`s0000416`, layered location rule, 3 RLS-enabled tables, 4 draft bands with the
->   inclusive-lower-bound convention, wind chill stored but not used, 1 fetch/location/hour cache,
->   source failure never blocks anything.
-> - Files: migration `supabase/migrations/20261019120000_weather_escalation.sql`; backend
->   `backend/modules/weather/` + edits to `requests` (urgency after_value, keyword hint),
->   `employees` (/me flag), `core/config`, `main.py`; frontend `DetailPanel.tsx`, `client.ts`,
->   `schema.d.ts`. Tests: `tests/backend/test_weather.py`, `apps/web/src/tests/WeatherPanel.test.tsx`.
+> ### STEP 2 — what was built (button era; superseded in STEP 3 for detection)
+> - Tables, MSC fetch, bands, cache, `/me` flag, manual `POST …/weather-check`, licence credit.
+> - Originally button-only with a keyword hint; see STEP 3 for the current design.
+>
+> ### STEP 3 — triage auto-escalation (approved 2026-10-19)
+> - **Model flag** `heating_failure: bool | null` in triage output + one system-prompt line
+>   (true only for dwelling heat failure; cite art. 1864–1865 C.c.Q.). **No backtest re-run.**
+> - **`evaluate(conn, request_id, evaluated_by=None)`** extracted; endpoint is a thin wrapper;
+>   system evaluations use `evaluated_by=NULL`.
+> - **`apply_triage_escalation`** after gate accept: raise-only floor + French `other_notes` line;
+>   try/except so weather never blocks triage.
+> - **UI read-only**: `RequestDetail.weather_evaluation` (latest row); no button, no keyword hint,
+>   no accept/suggest flows. Manual endpoint kept.
+> - Keyword matcher `backend/modules/weather/keywords.py` **deleted**.
+> - Tests: `tests/backend/test_weather.py` (escalation + detail), output-contract self-check,
+>   `WeatherPanel.test.tsx` rewritten as read-only.
 
 | # | Default | Source / our choice | Open question |
 |---|---|---|---|
 | B1 | Feature setting `weather_escalation_enabled`, **default off**. Our choice: an **env var** (`WEATHER_ESCALATION_ENABLED=false`) read by `backend/core/config.py` and surfaced to the UI via `/me` (no DB settings table exists). | Our choice (ticket says "feature setting, default off") | Does the client want a coordinator-editable toggle in the UI? That needs a 1-row DB setting instead of an env var. |
 | B2 | `weather_threshold_band` settings table, seeded with 4 draft bands (below). `status='draft'`, `source_text` carries the provenance. | Thresholds: S5 §2.3 draft "Ébauche à valider". Tier mapping: **our choice**. | Are the four cut-points (−15 / −5 / +10) and the band→tier mapping correct? |
 | B3 | Temperature used = **lowest forecast temp in the next 24 h** (min over the 24 hourly entries). Also store `current_temp` and `wind_chill` when present. | S5 §2.3 ("24 h"); mechanics our choice | Should wind chill (not raw temp) drive the band when it's colder? S5 mentions wind chill rhetorically but the table is in °C air temp. |
-| B4 | Detection is **button-only** (approved change): no triage change, no `heating_failure` column, no backtest. A focused-keyword hint « Appel de chauffage possible » nudges the coordinator; the evaluation itself runs on any call when the button is clicked. | Approved change | Is the keyword hint list right? Should scope be narrowed to flagged heating calls? |
+| B4 | Detection is the triage **`heating_failure`** flag (STEP 3). Keyword hint removed. No backtest re-run. Manual `POST …/weather-check` still available. | Approved STEP 3 | — |
 | B5 | Location = Québec or Lévis from the building (A2). Unknown ⇒ no check; panel shows **« Emplacement inconnu »**. | Our choice (per schema) | Which buildings are genuinely out-of-area vs just missing data? |
 | B6 | **Bidirectional** (approved change): higher → « Hausse suggérée »; lower → « Baisse possible » (neutral/grey); equal → context only. Never writes urgency directly — accepting either runs through `JustificationModal` → `POST /api/v1/requests/{id}/urgency` (`SetUrgencyBody` + `current_*` stale checks). | Approved change; reuses `action_set_urgency` | May weather *lower* urgency at all? (shown as a non-alarming option, pending Charles) |
 | B7 | Critical band shows an **« astreinte / garde »** badge. **No** SMS / email / call sent. | Ticket (3.7 after-hours is separate) | Wiring the badge to a real on-call roster is 3.7, out of scope here. |
-| B8 | Runs **only on the « Vérifier la météo » button** (coordinator/director; technician/contractor → **403** via `require_role("coordinator","director")`). The "run at triage completion" trigger was **removed** (approved change). | Approved change | — |
+| B8 | **Primary:** auto at triage when `heating_failure is true`. **Secondary:** manual `POST …/weather-check` (coord/dir → 403 otherwise). UI is read-only (no button). | Approved STEP 3 | — |
 | B9 | **Cache ≤ 1 fetch / location / hour.** Store each forecast snapshot (location, site_code, fetched_at, source, source_url, current/windchill/min-24h, raw). Link each call evaluation to its snapshot. Provenance on accept (approved change): `data_provenance.source_type = 'app'` (existing value — **no** new `'weather'` value); `decision_justification_log.after_value` jsonb carries `{evaluation_id, band, min_forecast_temp_24h_c, source_url}`. | Approved change | — |
 | B10 | **Failure-safe:** if the source is down, triage/call is unaffected; the evaluation row records `status='source_failed'`; panel says « La vérification météo a échoué ». Never blocks triage. | Ticket | — |
 | B11 | Migration `20261019120000_weather_escalation.sql` **applied to local dev + `sib_test` only** (via psql, no `db reset`; `supabase db diff --local` → no schema changes). RLS **enabled** on all three tables (matching `triage_notes_feedback`). Never pushed. | Ticket | — |

@@ -6,10 +6,6 @@ import { roleLabel, t } from '../i18n';
 import BrandMark from './BrandMark';
 import styles from './AppShell.module.css';
 
-// The mockup is state-routed (no deep links — it only reads a ?theme= param),
-// so both overview items open its root; it lands on its default screen.
-const MOCKUP_URL = 'https://sib-maintenance-mockups.vercel.app';
-
 interface Props {
   lang: Lang;
   onToggleLang: () => void;
@@ -74,22 +70,12 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
           </span>
 
           <div className={styles.navGroup}>{t(lang, "Vue d'ensemble", 'Overview')}</div>
-          <a
-            href={MOCKUP_URL} target="_blank" rel="noreferrer"
-            data-testid="nav-tableau-bord"
-            title={t(lang, 'Aperçu — maquette, données fictives', 'Preview — mockup, fictional data')}
-            className={`${styles.navItem} ${styles.navDisabled}`}
-          >
-            {t(lang, 'Tableau de bord', 'Dashboard')} <SoonChip lang={lang} />
-          </a>
-          <a
-            href={MOCKUP_URL} target="_blank" rel="noreferrer"
-            data-testid="nav-utilisation"
-            title={t(lang, 'Aperçu — maquette, données fictives', 'Preview — mockup, fictional data')}
-            className={`${styles.navItem} ${styles.navDisabled}`}
-          >
-            {t(lang, 'Utilisation', 'Utilization')} <SoonChip lang={lang} />
-          </a>
+          <NavLink to="/tableau-de-bord" data-testid="nav-tableau-bord" className={navItemClass}>
+            {t(lang, 'Tableau de bord', 'Dashboard')}
+          </NavLink>
+          <NavLink to="/utilisation" data-testid="nav-utilisation" className={navItemClass}>
+            {t(lang, 'Utilisation', 'Utilization')}
+          </NavLink>
         </nav>
 
         <div className={styles.bottom}>

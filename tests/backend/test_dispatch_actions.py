@@ -85,6 +85,25 @@ def test_assign_success(ac, test_request):
     assert r.json()["assigned_employee_id"] == _TECH
 
 
+def test_assign_without_justification_succeeds_no_log(ac, db_conn, test_request):
+    # Justification is optional — the modal was removed; omitting it assigns
+    # without writing a decision_justification_log row.
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{test_request}/assign", json={
+        "employee_id": _TECH,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
+        "current_urgency_tier": None,
+    })
+    assert r.status_code == 200
+    assert r.json()["assigned_employee_id"] == _TECH
+    n = db_conn.execute(
+        "SELECT count(*) AS n FROM decision_justification_log WHERE request_id = %s",
+        [test_request],
+    ).fetchone()["n"]
+    assert n == 0
+
+
 def test_assign_stores_justification(ac, db_conn, test_request):
     c = ac(_user(_COORD, "coordinator"))
     c.post(f"/api/v1/requests/{test_request}/assign", json={

@@ -47,21 +47,18 @@ describe('AppShell side menu', () => {
     expect(screen.getByTestId('nav-utilisation')).toHaveTextContent('Utilisation');
   });
 
-  it('greys the coming-soon items with a Bientôt chip', () => {
+  it('greys only Après les heures with a Bientôt chip', () => {
     wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
-    expect(screen.getAllByText('Bientôt')).toHaveLength(3); // Après les heures, Tableau de bord, Utilisation
+    expect(screen.getAllByText('Bientôt')).toHaveLength(1);
     expect(screen.getByTestId('nav-apres-heures').closest('a')).toBeNull(); // not a link
   });
 
-  it('overview items open the mockup in a new tab with the preview tooltip', () => {
+  it('overview items are in-app nav links', () => {
     wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
-    for (const id of ['nav-tableau-bord', 'nav-utilisation']) {
-      const a = screen.getByTestId(id) as HTMLAnchorElement;
-      expect(a.href).toContain('sib-maintenance-mockups.vercel.app');
-      expect(a.target).toBe('_blank');
-      expect(a.rel).toContain('noreferrer');
-      expect(a.title).toBe('Aperçu — maquette, données fictives');
-    }
+    expect((screen.getByTestId('nav-tableau-bord') as HTMLAnchorElement).getAttribute('href'))
+      .toBe('/tableau-de-bord');
+    expect((screen.getByTestId('nav-utilisation') as HTMLAnchorElement).getAttribute('href'))
+      .toBe('/utilisation');
   });
 
   it('routes: Répartition → /board, Dossiers → /dossiers, Nouvel appel → /board?nouvel-appel=1', () => {

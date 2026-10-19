@@ -18,7 +18,7 @@
   border-radius: var(--r-lg);
   box-shadow: var(--sh-pop);
   width: 100%;
-  max-width: 560px;
+  max-width: 640px;
   max-height: min(90vh, 90dvh);
   padding: 0;
   display: flex;
@@ -122,6 +122,48 @@
   align-items: center;
   gap: 8px;
   font-size: 13px;
+}
+
+.fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.radioGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.radioGroupInline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+}
+
+.radioRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+  line-height: 1.35;
+}
+
+.radioRow input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--color-neutral-600);
+  margin: 0;
 }
 
 .pickerToggle {

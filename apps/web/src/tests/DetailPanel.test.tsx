@@ -115,15 +115,15 @@ describe('DetailPanel', () => {
         <DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />
       </QueryClientProvider>
     );
-    // Wait for employee options to load then pick one
+    // Wait for employee options to load then pick one — dispatches immediately
+    // (no justification modal since its removal).
     await waitFor(() => expect(screen.getByRole('combobox').querySelectorAll('option').length).toBeGreaterThan(1));
     await userEvent.selectOptions(screen.getByRole('combobox'), '14');
-    // Justification modal opens — fill and save
-    await userEvent.type(screen.getByTestId('justification-text'), 'Nearest available technician');
-    await userEvent.click(screen.getByTestId('justification-save'));
     await waitFor(() =>
       expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['requests'] }))
     );
+    expect(vi.mocked(client.dispatchAssign)).toHaveBeenCalledWith(1,
+      expect.not.objectContaining({ justification: expect.anything() }));
   });
 
   it('renders both Estimation (time bucket) and Coût estimé (cost) rows', () => {
@@ -279,26 +279,23 @@ describe('DetailPanel', () => {
     expect(screen.queryByTestId('dual-display')).toBeNull();
   });
 
-  it('cancel justification resets reschedule date to server value', async () => {
+  it('Appliquer dispatches the reschedule directly, without justification', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    const reschedule = vi.spyOn(client, 'dispatchReschedule').mockResolvedValue(MOCK_REQUEST as any);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
 
-    // The reschedule date input shows MOCK_REQUEST.start_date
     const rescheduleInput = screen.getByDisplayValue(MOCK_REQUEST.start_date) as HTMLInputElement;
-    // Change to a new date to open pending action
     fireEvent.change(rescheduleInput, { target: { value: '2026-11-01' } });
-    expect(rescheduleInput.value).toBe('2026-11-01');
 
-    // Click the first Apply button (reschedule)
     const applyBtns = screen.getAllByRole('button', { name: /appliquer/i });
     await userEvent.click(applyBtns[0]);
 
-    // Justification modal is open — cancel
-    await userEvent.click(screen.getByText('Annuler'));
-
-    // Reschedule date should reset to server value
-    expect(rescheduleInput.value).toBe(MOCK_REQUEST.start_date);
+    await waitFor(() => expect(reschedule).toHaveBeenCalledWith(1, expect.objectContaining({
+      start_date: '2026-11-01',
+    })));
+    expect(reschedule).toHaveBeenCalledWith(1,
+      expect.not.objectContaining({ justification: expect.anything() }));
   });
 
   // Item 4: Problème décrit shows tenant's raw text, not AI rewrite
@@ -443,8 +440,6 @@ describe('en route assignment lock (fix 2026-10-19)', () => {
       expect(screen.getByTestId('assign-select').querySelectorAll('option').length).toBeGreaterThan(1)
     );
     await userEvent.selectOptions(screen.getByTestId('assign-select'), '14');
-    await userEvent.type(screen.getByTestId('justification-text'), 'Réassignation test valide');
-    await userEvent.click(screen.getByTestId('justification-save'));
     await waitFor(() => expect(screen.getByText(EN_ROUTE_MSG)).toBeTruthy());
   });
 });

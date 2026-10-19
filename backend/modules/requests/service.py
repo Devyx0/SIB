@@ -15,7 +15,6 @@ from backend.core.exceptions import (
 from backend.domain.status_machine import transition
 from backend.core.security import CurrentUser
 from backend.core.utils import today_local
-from backend.modules.weather.keywords import matches_heating_keywords
 from backend.modules.weather import repository as weather_repo
 
 from . import repository as repo
@@ -174,7 +173,8 @@ def get_request(conn, request_id: int, user: CurrentUser, *, bypass_scope: bool 
     else:
         row["justification_log"] = repo.list_justification_entries(conn, request_id)
 
-    _set_heating_hint(row)
+    # Weather summary is coordinator/director-only, like the manual check endpoint.
+    row["weather_evaluation"] = None if is_restricted else weather_repo.get_latest_evaluation(conn, request_id)
     return RequestDetail(**row)
 
 
@@ -186,7 +186,7 @@ def _after_action(conn, request_id: int, user: CurrentUser) -> RequestDetail:
     row["followup_log"] = repo.list_followup_entries(conn, request_id)
     row["justification_log"] = repo.list_justification_entries(conn, request_id)
     row["visits"] = repo.list_visits(conn, request_id)
-    _set_heating_hint(row)
+    row["weather_evaluation"] = weather_repo.get_latest_evaluation(conn, request_id)
     return RequestDetail(**row)
 
 
@@ -211,14 +211,6 @@ def _norm_urgency(v: Any) -> str | None:
     return None if (v is None or v == "none") else str(v)
 
 
-def _set_heating_hint(row: dict) -> None:
-    """Advisory 'no heat' keyword hint over the request's problem text."""
-    text = " ".join(filter(None, (
-        row.get("problem_summary"), row.get("problems"), row.get("raw_title"),
-    )))
-    row["heating_keyword_hint"] = matches_heating_keywords(text)
-
-
 # ── Dispatch actions ───────────────────────────────────────────────────────────
 
 def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) -> RequestDetail:
@@ -236,12 +228,13 @@ def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) ->
         raise ValidationFailed("Employee must be an active technician or contractor")
 
     repo.update_field(conn, request_id, "assigned_employee_id", body.employee_id)
-    repo.write_justification(conn,
-        request_id=request_id, employee_id=user.employee_id, decision_type="assign",
-        before_value={"assigned_employee_id": row["assigned_employee_id"]},
-        after_value={"assigned_employee_id": body.employee_id},
-        text=body.justification.text, input_method=body.justification.input_method,
-    )
+    if body.justification is not None:
+        repo.write_justification(conn,
+            request_id=request_id, employee_id=user.employee_id, decision_type="assign",
+            before_value={"assigned_employee_id": row["assigned_employee_id"]},
+            after_value={"assigned_employee_id": body.employee_id},
+            text=body.justification.text, input_method=body.justification.input_method,
+        )
     repo.write_provenance(conn,
         target_table="maintenance_request", target_pk=str(request_id),
         target_column="assigned_employee_id", employee_id=user.employee_id,
@@ -260,12 +253,13 @@ def action_reschedule(conn, request_id: int, body: RescheduleBody, user: Current
         raise StaleDataError()
 
     repo.update_field(conn, request_id, "start_date", body.start_date)
-    repo.write_justification(conn,
-        request_id=request_id, employee_id=user.employee_id, decision_type="reschedule",
-        before_value={"start_date": _to_str(row["start_date"])},
-        after_value={"start_date": str(body.start_date)},
-        text=body.justification.text, input_method=body.justification.input_method,
-    )
+    if body.justification is not None:
+        repo.write_justification(conn,
+            request_id=request_id, employee_id=user.employee_id, decision_type="reschedule",
+            before_value={"start_date": _to_str(row["start_date"])},
+            after_value={"start_date": str(body.start_date)},
+            text=body.justification.text, input_method=body.justification.input_method,
+        )
     repo.write_provenance(conn,
         target_table="maintenance_request", target_pk=str(request_id),
         target_column="start_date", employee_id=user.employee_id,
@@ -297,12 +291,13 @@ def action_set_urgency(conn, request_id: int, body: SetUrgencyBody, user: Curren
             }
 
     repo.update_field(conn, request_id, "urgency_tier", body.urgency_tier)
-    repo.write_justification(conn,
-        request_id=request_id, employee_id=user.employee_id, decision_type="urgency",
-        before_value={"urgency_tier": row["urgency_tier"]},
-        after_value=after_value,
-        text=body.justification.text, input_method=body.justification.input_method,
-    )
+    if body.justification is not None:
+        repo.write_justification(conn,
+            request_id=request_id, employee_id=user.employee_id, decision_type="urgency",
+            before_value={"urgency_tier": row["urgency_tier"]},
+            after_value=after_value,
+            text=body.justification.text, input_method=body.justification.input_method,
+        )
     repo.write_provenance(conn,
         target_table="maintenance_request", target_pk=str(request_id),
         target_column="urgency_tier", employee_id=user.employee_id,

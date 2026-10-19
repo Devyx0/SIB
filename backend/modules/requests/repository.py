@@ -679,12 +679,23 @@ def list_units(conn, building_id: int) -> list[dict]:
     return sorted(units, key=_sort_key)
 
 
-def list_sectors(conn) -> list[dict]:
-    return [
-        dict(r) for r in conn.execute(
+def list_sectors(conn, sector_ids: frozenset[int] | None = None) -> list[dict]:
+    """List sectors. If sector_ids is set, only those ids are returned."""
+    if sector_ids is not None:
+        if not sector_ids:
+            return []
+        rows = conn.execute(
+            """
+            SELECT sector_id, territoire, color_code FROM sector
+            WHERE sector_id = ANY(%(ids)s) ORDER BY territoire
+            """,
+            {"ids": list(sector_ids)},
+        ).fetchall()
+    else:
+        rows = conn.execute(
             "SELECT sector_id, territoire, color_code FROM sector ORDER BY territoire"
         ).fetchall()
-    ]
+    return [dict(r) for r in rows]
 
 
 def list_buildings(conn, sector_id: int | None) -> list[dict]:

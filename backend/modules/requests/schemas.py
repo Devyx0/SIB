@@ -7,6 +7,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from backend.modules.weather.schemas import WeatherEvaluation
+
 SOURCE_CALENDAR_LABELS: dict[str, str] = {
     "main":   "Calendrier principal",
     "st_maj": "Butler/Majordome",
@@ -68,7 +70,7 @@ class AssignBody(BaseModel):
     current_assigned_employee_id: Optional[int] = None
     current_start_date: Optional[date] = None
     current_urgency_tier: Optional[str] = None
-    justification: JustificationBody
+    justification: Optional[JustificationBody] = None
 
 
 class RescheduleBody(BaseModel):
@@ -76,7 +78,7 @@ class RescheduleBody(BaseModel):
     current_start_date: Optional[date] = None
     current_assigned_employee_id: Optional[int] = None
     current_urgency_tier: Optional[str] = None
-    justification: JustificationBody
+    justification: Optional[JustificationBody] = None
 
 
 class EnRouteBody(BaseModel):
@@ -123,7 +125,7 @@ class SetUrgencyBody(BaseModel):
     current_urgency_tier: Optional[str] = None
     current_assigned_employee_id: Optional[int] = None
     current_start_date: Optional[date] = None
-    justification: JustificationBody
+    justification: Optional[JustificationBody] = None
     # Set when accepting a weather suggestion — recorded in the justification's
     # after_value for provenance. Does not change how urgency is written.
     weather_evaluation_id: Optional[int] = None
@@ -238,9 +240,9 @@ class RequestDetail(ListRow):
     # Fiche technique link — in the always-visible set for tech/contractor
     ft_link: Optional[str] = None
     ft_name: Optional[str] = None
-    # True when the tenant's problem text matches the focused "no heat" keyword
-    # list — advisory hint next to the "Vérifier la météo" button.
-    heating_keyword_hint: bool = False
+    # Latest weather evaluation (triage-time or manual re-check) — read-only
+    # display on the detail panel; null for tech/contractor.
+    weather_evaluation: Optional[WeatherEvaluation] = None
 
 
 class ListResponse(BaseModel):

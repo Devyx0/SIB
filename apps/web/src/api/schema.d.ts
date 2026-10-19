@@ -120,7 +120,8 @@ export interface RequestDetail extends ListRow {
   triage_model_version: string | null;
   ft_link: string | null;
   ft_name: string | null;
-  heating_keyword_hint: boolean;
+  // Latest evaluation (triage-time or manual re-check); null for tech/contractor.
+  weather_evaluation: WeatherEvaluation | null;
 }
 
 export interface WeatherEvaluation {
@@ -139,6 +140,7 @@ export interface WeatherEvaluation {
   forecast_time_local: string | null;
   source: string | null;
   source_url: string | null;
+  evaluated_at?: string | null;
 }
 
 export interface TriageFeedbackEdit {
@@ -170,6 +172,8 @@ export interface MeResponse {
   nom_employe: string;
   roles: string[];
   weather_escalation_enabled?: boolean;
+  /** null/undefined = unrestricted (director); else sectors allowed for create. */
+  sector_ids?: number[] | null;
 }
 
 export interface ListResponse {
@@ -222,4 +226,66 @@ export interface UnitLookup {
   unit_id: number;
   numero_appartement: string;
   rue: string | null;
+}
+
+export interface DashboardResponse {
+  as_of_date: string;
+  today_by_status: Array<{ status: string; count: number }>;
+  load_today: Array<{
+    employee_id: number;
+    nom_employe: string;
+    assigned_count: number;
+    en_route_count: number;
+  }>;
+  by_territory: Array<{
+    sector_id: number;
+    territoire: string;
+    active: number;
+    AJD: number;
+    ajd: number;
+    untriaged: number;
+    board_link: string;
+  }>;
+  queue_counts: {
+    a_router: number;
+    a_redispatcher: number;
+    a_router_link: string;
+    a_redispatcher_link: string;
+  };
+  after_hours: null;
+  weather: {
+    location: string;
+    current_temp_c: number | null;
+    min_forecast_temp_24h_c: number | null;
+    source_credit: string;
+  } | null;
+  satisfaction: null;
+  untriaged_statuses: string[];
+}
+
+export interface UtilizationResponse {
+  start_date: string;
+  end_date: string;
+  capacity_enabled: boolean;
+  capacity_hours_per_day: number | null;
+  planned_footnote: string;
+  rows: Array<{
+    employee_id: number;
+    nom_employe: string;
+    territoire: string | null;
+    calls_assigned: number;
+    calls_closed: number;
+    planned_minutes: number;
+    planned_unknown_count: number;
+    visit_minutes: number;
+    visits_count: number;
+    outcome_mix: {
+      complete: number;
+      partial_reschedule: number;
+      partial_expertise: number;
+      failed: number;
+    };
+    capacity_minutes: number | null;
+    utilization_pct: number | null;
+  }>;
 }

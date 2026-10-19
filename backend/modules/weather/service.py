@@ -1,11 +1,15 @@
 """Weather-escalation business logic.
 
 fetch_forecast is imported here so tests can monkeypatch service.fetch_forecast
-(no network). Nothing writes urgency — accepting a suggestion runs through the
-existing POST /requests/{id}/urgency action.
+(no network). The manual endpoint never writes urgency — accepting a suggestion
+runs through the existing POST /requests/{id}/urgency action. At triage time,
+apply_triage_escalation floors the model's urgency up (raise-only) for "no heat"
+calls, per the lessor's heating obligation (art. 1864-1865 C.c.Q.).
 """
 from __future__ import annotations
 
+import logging
+from contextlib import contextmanager
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
@@ -18,7 +22,10 @@ from .location import SITE_CODES, resolve_location
 from .schemas import WeatherEvaluation
 from .source import fetch_forecast  # monkeypatched in tests
 
+logger = logging.getLogger("backend.weather")
+
 _RANK = {None: 0, "none": 0, "ajd": 1, "AJD": 2}
+_BAND_FR = {"critical": "critique", "emergency": "urgence", "priority": "priorité", "normal": "normal"}
 
 
 def list_bands(conn) -> list[dict]:
@@ -55,7 +62,11 @@ def _local_hhmm(dt: Any) -> Optional[str]:
 def check_weather(conn, request_id: int, user: CurrentUser) -> WeatherEvaluation:
     if not settings.WEATHER_ESCALATION_ENABLED:
         raise NotFoundError("Weather escalation is disabled")
+    return evaluate(conn, request_id, evaluated_by=user.employee_id)
 
+
+def evaluate(conn, request_id: int, evaluated_by: Optional[int] = None) -> WeatherEvaluation:
+    """Run one evaluation and record it. evaluated_by=None = system (triage)."""
     req = repo.get_request_location(conn, request_id)
     if req is None:
         raise NotFoundError(f"Request {request_id} not found")
@@ -64,7 +75,7 @@ def check_weather(conn, request_id: int, user: CurrentUser) -> WeatherEvaluation
     location = resolve_location(req["ville"], req["municipality"], req["sib_territory"])
     if location is None:
         ev = repo.insert_evaluation(conn, request_id=request_id, status="location_unknown",
-                                    evaluated_by=user.employee_id, current_tier_at_eval=current)
+                                    evaluated_by=evaluated_by, current_tier_at_eval=current)
         return WeatherEvaluation(evaluation_id=ev["evaluation_id"], status="location_unknown",
                                  current_urgency_tier=current, current_tier_at_eval=current)
 
@@ -74,7 +85,7 @@ def check_weather(conn, request_id: int, user: CurrentUser) -> WeatherEvaluation
             reading = fetch_forecast(location)
         except Exception:
             ev = repo.insert_evaluation(conn, request_id=request_id, status="source_failed",
-                                        location=location, evaluated_by=user.employee_id,
+                                        location=location, evaluated_by=evaluated_by,
                                         current_tier_at_eval=current)
             return WeatherEvaluation(evaluation_id=ev["evaluation_id"], status="source_failed",
                                      location=location, current_urgency_tier=current,
@@ -90,7 +101,7 @@ def check_weather(conn, request_id: int, user: CurrentUser) -> WeatherEvaluation
         conn, request_id=request_id, snapshot_id=snap["snapshot_id"], location=location,
         band_name=band["name"] if band else None, suggested_tier=suggested,
         min_forecast_temp_24h_c=snap["min_forecast_temp_24h_c"],
-        is_critical=is_critical, status="ok", evaluated_by=user.employee_id,
+        is_critical=is_critical, status="ok", evaluated_by=evaluated_by,
         current_tier_at_eval=current,
     )
     return WeatherEvaluation(
@@ -103,3 +114,41 @@ def check_weather(conn, request_id: int, user: CurrentUser) -> WeatherEvaluation
         forecast_time_local=_local_hhmm(snap.get("fetched_at")),
         source=snap["source"], source_url=snap["source_url"],
     )
+
+
+@contextmanager
+def _escalation_conn():
+    """Triage runs on a legacy psycopg2 connection the weather queries can't use —
+    the escalation gets its own pool connection. Monkeypatched in tests."""
+    from backend.core.db import get_pool
+
+    with get_pool().connection() as conn:
+        yield conn
+
+
+def apply_triage_escalation(parsed: dict, request_id: int) -> None:
+    """Triage-time urgency floor for "no heat" calls — heating is a lessor
+    obligation (art. 1864-1865 C.c.Q.). Raise-only: a warm forecast never
+    lowers the model's tier. Mutates parsed urgency_tier/other_notes in place.
+    Never raises — a weather failure must never block triage (rule B10).
+    """
+    if not settings.WEATHER_ESCALATION_ENABLED or parsed.get("heating_failure") is not True:
+        return
+    try:
+        with _escalation_conn() as conn:
+            ev = evaluate(conn, request_id)
+        if ev.status != "ok":
+            return
+        if _RANK.get(ev.suggested_tier, 0) <= _RANK.get(parsed.get("urgency_tier"), 0):
+            return
+        parsed["urgency_tier"] = ev.suggested_tier
+        note = (
+            f"Escalade météo automatique : minimum prévu sur 24 h de {ev.min_forecast_temp_24h_c:g} °C"
+            f" (palier {_BAND_FR.get(ev.band_name, ev.band_name)}) —"
+            f" le chauffage est une obligation du locateur (art. 1864-1865 C.c.Q.)."
+        )
+        parsed["other_notes"] = (
+            f"{parsed['other_notes']}\n{note}" if parsed.get("other_notes") else note
+        )
+    except Exception:
+        logger.exception("Weather escalation failed for request %s — triage unaffected", request_id)

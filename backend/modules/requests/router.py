@@ -127,7 +127,9 @@ def lookup_sectors(
     user: CurrentUser = _ALL_ROLES,
     conn=Depends(get_db_conn),
 ) -> list[SectorLookup]:
-    return [SectorLookup(**r) for r in repo.list_sectors(conn)]
+    from backend.modules.intake.service import allowed_sector_ids
+    allowed = allowed_sector_ids(conn, user)
+    return [SectorLookup(**r) for r in repo.list_sectors(conn, allowed)]
 
 
 @lookup_router.get(
@@ -140,6 +142,15 @@ def lookup_buildings(
     user: CurrentUser = _ALL_ROLES,
     conn=Depends(get_db_conn),
 ) -> list[BuildingLookup]:
+    from backend.modules.intake.service import allowed_sector_ids
+    from backend.core.exceptions import PermissionDenied
+    allowed = allowed_sector_ids(conn, user)
+    if allowed is not None:
+        if sector_id is None:
+            # Coordinators must pick a sector — avoid leaking all buildings.
+            return []
+        if int(sector_id) not in allowed:
+            raise PermissionDenied("Secteur hors de votre portée")
     return [BuildingLookup(**r) for r in repo.list_buildings(conn, sector_id)]
 
 

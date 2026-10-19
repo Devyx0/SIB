@@ -13,32 +13,33 @@ _ANIMALS_LABELS: dict[str, str | None] = {
     "na":  "N/A espace commun",
 }
 
+AccessChoice = Literal["yes", "yes_instructions", "tenant_required", "common_area"]
+
 
 class ManualCreateBody(BaseModel):
     caller_name: str = Field(..., min_length=1)
     caller_email: Optional[str] = None
-    phone_1: Optional[str] = None
+    phone_1: str = Field(..., min_length=1)
     phone_2: Optional[str] = None
-    civic: str = Field(..., min_length=1)
-    street: str = Field(..., min_length=1)
-    apartment: Optional[str] = None
-    city: str = Field(..., min_length=1)
-    access: Literal["yes", "tenant_required", "common_area", "unknown"]
+    building_id: int
+    unit_id: Optional[int] = None
+    access: AccessChoice
     access_details: Optional[str] = None
     animals: AnimalsChoice = "non"
     animal_details: Optional[str] = None
     problem: str = Field(..., min_length=1)
+    category: Optional[str] = None
+    secondary_name: Optional[str] = None
+    secondary_email: Optional[str] = None
     attention: Optional[str] = None
     attachment_url: Optional[str] = None
-    building_id_override: Optional[int] = None
-    unit_id_override: Optional[int] = None
 
 
 _ACCESS_LABELS: dict[str, str] = {
-    "yes":             "Accès autorisé (traitement prioritaire)",
-    "tenant_required": "Présence du locataire exigée (délai prolongé, traitement non prioritaire)",
-    "common_area":     "N/A Non applicable (exemple espace commun)",
-    "unknown":         "Accès non précisé",
+    "yes":              "Accès autorisé (traitement prioritaire)",
+    "yes_instructions": "Accès autorisé : avec instructions précises (traitement prioritaire)",
+    "tenant_required":  "Présence du locataire exigée (délai prolongé, traitement non prioritaire)",
+    "common_area":      "N/A Non applicable (exemple espace commun)",
 }
 
 

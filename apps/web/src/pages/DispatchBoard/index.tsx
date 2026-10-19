@@ -20,8 +20,19 @@ interface Props {
 }
 
 const PAGE_SIZE = 50;
-const DEFAULT_START = '2026-09-01';
-const DEFAULT_END = '2026-09-25';
+
+/** Local calendar dates in America/Toronto (matches backend today_local). */
+function torontoYmd(d: Date = new Date()): string {
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/Toronto' }); // YYYY-MM-DD
+}
+
+function defaultDateRange(): { start: string; end: string } {
+  const end = torontoYmd();
+  const start = `${end.slice(0, 7)}-01`; // first day of current month
+  return { start, end };
+}
+
+const { start: DEFAULT_START, end: DEFAULT_END } = defaultDateRange();
 
 export default function DispatchBoard({ lang, me }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();

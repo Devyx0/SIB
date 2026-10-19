@@ -23,6 +23,7 @@ OUTPUT_SCHEMA = {
     "entry_permission": "str | null",
     "animals": "str | null",
     "urgency_tier": "AJD | null",
+    "heating_failure": "bool | null",
     "complexity_tier": "C1|C2|C3|C4",
     "congestion_level": "N1|N2|N3|N4|N5",
     "time_estimate_bucket": "UNDER_30_MIN|MIN30_TO_1H|H1_TO_2H|H2_TO_4H|HALF_DAY_PLUS|TBD_ON_SITE",
@@ -213,6 +214,7 @@ if __name__ == "__main__":
         assert r == expected, f"Expected {expected}"
 
     chk("clean response",        _BASE, "accepted")
+    chk("heating failure flag",  {**_BASE, "heating_failure": True}, "accepted")
     chk("assignee field",        {**_BASE, "assignee": "Jean Tremblay"}, "rejected_no_assignee_field")
     chk("currency in problems",  {**_BASE, "problems": ["Loyer 500$ impayé"]}, "rejected_financial_content_problems")
     # Gate 3 — financial terms

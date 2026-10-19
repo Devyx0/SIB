@@ -29,6 +29,7 @@ Return ONLY valid JSON matching this schema. No prose, no explanation.
   "entry_permission": string | null,
   "animals": string | null,
   "urgency_tier": "AJD" | null,
+  "heating_failure": true | false | null,
   "complexity_tier": "C1" | "C2" | "C3" | "C4",
   "congestion_level": "N1" | "N2" | "N3" | "N4" | "N5",
   "time_estimate_bucket": "UNDER_30_MIN" | "MIN30_TO_1H" | "H1_TO_2H" | "H2_TO_4H" | "HALF_DAY_PLUS" | "TBD_ON_SITE",
@@ -46,7 +47,8 @@ Routing codes (A0, A1, A2, A3, A3b, A4, A5) belong ONLY in the routing_rule fiel
 Access codes and combinations are FORBIDDEN in all text fields. When a keybox, door code, NIP, or combination appears in the source request, reference the device by label only (e.g. "keybox H", "clavier principal") — never include the digit sequence.
 When routing a door or window problem to a specialist for unknown-cause diagnosis, always name the specialist in subcontractor_name (e.g. Duclos for doors/windows). Never leave subcontractor_name null for this routing.
 When noting in other_notes why urgency was adjusted or how the work category informs routing, describe the work in plain operational terms (e.g. "intercom en partie commune", "employé affecté à l'immeuble") — never use a routing code as a category label.
-When noting which geographic sector or territory an immeuble belongs to, or which dedicated worker covers it, use place names only (e.g. "Ste-Foy", "Rive-Sud", "secteur Châtelets", "Lévis-Ouest") — never use an internal designation as a geographic label in any text field.\
+When noting which geographic sector or territory an immeuble belongs to, or which dedicated worker covers it, use place names only (e.g. "Ste-Foy", "Rive-Sud", "secteur Châtelets", "Lévis-Ouest") — never use an internal designation as a geographic label in any text field.
+heating_failure: true ONLY when the tenant reports no or insufficient heating of the dwelling itself (heating is a lessor obligation, art. 1864-1865 C.c.Q.). false when the heating mention is clearly something else (pool heater, thermostat stuck hot, summer-mode notice, routine maintenance). null when unclear — never guess.\
 """
 
 

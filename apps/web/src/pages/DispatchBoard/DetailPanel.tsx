@@ -5,16 +5,15 @@ import {
   ApiError, fetchEmployees,
   dispatchAssign, dispatchReschedule, dispatchSetUrgency,
   dispatchSetFollowUpDate, dispatchSetNextSteps, dispatchSetCost, dispatchAddLog,
-  triggerTriage, routeRequest, checkWeather,
+  triggerTriage, routeRequest,
 } from '../../api/client';
 import TriageFeedbackWidget from '../../components/TriageFeedbackWidget';
 import {
   DecisionHistorySection, FollowupLogSection, VisitsSection,
 } from '../../components/RequestSections';
-import type { MeResponse, WeatherEvaluation } from '../../api/schema.d.ts';
+import type { MeResponse } from '../../api/schema.d.ts';
 import { roleLabel, statusLabel, timeEstimateLabel, sourceCalendarLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
-import JustificationModal from '../../components/JustificationModal';
 import styles from './DetailPanel.module.css';
 
 
@@ -32,11 +31,6 @@ interface Props {
   me?: MeResponse | null;
 }
 
-type PendingAction =
-  | { type: 'assign'; employeeId: number | null }
-  | { type: 'reschedule'; date: string }
-  | { type: 'urgency'; tier: string | null; weatherEvaluationId?: number; contextText?: string };
-
 const URGENCY_OPTIONS: Array<{ value: string | null }> = [
   { value: 'AJD' },
   { value: 'ajd' },
@@ -47,8 +41,6 @@ const BAND_FR: Record<string, string> = {
   critical: 'critique', emergency: 'urgence', priority: 'priorité', normal: 'normal',
 };
 const LOC_FR: Record<string, string> = { quebec: 'Québec', levis: 'Lévis' };
-const normTier = (v: string | null | undefined): string | null =>
-  (v == null || v === 'none') ? null : v;
 
 export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Props) {
   const [polling, setPolling] = useState(false);
@@ -74,7 +66,6 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
     (e) => e.role === 'technician' || e.role === 'contractor'
   );
 
-  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [staleMsg, setStaleMsg] = useState<string | null>(null);
   const [followUpDate, setFollowUpDate] = useState<string | null>(null);
   const [nextSteps, setNextSteps] = useState<string | null>(null);
@@ -82,9 +73,6 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
   const [logText, setLogText] = useState('');
   const [rescheduleDate, setRescheduleDate] = useState<string | null>(null);
   const [assignEmpId, setAssignEmpId] = useState<number | null>(null);
-  const [weatherEval, setWeatherEval] = useState<WeatherEvaluation | null>(null);
-  const [weatherLoading, setWeatherLoading] = useState(false);
-  const [weatherErr, setWeatherErr] = useState(false);
   const weatherEnabled = !!me?.weather_escalation_enabled;
 
   // Sync controlled select with server data when data first loads or request changes
@@ -113,14 +101,11 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        if (pendingAction) { setPendingAction(null); return; }
-        onClose();
-      }
+      if (e.key === 'Escape') onClose();
     }
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-  }, [onClose, pendingAction]);
+  }, [onClose]);
 
   useEffect(() => {
     document.body.classList.add('modal-open');
@@ -159,42 +144,35 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
     }
   }
 
-  function handleJustificationSave(text: string, inputMethod: 'voice' | 'typed') {
-    if (!pendingAction || !data) return;
-    const justification = { text, input_method: inputMethod };
-    setPendingAction(null);
-    if (pendingAction.type === 'assign') {
-      applyAndRefresh(() => dispatchAssign(requestId, {
-        employee_id: pendingAction.employeeId,
-        current_assigned_employee_id: data.assigned_employee_id,
-        current_start_date: data.start_date,
-        current_urgency_tier: data.urgency_tier,
-        justification,
-      }));
-    } else if (pendingAction.type === 'reschedule') {
-      applyAndRefresh(() => dispatchReschedule(requestId, {
-        start_date: pendingAction.date,
-        current_start_date: data.start_date,
-        current_assigned_employee_id: data.assigned_employee_id,
-        current_urgency_tier: data.urgency_tier,
-        justification,
-      }));
-    } else if (pendingAction.type === 'urgency') {
-      applyAndRefresh(() => dispatchSetUrgency(requestId, {
-        urgency_tier: pendingAction.tier as 'AJD' | 'ajd' | null,
-        current_urgency_tier: data.urgency_tier,
-        current_assigned_employee_id: data.assigned_employee_id,
-        current_start_date: data.start_date,
-        justification,
-        weather_evaluation_id: pendingAction.weatherEvaluationId ?? null,
-      }));
-    }
+  function doAssign(employeeId: number | null) {
+    if (!data) return;
+    applyAndRefresh(() => dispatchAssign(requestId, {
+      employee_id: employeeId,
+      current_assigned_employee_id: data.assigned_employee_id,
+      current_start_date: data.start_date,
+      current_urgency_tier: data.urgency_tier,
+    }));
   }
 
-  function handleCancelJustification() {
-    setPendingAction(null);
-    setRescheduleDate(null);
-    if (data) setAssignEmpId(data.assigned_employee_id ?? null);
+  function doReschedule(date: string) {
+    if (!data) return;
+    applyAndRefresh(() => dispatchReschedule(requestId, {
+      start_date: date,
+      current_start_date: data.start_date,
+      current_assigned_employee_id: data.assigned_employee_id,
+      current_urgency_tier: data.urgency_tier,
+    }));
+  }
+
+  function doSetUrgency(tier: string | null) {
+    if (!data) return;
+    applyAndRefresh(() => dispatchSetUrgency(requestId, {
+      urgency_tier: tier as 'AJD' | 'ajd' | null,
+      current_urgency_tier: data.urgency_tier,
+      current_assigned_employee_id: data.assigned_employee_id,
+      current_start_date: data.start_date,
+      weather_evaluation_id: null,
+    }));
   }
 
   // Detect ineligible (coordinator/director) current assignee for item 8
@@ -349,108 +327,39 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                 </section>
               )}
 
-              {/* Weather check — coordinator/director, on every call when the feature is on */}
-              {isEditor && weatherEnabled && (
-                <section className={styles.editSection} data-testid="weather-section">
-                  <h3 className={styles.editSectionHeading}>{t(lang, 'Météo', 'Weather')}</h3>
-                  <div className={styles.urgencyPills}>
-                    <button
-                      className={styles.applyBtn}
-                      data-testid="weather-check-btn"
-                      disabled={weatherLoading}
-                      onClick={async () => {
-                        setWeatherErr(false);
-                        setWeatherLoading(true);
-                        try {
-                          setWeatherEval(await checkWeather(requestId));
-                        } catch {
-                          setWeatherErr(true);
-                          setWeatherEval(null);
-                        } finally {
-                          setWeatherLoading(false);
-                        }
-                      }}
-                    >
-                      {t(lang, 'Vérifier la météo', 'Check weather')}
-                    </button>
-                    {data.heating_keyword_hint && (
-                      <span className={styles.weatherHint} data-testid="weather-hint">
-                        {t(lang, 'Appel de chauffage possible', 'Possible heating call')}
-                      </span>
-                    )}
-                  </div>
-
-                  {(weatherErr || weatherEval?.status === 'source_failed') && (
-                    <p className={styles.error} data-testid="weather-failed">
-                      {t(lang, 'La vérification météo a échoué.', 'Weather check failed.')}
-                    </p>
-                  )}
-
-                  {weatherEval?.status === 'location_unknown' && (
-                    <p className={styles.weatherNote} data-testid="weather-location-unknown">
-                      {t(lang, 'Emplacement inconnu', 'Unknown location')}
-                    </p>
-                  )}
-
-                  {weatherEval?.status === 'ok' && (() => {
-                    const stale = normTier(data.urgency_tier) !== normTier(weatherEval.current_tier_at_eval);
-                    const bandFr = weatherEval.band_name ? (BAND_FR[weatherEval.band_name] ?? weatherEval.band_name) : '';
-                    const locFr = weatherEval.location ? (LOC_FR[weatherEval.location] ?? weatherEval.location) : '';
-                    const tierLabel = weatherEval.suggested_tier ?? t(lang, 'aucune', 'none');
-                    const showSuggestion = !stale && (weatherEval.direction === 'higher' || weatherEval.direction === 'lower');
-                    return (
-                      <div className={styles.weatherResult} data-testid="weather-result">
-                        <p className={styles.weatherContext}>
-                          {t(lang, 'Météo', 'Weather')} — {locFr} : {weatherEval.min_forecast_temp_24h_c}&nbsp;°C {t(lang, 'prévu (24 h)', 'forecast (24 h)')}, {t(lang, 'palier', 'band')} {bandFr}
-                          {weatherEval.wind_chill_c != null
-                            ? ` · ${t(lang, 'refroidissement éolien', 'wind chill')} ${weatherEval.wind_chill_c} °C`
-                            : ''}
+              {/* Weather summary — read-only; the evaluation runs at triage (or via the
+                  weather-check endpoint) and the escalation is applied automatically. */}
+              {isEditor && weatherEnabled && data.weather_evaluation?.status === 'ok' && (() => {
+                const ev = data.weather_evaluation;
+                const bandFr = ev.band_name ? (BAND_FR[ev.band_name] ?? ev.band_name) : '';
+                const locFr = ev.location ? (LOC_FR[ev.location] ?? ev.location) : '';
+                return (
+                  <section className={styles.editSection} data-testid="weather-section">
+                    <h3 className={styles.editSectionHeading}>{t(lang, 'Météo', 'Weather')}</h3>
+                    <div className={styles.weatherResult} data-testid="weather-result">
+                      <p className={styles.weatherContext}>
+                        {t(lang, 'Météo', 'Weather')} — {locFr} : {ev.min_forecast_temp_24h_c}&nbsp;°C {t(lang, 'prévu (24 h)', 'forecast (24 h)')}, {t(lang, 'palier', 'band')} {bandFr}
+                      </p>
+                      {ev.evaluated_at && (
+                        <p className={styles.weatherTime}>
+                          {t(lang, 'évalué le', 'evaluated')} {new Date(ev.evaluated_at).toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')}
                         </p>
-                        {weatherEval.forecast_time_local && (
-                          <p className={styles.weatherTime}>
-                            {t(lang, 'prévision de', 'forecast from')} {weatherEval.forecast_time_local}
-                          </p>
-                        )}
-                        {weatherEval.is_critical && (
-                          <span className={styles.astreinteBadge} data-testid="weather-astreinte">
-                            {t(lang, 'Astreinte / garde', 'On-call')}
-                          </span>
-                        )}
-                        {showSuggestion && weatherEval.direction === 'higher' && (
-                          <p className={styles.weatherHigher}>
-                            {t(lang, 'Hausse suggérée', 'Raise suggested')} → {tierLabel}
-                          </p>
-                        )}
-                        {showSuggestion && weatherEval.direction === 'lower' && (
-                          <p className={styles.weatherLower}>
-                            {t(lang, 'Baisse possible', 'Lower possible')} → {tierLabel}
-                          </p>
-                        )}
-                        {showSuggestion && (
-                          <button
-                            className={styles.applyBtn}
-                            data-testid="weather-accept"
-                            onClick={() => setPendingAction({
-                              type: 'urgency',
-                              tier: weatherEval.suggested_tier,
-                              weatherEvaluationId: weatherEval.evaluation_id,
-                              contextText: `${t(lang, 'Suite à la suggestion météo', 'Following the weather suggestion')} : ${weatherEval.min_forecast_temp_24h_c} °C, ${t(lang, 'palier', 'band')} ${bandFr} → ${tierLabel}`,
-                            })}
-                          >
-                            {t(lang, 'Accepter la suggestion', 'Accept suggestion')}
-                          </button>
-                        )}
-                        <p className={styles.weatherDraft}>
-                          {t(lang, 'Seuils provisoires — à valider', 'Provisional thresholds — to validate')}
-                        </p>
-                        <p className={styles.weatherLicence} data-testid="weather-licence">
-                          {t(lang, 'Source : Environnement et Changement climatique Canada', 'Source: Environment and Climate Change Canada')}
-                        </p>
-                      </div>
-                    );
-                  })()}
-                </section>
-              )}
+                      )}
+                      {ev.is_critical && (
+                        <span className={styles.astreinteBadge} data-testid="weather-astreinte">
+                          {t(lang, 'Astreinte / garde', 'On-call')}
+                        </span>
+                      )}
+                      <p className={styles.weatherDraft}>
+                        {t(lang, 'Seuils provisoires — à valider', 'Provisional thresholds — to validate')}
+                      </p>
+                      <p className={styles.weatherLicence} data-testid="weather-licence">
+                        {t(lang, 'Source : Environnement et Changement climatique Canada', 'Source: Environment and Climate Change Canada')}
+                      </p>
+                    </div>
+                  </section>
+                );
+              })()}
 
               {/* Triage button — intake_received or triage_failed */}
               {isEditor && (data.status === 'intake_received' || data.status === 'triage_failed' || data.status === 'triage_pending') && (
@@ -546,7 +455,7 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                       onChange={(e) => {
                         const empId = e.target.value === '' ? null : Number(e.target.value);
                         setAssignEmpId(empId);
-                        setPendingAction({ type: 'assign', employeeId: empId });
+                        doAssign(empId);
                       }}
                     >
                       <option value="">— {t(lang, 'Non assigné', 'Unassigned')} —</option>
@@ -583,7 +492,7 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                       disabled={isClosed}
                       onClick={() => {
                         const d = rescheduleDate ?? data.start_date;
-                        if (d) setPendingAction({ type: 'reschedule', date: d });
+                        if (d) doReschedule(d);
                       }}
                     >
                       {t(lang, 'Appliquer', 'Apply')}
@@ -599,7 +508,7 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                           key={String(value)}
                           className={`${styles.pill} ${data.urgency_tier === value ? styles.pillActive : ''}`}
                           disabled={isClosed}
-                          onClick={() => setPendingAction({ type: 'urgency', tier: value })}
+                          onClick={() => doSetUrgency(value)}
                         >
                           {value ?? t(lang, 'Aucune', 'None')}
                         </button>
@@ -706,14 +615,6 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
           )}
         </div>
       </aside>
-
-      <JustificationModal
-        open={pendingAction !== null}
-        onSave={handleJustificationSave}
-        onCancel={handleCancelJustification}
-        lang={lang}
-        context={pendingAction?.type === 'urgency' ? pendingAction.contextText : undefined}
-      />
     </>
   );
 }

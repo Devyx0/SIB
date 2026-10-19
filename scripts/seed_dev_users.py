@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-Seed 4 Supabase Auth accounts for local development and link them to employee rows.
+Seed Supabase Auth accounts for local development and link them to employee rows.
+
+Covers every active employee that has at least one employee_role row.
+Email: the employee's courriel, or <slugified name>@sib.local when missing.
+All accounts share DEV_SEED_PASSWORD.
 
 Guards:
   - Refuses to run unless DB_TARGET=local (default) and SUPABASE_URL is localhost.
@@ -15,6 +19,7 @@ from __future__ import annotations
 
 import os
 import sys
+import unicodedata
 
 import httpx
 import psycopg
@@ -28,12 +33,30 @@ _LOCAL_SRK = (
     ".EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"
 )
 
-ACCOUNTS = [
-    {"email": "coordinator@sib.local", "employee_id": 4},
-    {"email": "director@sib.local",    "employee_id": 5},
-    {"email": "technician@sib.local",  "employee_id": 24},
-    {"email": "contractor@sib.local",  "employee_id": 20},
-]
+def _fallback_email(name: str) -> str:
+    """'Jessie Thomassin' -> 'jessie.thomassin@sib.local' (accents stripped)."""
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    slug = ".".join("".join(c if c.isalnum() else " " for c in ascii_name.lower()).split())
+    return f"{slug}@sib.local"
+
+
+def _accounts(conn: psycopg.Connection) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT e.employee_id, e.nom_employe, e.courriel
+        FROM employee e
+        WHERE e.is_active
+          AND EXISTS (SELECT 1 FROM employee_role er WHERE er.employee_id = e.employee_id)
+        ORDER BY e.employee_id
+        """
+    ).fetchall()
+    return [
+        {
+            "email": (r["courriel"] or "").strip().lower() or _fallback_email(r["nom_employe"]),
+            "employee_id": r["employee_id"],
+        }
+        for r in rows
+    ]
 
 
 def _guard() -> str:
@@ -86,8 +109,16 @@ def main() -> None:
     )
 
     try:
-        for acct in ACCOUNTS:
+        for acct in _accounts(conn):
             email, emp_id = acct["email"], acct["employee_id"]
+
+            row = conn.execute(
+                "SELECT auth_user_id FROM employee WHERE employee_id = %s",
+                [emp_id],
+            ).fetchone()
+            if row and row["auth_user_id"]:
+                print(f"  employee {emp_id} ({email}): already linked — skipped")
+                continue
 
             if email in existing:
                 uid = existing[email]
@@ -96,21 +127,12 @@ def main() -> None:
                 uid = _create_user(email, password)
                 print(f"  {email}: created ({uid})")
 
-            row = conn.execute(
-                "SELECT auth_user_id FROM employee WHERE employee_id = %s",
-                [emp_id],
-            ).fetchone()
-
-            current = str(row["auth_user_id"]) if row and row["auth_user_id"] else None
-            if current == uid:
-                print(f"    employee {emp_id}: already linked")
-            else:
-                conn.execute(
-                    "UPDATE employee SET auth_user_id = %s WHERE employee_id = %s",
-                    [uid, emp_id],
-                )
-                conn.commit()
-                print(f"    employee {emp_id}: linked → {uid}")
+            conn.execute(
+                "UPDATE employee SET auth_user_id = %s WHERE employee_id = %s",
+                [uid, emp_id],
+            )
+            conn.commit()
+            print(f"    employee {emp_id}: linked → {uid}")
     finally:
         conn.close()
 

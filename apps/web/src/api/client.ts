@@ -1,5 +1,5 @@
-import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow } from './schema.d.ts';
-export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow };
+import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse } from './schema.d.ts';
+export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse };
 import { supabase } from '../lib/supabase';
 
 // The portal never shows English generic errors — unknown failures map to this.
@@ -138,6 +138,15 @@ export function fetchMe(): Promise<MeResponse> {
   return apiFetch<MeResponse>('/api/v1/employees/me');
 }
 
+export function fetchDashboard(): Promise<DashboardResponse> {
+  return apiFetch<DashboardResponse>('/api/v1/analytics/dashboard');
+}
+
+export function fetchUtilization(start_date: string, end_date: string): Promise<UtilizationResponse> {
+  const q = new URLSearchParams({ start_date, end_date });
+  return apiFetch<UtilizationResponse>(`/api/v1/analytics/utilization?${q}`);
+}
+
 export interface Justification { text: string; input_method: 'voice' | 'typed'; }
 
 export function goEnRoute(id: number, body: { current_status: string; current_start_date: string | null; lat: number | null; lng: number | null }): Promise<RequestDetail> {
@@ -178,15 +187,15 @@ export function fetchPhotoUrl(requestId: number, attachmentId: number): Promise<
   return apiFetch(`/api/v1/requests/${requestId}/photos/${attachmentId}`);
 }
 
-export function dispatchAssign(id: number, body: { employee_id: number | null; current_assigned_employee_id: number | null; current_start_date: string | null; current_urgency_tier: string | null; justification: Justification }): Promise<RequestDetail> {
+export function dispatchAssign(id: number, body: { employee_id: number | null; current_assigned_employee_id: number | null; current_start_date: string | null; current_urgency_tier: string | null; justification?: Justification }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/assign`, body);
 }
 
-export function dispatchReschedule(id: number, body: { start_date: string; current_start_date: string | null; current_assigned_employee_id: number | null; current_urgency_tier: string | null; justification: Justification }): Promise<RequestDetail> {
+export function dispatchReschedule(id: number, body: { start_date: string; current_start_date: string | null; current_assigned_employee_id: number | null; current_urgency_tier: string | null; justification?: Justification }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/reschedule`, body);
 }
 
-export function dispatchSetUrgency(id: number, body: { urgency_tier: string | null; current_urgency_tier: string | null; current_assigned_employee_id: number | null; current_start_date: string | null; justification: Justification; weather_evaluation_id?: number | null }): Promise<RequestDetail> {
+export function dispatchSetUrgency(id: number, body: { urgency_tier: string | null; current_urgency_tier: string | null; current_assigned_employee_id: number | null; current_start_date: string | null; justification?: Justification; weather_evaluation_id?: number | null }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/urgency`, body);
 }
 
@@ -244,22 +253,24 @@ export function matchAddress(body: MatchAddressBody): Promise<MatchAddressRespon
 
 export type AnimalsChoice = 'oui' | 'non' | 'na';
 
+export type AccessChoice = 'yes' | 'yes_instructions' | 'tenant_required' | 'common_area';
+
 export interface IntakeBody {
   caller_name: string;
   caller_email?: string;
-  phone_1?: string;
-  civic: string;
-  street: string;
-  apartment?: string;
-  city: string;
-  access: 'yes' | 'tenant_required' | 'common_area' | 'unknown';
+  phone_1: string;
+  phone_2?: string;
+  building_id: number;
+  unit_id?: number;
+  access: AccessChoice;
   access_details?: string;
   animals?: AnimalsChoice;
   animal_details?: string;
   problem: string;
+  category?: string;
+  secondary_name?: string;
+  secondary_email?: string;
   attention?: string;
-  building_id_override?: number;
-  unit_id_override?: number;
 }
 
 export interface IntakeResponse {

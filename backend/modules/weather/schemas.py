@@ -1,6 +1,7 @@
-"""Response schema for the weather-check endpoint."""
+"""Response schema for the weather-check endpoint and the detail-panel summary."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel
@@ -24,3 +25,4 @@ class WeatherEvaluation(BaseModel):
     forecast_time_local: Optional[str] = None  # snapshot fetched_at as HH:MM, app tz
     source: Optional[str] = None
     source_url: Optional[str] = None
+    evaluated_at: Optional[datetime] = None  # set on the detail-panel summary

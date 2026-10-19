@@ -424,6 +424,12 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
             parsed = parse_response(raw_response)
             val_result, val_detail = validate(parsed, conn, request_id)
 
+            if val_result == "accepted":
+                # Weather floor for "no heat" calls (art. 1864-1865 C.c.Q.).
+                # Uses its own pool connection (this conn is psycopg2); never raises.
+                from backend.modules.weather.service import apply_triage_escalation
+                apply_triage_escalation(parsed, request_id)
+
             with conn.cursor() as cur:
                 _log_attempt(cur, request_id, model_version=model_version,
                              context_sent=ctx, raw_response=raw_response,
