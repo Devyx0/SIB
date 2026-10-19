@@ -1,5 +1,5 @@
-import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit } from './schema.d.ts';
-export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit };
+import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation } from './schema.d.ts';
+export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation };
 import { supabase } from '../lib/supabase';
 
 export class ApiError extends Error {
@@ -117,8 +117,12 @@ export function dispatchReschedule(id: number, body: { start_date: string; curre
   return apiPost(`/api/v1/requests/${id}/reschedule`, body);
 }
 
-export function dispatchSetUrgency(id: number, body: { urgency_tier: string | null; current_urgency_tier: string | null; current_assigned_employee_id: number | null; current_start_date: string | null; justification: Justification }): Promise<RequestDetail> {
+export function dispatchSetUrgency(id: number, body: { urgency_tier: string | null; current_urgency_tier: string | null; current_assigned_employee_id: number | null; current_start_date: string | null; justification: Justification; weather_evaluation_id?: number | null }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/urgency`, body);
+}
+
+export function checkWeather(id: number): Promise<WeatherEvaluation> {
+  return apiPost<WeatherEvaluation>(`/api/v1/requests/${id}/weather-check`, {});
 }
 
 export function dispatchSetFollowUpDate(id: number, body: { next_follow_up_date: string | null; current_next_follow_up_date: string | null }): Promise<RequestDetail> {

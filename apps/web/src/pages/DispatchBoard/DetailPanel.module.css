@@ -293,3 +293,61 @@
 .logSubmit {
   composes: applyBtn;
 }
+
+/* ── Weather escalation (SoW 3.4, draft) ───────────────────────────── */
+
+.weatherHint {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-accent, #2b5bd7);
+  align-self: center;
+}
+
+.weatherResult {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.weatherContext {
+  font-size: 13px;
+  margin: 0;
+}
+
+.weatherNote {
+  font-size: 13px;
+  color: var(--color-neutral-700);
+  margin: 8px 0 0;
+}
+
+.astreinteBadge {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--color-danger, #c0392b);
+  border-radius: var(--r-md);
+  padding: 2px 8px;
+}
+
+/* Raise: accent/attention. */
+.weatherHigher {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-accent, #2b5bd7);
+  margin: 0;
+}
+
+/* Lower: deliberately neutral/grey — not an alarm. */
+.weatherLower {
+  font-size: 13px;
+  color: var(--color-neutral-700, #555);
+  margin: 0;
+}
+
+.weatherLicence {
+  font-size: 10px;
+  color: var(--color-neutral-500, #888);
+  margin: 2px 0 0;
+}

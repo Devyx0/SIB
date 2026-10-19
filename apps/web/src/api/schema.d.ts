@@ -103,6 +103,23 @@ export interface RequestDetail extends ListRow {
   raw_caller_body: { entry_permission: string | null; animals: string | null; problems: string | null } | null;
   problems: string | null;
   triage_model_version: string | null;
+  heating_keyword_hint: boolean;
+}
+
+export interface WeatherEvaluation {
+  evaluation_id: number;
+  status: 'ok' | 'location_unknown' | 'source_failed';
+  location: string | null;
+  band_name: string | null;
+  suggested_tier: string | null;
+  direction: 'higher' | 'lower' | 'equal' | null;
+  is_critical: boolean;
+  min_forecast_temp_24h_c: number | null;
+  current_temp_c: number | null;
+  wind_chill_c: number | null;
+  current_urgency_tier: string | null;
+  source: string | null;
+  source_url: string | null;
 }
 
 export interface TriageFeedbackEdit {
@@ -133,6 +150,7 @@ export interface MeResponse {
   employee_id: number;
   nom_employe: string;
   roles: string[];
+  weather_escalation_enabled?: boolean;
 }
 
 export interface ListResponse {

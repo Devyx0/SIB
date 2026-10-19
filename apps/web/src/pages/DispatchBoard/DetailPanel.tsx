@@ -5,10 +5,10 @@ import {
   ApiError, fetchEmployees,
   dispatchAssign, dispatchReschedule, dispatchSetUrgency,
   dispatchSetFollowUpDate, dispatchSetNextSteps, dispatchSetCost, dispatchAddLog,
-  triggerTriage, routeRequest,
+  triggerTriage, routeRequest, checkWeather,
 } from '../../api/client';
 import TriageFeedbackWidget from '../../components/TriageFeedbackWidget';
-import type { MeResponse } from '../../api/schema.d.ts';
+import type { MeResponse, WeatherEvaluation } from '../../api/schema.d.ts';
 import { roleLabel, statusLabel, timeEstimateLabel, sourceCalendarLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import JustificationModal from '../../components/JustificationModal';
@@ -67,7 +67,7 @@ interface Props {
 type PendingAction =
   | { type: 'assign'; employeeId: number | null }
   | { type: 'reschedule'; date: string }
-  | { type: 'urgency'; tier: string | null };
+  | { type: 'urgency'; tier: string | null; weatherEvaluationId?: number };
 
 const URGENCY_OPTIONS: Array<{ value: string | null }> = [
   { value: 'AJD' },
@@ -103,6 +103,10 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
   const [logText, setLogText] = useState('');
   const [rescheduleDate, setRescheduleDate] = useState<string | null>(null);
   const [assignEmpId, setAssignEmpId] = useState<number | null>(null);
+  const [weatherEval, setWeatherEval] = useState<WeatherEvaluation | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherErr, setWeatherErr] = useState(false);
+  const weatherEnabled = !!me?.weather_escalation_enabled;
 
   // Sync controlled select with server data when data first loads or request changes
   useEffect(() => {
@@ -193,6 +197,7 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
         current_assigned_employee_id: data.assigned_employee_id,
         current_start_date: data.start_date,
         justification,
+        weather_evaluation_id: pendingAction.weatherEvaluationId ?? null,
       }));
     }
   }
@@ -352,6 +357,93 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                     </>
                   )}
                   <TriageFeedbackWidget requestId={requestId} lang={lang} />
+                </section>
+              )}
+
+              {/* Weather check — coordinator/director, on every call when the feature is on */}
+              {isEditor && weatherEnabled && (
+                <section className={styles.editSection} data-testid="weather-section">
+                  <h3 className={styles.editSectionHeading}>{t(lang, 'Météo', 'Weather')}</h3>
+                  <div className={styles.urgencyPills}>
+                    <button
+                      className={styles.applyBtn}
+                      data-testid="weather-check-btn"
+                      disabled={weatherLoading}
+                      onClick={async () => {
+                        setWeatherErr(false);
+                        setWeatherLoading(true);
+                        try {
+                          setWeatherEval(await checkWeather(requestId));
+                        } catch {
+                          setWeatherErr(true);
+                          setWeatherEval(null);
+                        } finally {
+                          setWeatherLoading(false);
+                        }
+                      }}
+                    >
+                      {t(lang, 'Vérifier la météo', 'Check weather')}
+                    </button>
+                    {data.heating_keyword_hint && (
+                      <span className={styles.weatherHint} data-testid="weather-hint">
+                        {t(lang, 'Appel de chauffage possible', 'Possible heating call')}
+                      </span>
+                    )}
+                  </div>
+
+                  {(weatherErr || weatherEval?.status === 'source_failed') && (
+                    <p className={styles.error} data-testid="weather-failed">
+                      {t(lang, 'La vérification météo a échoué.', 'Weather check failed.')}
+                    </p>
+                  )}
+
+                  {weatherEval?.status === 'location_unknown' && (
+                    <p className={styles.weatherNote} data-testid="weather-location-unknown">
+                      {t(lang, 'Emplacement inconnu', 'Unknown location')}
+                    </p>
+                  )}
+
+                  {weatherEval?.status === 'ok' && (
+                    <div className={styles.weatherResult} data-testid="weather-result">
+                      <p className={styles.weatherContext}>
+                        {t(lang, 'Météo', 'Weather')} : {weatherEval.min_forecast_temp_24h_c}&nbsp;°C {t(lang, 'prévu (24 h)', 'forecast (24 h)')}
+                        {weatherEval.wind_chill_c != null
+                          ? ` · ${t(lang, 'refroidissement éolien', 'wind chill')} ${weatherEval.wind_chill_c} °C`
+                          : ''}
+                      </p>
+                      {weatherEval.is_critical && (
+                        <span className={styles.astreinteBadge} data-testid="weather-astreinte">
+                          {t(lang, 'Astreinte / garde', 'On-call')}
+                        </span>
+                      )}
+                      {weatherEval.direction === 'higher' && (
+                        <p className={styles.weatherHigher}>
+                          {t(lang, 'Hausse suggérée', 'Raise suggested')} → {weatherEval.suggested_tier ?? t(lang, 'Aucune', 'None')} {t(lang, '(brouillon)', '(draft)')}
+                        </p>
+                      )}
+                      {weatherEval.direction === 'lower' && (
+                        <p className={styles.weatherLower}>
+                          {t(lang, 'Baisse possible', 'Lower possible')} → {weatherEval.suggested_tier ?? t(lang, 'Aucune', 'None')} {t(lang, '(brouillon)', '(draft)')}
+                        </p>
+                      )}
+                      {(weatherEval.direction === 'higher' || weatherEval.direction === 'lower') && (
+                        <button
+                          className={styles.applyBtn}
+                          data-testid="weather-accept"
+                          onClick={() => setPendingAction({
+                            type: 'urgency',
+                            tier: weatherEval.suggested_tier,
+                            weatherEvaluationId: weatherEval.evaluation_id,
+                          })}
+                        >
+                          {t(lang, 'Accepter la suggestion', 'Accept suggestion')}
+                        </button>
+                      )}
+                      <p className={styles.weatherLicence} data-testid="weather-licence">
+                        {t(lang, 'Source : Environnement et Changement climatique Canada', 'Source: Environment and Climate Change Canada')}
+                      </p>
+                    </div>
+                  )}
                 </section>
               )}
 
