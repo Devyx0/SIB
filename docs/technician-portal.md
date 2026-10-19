@@ -1,9 +1,9 @@
 # Technician portal — 3.5 En route + 3.6 Closeout (SoW 3.5, 3.6)
 
 Recorded 2026-10-19. Plan approved by client-side (Maaz) with changes; this doc is
-the plan of record. Build proceeds in three stops; **stops 1 and 2 built
-2026-10-19** (stop-1 review fixes applied same day), stop 3 not started. Local
-only — nothing committed, no SMS/email sent, no Google writes.
+the plan of record. **All three stops built 2026-10-19** (review fixes applied
+between stops). Local only — nothing committed, no SMS/email sent, no Google
+writes.
 
 Client sources: `docs/francois-milestone1-reference.md` §5 (En route), §6
 (Closeout), §9 (Majordome evidence); ticket decisions dated Oct 13 (mobile web,
@@ -30,13 +30,17 @@ No new `request_status` values. Code change: add `en_route → triaged` to
 (docs/status-machine-proposal.md) stay pending and are not needed.
 
 **En route accepted from:** the same open statuses the existing assign action
-accepts — `action_assign` (service.py:197) gates only via `_check_not_closed`
-(service.py:173, rejects `status == 'closed'` with RequestClosedError), and
-`is_valid_assignee` (repository.py:284) checks role/activity, not status. So
-en route accepts **any status except `closed` and `en_route`**:
-intake_received, triage_pending, triaged, triage_clarify, triage_proposal,
-triage_failed. `status_machine._TRANSITIONS` gains `X → en_route` for each
-(stop 2). Not derived from dev-data counts.
+accepts — `action_assign` (service.py) gates only via `_check_not_closed`
+(rejects `status == 'closed'` with RequestClosedError), and
+`is_valid_assignee` checks role/activity, not status. **Exception
+(review fix, 2026-10-19): `triage_pending` is REFUSED with 409 « Triage en
+cours — réessayez dans un instant »** — the background triage completion
+write (triage/service.py:221 success → 'triaged'; :434 failure →
+'triage_failed') sets status unconditionally (`WHERE request_id` only, no
+status guard) and would overwrite `en_route`. So en route accepts:
+intake_received, triaged, triage_clarify, triage_proposal, triage_failed.
+`status_machine._TRANSITIONS` reflects exactly that. Not derived from
+dev-data counts.
 
 ## Scoping decisions (changed from first draft)
 
@@ -125,10 +129,20 @@ satisfied by having no send path.
   DB constraint); `message_outbox`; RLS enabled, no policies (FastAPI /
   service_role only — same as decision_justification_log). Applied to local
   dev and sib_test via psql; `supabase db diff --local` → no schema changes.
-- Stop 3 — `202610191401xx_closeout.sql`: `ALTER TYPE closeout_outcome ADD
-  VALUE 'partial_expertise'`; `maintenance_request.closeout_urgent boolean`;
-  `maintenance_attachment.attachment_id` → identity + setval; bucket
-  declaration.
+- Stop 3 — **built**: `supabase/migrations/20261019140100_closeout.sql`:
+  `ALTER TYPE closeout_outcome ADD VALUE 'partial_expertise'` (+ COMMENT
+  mapping all four outcomes); `maintenance_request.closeout_urgent boolean`;
+  `maintenance_attachment.visit_id` FK (photo "used by closeout" marker —
+  the not-yet-used rule); `request_visit.closeout_comment` (per-visit comment
+  for the coordinator's visit history); guarded INSERT of the private
+  `request-photos` bucket (10 MiB, jpeg/png/webp — also declared in
+  supabase/config.toml for stack restarts). NOTE: attachment_id was ALREADY
+  identity (earlier "no default" finding misread column_default, NULL for
+  identity columns) — no change needed. Applied to dev and sib_test via
+  psql; `supabase db diff --local` → no schema changes.
+  **Our choice:** photo upload is a raw image body with the mime in
+  Content-Type, not multipart — python-multipart is not installed and raw
+  body needs no new dependency.
 
 ## Stop 1 — built 2026-10-19 (this doc's commit of record)
 
