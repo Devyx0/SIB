@@ -221,6 +221,24 @@ export function dispatchSetCost(id: number, body: { estimated_cost: number | nul
   return apiPost(`/api/v1/requests/${id}/cost`, body);
 }
 
+export interface DispatchFields {
+  assigned_employee_id: number | null;
+  start_date: string | null;
+  urgency_tier: string | null;
+  next_follow_up_date: string | null;
+  next_steps: string | null;
+  estimated_cost: number | null;
+}
+
+/** One « Enregistrer » in the call details: only the changed fields, one justification. */
+export function dispatchSave(id: number, body: {
+  current: DispatchFields;
+  changes: Partial<DispatchFields>;
+  justification: Justification;
+}): Promise<RequestDetail> {
+  return apiPost(`/api/v1/requests/${id}/dispatch`, body);
+}
+
 export function dispatchAddLog(id: number, body: { entry_text: string }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/log`, body);
 }
@@ -286,6 +304,8 @@ export interface IntakeBody {
   secondary_email?: string;
   attention?: string;
   ui_lang?: 'fr' | 'en';
+  /** Photos of the problem, sent with the call (recommended, max 5). */
+  photos?: { mime: 'image/jpeg' | 'image/png' | 'image/webp'; data_base64: string }[];
 }
 
 export interface IntakeResponse {

@@ -1,16 +1,30 @@
-/* Navy band across the top with the card overlapping it — the same move as
-   the public site's hero with its search card. */
+/* Photo band across the top with the card overlapping it — the same move as
+   the public site's hero with its search card. The band keeps the brand navy
+   underneath so it reads right while the photo loads. */
 .page {
+  position: relative;
+  isolation: isolate;
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    linear-gradient(to bottom, var(--navy-800) 0, var(--navy-800) 42%, transparent 42%),
-    var(--color-bg);
+  background: var(--color-bg);
   border-top: 4px solid var(--charcoal);
   padding: 24px;
+}
+
+.page::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 42%;
+  z-index: -1;
+  background:
+    /* light navy wash, a touch deeper at the bottom edge where the card sits */
+    linear-gradient(to bottom, rgb(7 35 74 / 0.08), rgb(7 35 74 / 0.28)),
+    url('../../assets/login-terrace.jpg') center 38% / cover no-repeat,
+    var(--navy-800);
 }
 
 .card {
@@ -144,9 +158,14 @@
 @media (max-width: 639px) {
   .page {
     padding: 16px;
+  }
+
+  .page::before {
+    height: 30%;
     background:
-      linear-gradient(to bottom, var(--navy-800) 0, var(--navy-800) 30%, transparent 30%),
-      var(--color-bg);
+      linear-gradient(to bottom, rgb(7 35 74 / 0.08), rgb(7 35 74 / 0.28)),
+      url('../../assets/login-terrace-sm.jpg') center 40% / cover no-repeat,
+      var(--navy-800);
   }
 
   .card {

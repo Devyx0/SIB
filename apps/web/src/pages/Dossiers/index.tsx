@@ -7,6 +7,7 @@ import type { Lang } from '../../i18n';
 import { durationLabel } from '../../components/RequestSections';
 import Pagination from '../../components/Pagination';
 import styles from './Dossiers.module.css';
+import Select from '../../components/Select';
 
 const PAGE_SIZE = 50;
 const OUTCOMES = ['complete', 'partial_reschedule', 'partial_expertise', 'failed'] as const;
@@ -85,22 +86,22 @@ export default function DossiersList({ lang = 'fr' }: { lang?: Lang }) {
       </header>
 
       <div className={styles.filters}>
-        <select data-testid="filter-outcome" value={outcome} aria-label={t(lang, 'Résultat', 'Outcome')}
+        <Select data-testid="filter-outcome" value={outcome} aria-label={t(lang, 'Résultat', 'Outcome')}
                 onChange={(e) => setFilter('outcome', e.target.value || null)}>
           <option value="">{t(lang, 'Tous les résultats', 'All outcomes')}</option>
           {OUTCOMES.map((o) => (
             <option key={o} value={o}>{closeoutOutcomeLabel(lang, o)}</option>
           ))}
-        </select>
+        </Select>
         {/* « A fait une visite »: matches any visit by this employee; the
             column still shows the LAST visit's employee. */}
-        <select data-testid="filter-employee" value={employeeId ?? ''}
+        <Select data-testid="filter-employee" value={employeeId ?? ''}
                 aria-label={t(lang, 'A fait une visite', 'Made a visit')}
                 onChange={(e) => setFilter('employee_id', e.target.value || null)}>
           <option value="">{t(lang, 'A fait une visite', 'Made a visit')}</option>
           {employees.filter((e) => e.role === 'technician' || e.role === 'contractor')
             .map((e) => <option key={e.employee_id} value={e.employee_id}>{e.nom_employe}</option>)}
-        </select>
+        </Select>
         <input type="date" data-testid="filter-start" value={startDate}
                aria-label={t(lang, 'Du', 'From')}
                onChange={(e) => setFilter('start_date', e.target.value || null)} />

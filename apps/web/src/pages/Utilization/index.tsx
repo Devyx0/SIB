@@ -5,6 +5,7 @@ import type { UtilizationResponse } from '../../api/schema.d.ts';
 import { closeoutOutcomeLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import styles from './Utilization.module.css';
+import Select from '../../components/Select';
 
 type Row = UtilizationResponse['rows'][number];
 type OutcomeKey = keyof Row['outcome_mix'];
@@ -209,14 +210,14 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                 />
                 <div className={styles.sortControl}>
                   <label htmlFor="util-sort">{t(lang, 'Trier par', 'Sort by')}</label>
-                  <select
+                  <Select
                     id="util-sort"
                     value={sortKey}
                     onChange={(e) => changeSort(e.target.value as SortKey)}
                     data-testid="util-sort"
                   >
                     {SORT_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-                  </select>
+                  </Select>
                   <button
                     type="button"
                     className={styles.dirBtn}

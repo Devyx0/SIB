@@ -792,3 +792,97 @@ def test_decision_writes_exactly_one_justification(ac, db_conn, unrouted_request
     rows = _justification_rows(db_conn, unrouted_request)
     assert [row["decision_type"] for row in rows] == [decision_type]
     assert rows[0]["justification_text"] == _JUST["text"]
+
+
+# ── One « Enregistrer » for all dispatcher edits ─────────────────────────────
+
+def _snapshot(**overrides):
+    snap = {
+        "assigned_employee_id": None, "start_date": _DATE_A, "urgency_tier": None,
+        "next_follow_up_date": None, "next_steps": None, "estimated_cost": None,
+    }
+    snap.update(overrides)
+    return snap
+
+
+def test_save_dispatch_applies_several_changes_with_one_justification(ac, db_conn, test_request):
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{test_request}/dispatch", json={
+        "current": _snapshot(),
+        "changes": {
+            "assigned_employee_id": _TECH, "start_date": _DATE_B, "urgency_tier": "AJD",
+            "next_steps": "Commander la pièce", "estimated_cost": 250,
+        },
+        "justification": {"text": "Dégât d'eau actif, technicien disponible", "input_method": "voice"},
+    })
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["assigned_employee_id"] == _TECH
+    assert d["start_date"] == _DATE_B
+    assert d["urgency_tier"] == "AJD"
+    assert d["next_steps"] == "Commander la pièce"
+    assert float(d["estimated_cost"]) == 250
+    rows = _justification_rows(db_conn, test_request)
+    assert sorted(row["decision_type"] for row in rows) == ["assign", "cost", "next_steps", "reschedule", "urgency"]
+    assert {row["justification_text"] for row in rows} == {"Dégât d'eau actif, technicien disponible"}
+    assert {row["input_method"] for row in rows} == {"voice"}
+
+
+def test_save_dispatch_only_touches_fields_sent(ac, db_conn, test_request):
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{test_request}/dispatch", json={
+        "current": _snapshot(),
+        "changes": {"next_follow_up_date": _DATE_B},
+        "justification": _JUST,
+    })
+    assert r.status_code == 200
+    assert r.json()["next_follow_up_date"] == _DATE_B
+    assert r.json()["start_date"] == _DATE_A
+    assert [row["decision_type"] for row in _justification_rows(db_conn, test_request)] == ["follow_up_date"]
+
+
+def test_save_dispatch_explicit_null_clears(ac, db_conn, test_request):
+    db_conn.execute("UPDATE maintenance_request SET estimated_cost = 90 WHERE request_id = %s", [test_request])
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{test_request}/dispatch", json={
+        "current": _snapshot(estimated_cost=90),
+        "changes": {"estimated_cost": None},
+        "justification": _JUST,
+    })
+    assert r.status_code == 200
+    assert r.json()["estimated_cost"] is None
+
+
+def test_save_dispatch_requires_a_change_and_a_justification(ac, test_request):
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{test_request}/dispatch", json={
+        "current": _snapshot(), "changes": {}, "justification": _JUST,
+    })
+    assert r.status_code == 422
+    r = c.post(f"/api/v1/requests/{test_request}/dispatch", json={
+        "current": _snapshot(), "changes": {"urgency_tier": "AJD"},
+    })
+    assert r.status_code == 422
+
+
+def test_save_dispatch_stale_screen_saves_nothing(ac, db_conn, test_request):
+    c = ac(_user(_COORD, "coordinator"))
+    r = c.post(f"/api/v1/requests/{test_request}/dispatch", json={
+        # Screen thought cost was 10 — it is NULL in the DB → stale on the cost step.
+        "current": _snapshot(estimated_cost=10),
+        "changes": {"urgency_tier": "AJD", "estimated_cost": 300},
+        "justification": _JUST,
+    })
+    assert r.status_code == 409
+    # The urgency step ran first; in the app DBTransactionMiddleware rolls the
+    # whole request back on any status >= 400, so nothing is saved. (This test
+    # shares one un-middlewared connection, so it checks the error surfaces.)
+    assert r.json()["error"]["code"] == "STALE_DATA"
+
+
+def test_save_dispatch_forbidden_for_technician(ac, test_request):
+    c = ac(_user(_TECH, "technician"))
+    r = c.post(f"/api/v1/requests/{test_request}/dispatch", json={
+        "current": _snapshot(), "changes": {"urgency_tier": "AJD"}, "justification": _JUST,
+    })
+    assert r.status_code == 403

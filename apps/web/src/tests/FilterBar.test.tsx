@@ -1,6 +1,6 @@
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { vi, describe, it, expect } from 'vitest';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 import FilterBar from '../pages/DispatchBoard/FilterBar';
 
 const noop = () => {};
@@ -194,6 +194,101 @@ describe('FilterBar', () => {
     act(() => { vi.advanceTimersByTime(500); });
     expect(onStartDate).toHaveBeenCalledWith('2000-01-15');
     vi.useRealTimers();
+  });
+});
+
+describe('phone filter toggle', () => {
+  beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
+
+  it('starts folded, summarises active filters, and opens/closes', async () => {
+    render(
+      <FilterBar
+        {...defaultProps}
+        status={['triaged']}
+        urgency="AJD"
+        sectors={[{ sector_id: 2, territoire: 'Haute-Ville', color_code: null }]}
+        sectorId={2}
+      />,
+    );
+    const toggle = screen.getByTestId('filters-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.textContent).toMatch(/Filtres\s*3/);
+    expect(screen.getByTestId('filters-summary').textContent).toBe('01/09 → 25/09 · Trié · AJD · Haute-Ville');
+
+    await userEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.textContent).toMatch(/Masquer/);
+    expect(screen.queryByTestId('filters-summary')).toBeNull();
+    expect(localStorage.getItem('sib.board.filtersOpen')).toBe('1');
+
+    await userEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(localStorage.getItem('sib.board.filtersOpen')).toBe('0');
+  });
+
+  it('remembers that the filters were left open', () => {
+    localStorage.setItem('sib.board.filtersOpen', '1');
+    render(<FilterBar {...defaultProps} />);
+    expect(screen.getByTestId('filters-toggle').getAttribute('aria-expanded')).toBe('true');
+  });
+});
+
+describe('quick date ranges', () => {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
+  const minus = (n: number) => {
+    const [y, m, d] = today.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d - n)).toISOString().slice(0, 10);
+  };
+
+  it.each([[7, 6], [14, 13], [30, 29]])('%i jours sets both dates in one call, ending today', async (days, back) => {
+    const onDateRange = vi.fn();
+    const onStartDate = vi.fn();
+    render(<FilterBar {...defaultProps} onDateRange={onDateRange} onStartDate={onStartDate} />);
+    await userEvent.click(screen.getByRole('button', { name: `${days} derniers jours` }));
+    expect(onDateRange).toHaveBeenCalledWith(minus(back), today);
+    expect(onStartDate).not.toHaveBeenCalled();
+    expect((screen.getByTestId('start-date-input') as HTMLInputElement).value).toBe(minus(back));
+    expect((screen.getByTestId('end-date-input') as HTMLInputElement).value).toBe(today);
+  });
+
+  it('a custom range shows on the calendar button and is picked from the calendar', async () => {
+    const onDateRange = vi.fn();
+    render(<FilterBar {...defaultProps} startDate="2026-09-01" endDate="2026-09-25" onDateRange={onDateRange} />);
+    const cal = screen.getByTestId('custom-range-btn');
+    expect(cal.textContent).toContain('01/09 → 25/09');
+    expect(cal.getAttribute('aria-expanded')).toBe('false');
+    await userEvent.click(cal);
+    expect(cal.getAttribute('aria-expanded')).toBe('true');
+    const grid = screen.getByTestId('range-calendar');
+    await userEvent.click(grid.querySelector('[data-day="2026-09-10"]')!);
+    await userEvent.click(grid.querySelector('[data-day="2026-09-03"]')!);
+    expect(onDateRange).toHaveBeenCalledWith('2026-09-03', '2026-09-10');
+    expect(cal.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('Escape on the calendar button closes the calendar', async () => {
+    render(<FilterBar {...defaultProps} />);
+    const cal = screen.getByTestId('custom-range-btn');
+    await userEvent.click(cal);
+    expect(cal.getAttribute('aria-expanded')).toBe('true');
+    await userEvent.keyboard('{Escape}');
+    expect(cal.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('there is no long date field in the bar any more', () => {
+    render(<FilterBar {...defaultProps} />);
+    expect(screen.getByTestId('start-date-input').closest('[hidden]')).not.toBeNull();
+  });
+
+  it('marks the matching range as active', () => {
+    render(<FilterBar {...defaultProps} startDate={minus(13)} endDate={today} />);
+    expect(screen.getByTestId('quick-range-14').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('quick-range-7').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('is disabled when dates are ignored (unrouted source)', () => {
+    render(<FilterBar {...defaultProps} dateNote="dates ignorées" />);
+    expect((screen.getByTestId('quick-range-7') as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

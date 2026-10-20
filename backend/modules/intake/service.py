@@ -1,6 +1,9 @@
 """Business logic for the intake module — manual create + match-only."""
 from __future__ import annotations
 
+import base64
+import binascii
+import contextlib
 import json
 
 from backend.core.exceptions import NotFoundError, PermissionDenied, ValidationFailed
@@ -12,6 +15,48 @@ from .schemas import (
 )
 
 _RAW_TITLE_MAX = 80
+_PHOTO_EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+_MAX_PHOTO_BYTES = 10 * 1024 * 1024  # same cap as closeout photos
+
+
+def _decode_photos(body: ManualCreateBody) -> list[tuple[bytes, str]]:
+    """Decode and check every photo before anything is written."""
+    out: list[tuple[bytes, str]] = []
+    for p in body.photos:
+        try:
+            content = base64.b64decode(p.data_base64, validate=True)
+        except (binascii.Error, ValueError):
+            raise ValidationFailed("Photo illisible")
+        if len(content) == 0:
+            raise ValidationFailed("Photo vide")
+        if len(content) > _MAX_PHOTO_BYTES:
+            raise ValidationFailed("Photo trop lourde (max 10 Mo)")
+        out.append((content, p.mime))
+    return out
+
+
+def _store_intake_photos(conn, request_id: int, employee_id: int,
+                         photos: list[tuple[bytes, str]]) -> None:
+    """File first, then row (like closeout). On any failure the files already
+    uploaded are removed; the caller's transaction rolls back the rows."""
+    from backend.modules.requests import repository as req_repo, storage
+
+    uploaded: list[str] = []
+    try:
+        for content, mime in photos:
+            attachment_id = req_repo.next_attachment_id(conn)
+            path = f"intake/{request_id}/{attachment_id}.{_PHOTO_EXT[mime]}"
+            storage.upload_photo(path, content, mime)
+            uploaded.append(path)
+            req_repo.insert_photo(
+                conn, attachment_id=attachment_id, request_id=request_id,
+                employee_id=employee_id, storage_path=path, photo_context="intake",
+            )
+    except Exception:
+        for path in uploaded:
+            with contextlib.suppress(Exception):
+                storage.delete_photo(path)
+        raise
 
 
 def _build_problems(body: ManualCreateBody) -> str:
@@ -99,6 +144,7 @@ def match_only(conn, body: MatchRequest) -> MatchResponse:
 def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCreateResponse:
     if body.access == "yes_instructions" and not (body.access_details or "").strip():
         raise ValidationFailed("Précisions d'accès requises")
+    photos = _decode_photos(body)
 
     bldg = conn.execute(
         "SELECT building_id, sector_id FROM building WHERE building_id = %(id)s",
@@ -231,6 +277,9 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
         """,
         {"pk": str(request_id), "emp": user.employee_id},
     )
+
+    if photos:
+        _store_intake_photos(conn, request_id, user.employee_id, photos)
 
     return ManualCreateResponse(
         request_id=request_id,

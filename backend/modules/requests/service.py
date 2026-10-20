@@ -24,7 +24,7 @@ from .schemas import (
     AddLogBody, AssignBody, CloseoutBody, DossierListResponse, DossierRow,
     EnRouteBody, ListResponse, ListRow,
     PhotoUploadResponse, PhotoUrlResponse, RequestDetail, RescheduleBody,
-    RouteBody, SetCostBody, SetFollowUpDateBody, SetNextStepsBody,
+    RouteBody, SaveDispatchBody, SetCostBody, SetFollowUpDateBody, SetNextStepsBody,
     SetUrgencyBody,
 )
 
@@ -164,6 +164,7 @@ def get_request(conn, request_id: int, user: CurrentUser, *, bypass_scope: bool 
         raise NotFoundError(f"Request {request_id} not found")
     row["followup_log"] = repo.list_followup_entries(conn, request_id)
     row["visits"] = repo.list_visits(conn, request_id)
+    row["intake_photo_ids"] = repo.list_intake_photo_ids(conn, request_id)
 
     is_restricted = not bool(user.roles & {"director", "coordinator"})
     if is_restricted:
@@ -189,6 +190,7 @@ def _after_action(conn, request_id: int, user: CurrentUser) -> RequestDetail:
     row["followup_log"] = repo.list_followup_entries(conn, request_id)
     row["justification_log"] = repo.list_justification_entries(conn, request_id)
     row["visits"] = repo.list_visits(conn, request_id)
+    row["intake_photo_ids"] = repo.list_intake_photo_ids(conn, request_id)
     row["weather_evaluation"] = weather_repo.get_latest_evaluation(conn, request_id)
     return RequestDetail(**row)
 
@@ -356,6 +358,57 @@ def action_set_next_steps(conn, request_id: int, body: SetNextStepsBody, user: C
         previous_value=row["next_steps"], new_value=body.next_steps,
     )
     return _after_action(conn, request_id, user)
+
+
+def action_save_dispatch(conn, request_id: int, body: SaveDispatchBody, user: CurrentUser) -> RequestDetail:
+    """Apply several dispatcher edits as one save. Each field goes through its
+    own action (same rules, stale checks, provenance and justification row);
+    they all run in the request's transaction, so a failure saves nothing."""
+    changed = body.changes.model_fields_set
+    if not changed:
+        raise ValidationFailed("Aucune modification à enregistrer")
+    ch = body.changes
+    cur = body.current.model_dump()
+    j = body.justification
+    detail: RequestDetail | None = None
+
+    def sync(d: RequestDetail) -> None:
+        nonlocal detail
+        detail = d
+        for k in cur:
+            cur[k] = getattr(d, k)
+
+    if "assigned_employee_id" in changed:
+        sync(action_assign(conn, request_id, AssignBody(
+            employee_id=ch.assigned_employee_id,
+            current_assigned_employee_id=cur["assigned_employee_id"],
+            current_start_date=cur["start_date"], current_urgency_tier=cur["urgency_tier"],
+            justification=j), user))
+    if "start_date" in changed:
+        if ch.start_date is None:
+            raise ValidationFailed("Date de répartition requise")
+        sync(action_reschedule(conn, request_id, RescheduleBody(
+            start_date=ch.start_date, current_start_date=cur["start_date"],
+            current_assigned_employee_id=cur["assigned_employee_id"],
+            current_urgency_tier=cur["urgency_tier"], justification=j), user))
+    if "urgency_tier" in changed:
+        sync(action_set_urgency(conn, request_id, SetUrgencyBody(
+            urgency_tier=ch.urgency_tier, current_urgency_tier=cur["urgency_tier"],
+            current_assigned_employee_id=cur["assigned_employee_id"],
+            current_start_date=cur["start_date"], justification=j), user))
+    if "next_follow_up_date" in changed:
+        sync(action_set_follow_up_date(conn, request_id, SetFollowUpDateBody(
+            next_follow_up_date=ch.next_follow_up_date,
+            current_next_follow_up_date=cur["next_follow_up_date"], justification=j), user))
+    if "next_steps" in changed:
+        sync(action_set_next_steps(conn, request_id, SetNextStepsBody(
+            next_steps=ch.next_steps, current_next_steps=cur["next_steps"], justification=j), user))
+    if "estimated_cost" in changed:
+        sync(action_set_cost(conn, request_id, SetCostBody(
+            estimated_cost=ch.estimated_cost, current_estimated_cost=cur["estimated_cost"],
+            justification=j), user))
+    assert detail is not None
+    return detail
 
 
 def action_set_cost(conn, request_id: int, body: SetCostBody, user: CurrentUser) -> RequestDetail:

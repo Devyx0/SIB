@@ -83,6 +83,31 @@
   overflow-wrap: anywhere;
 }
 
+.changeList {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--r-md);
+  font-size: 13px;
+}
+
+.changeList li {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) auto auto 1fr;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.changeLabel {
+  font-weight: 600;
+  color: var(--color-neutral-700);
+}
+
 .closeBtn {
   flex-shrink: 0;
   display: inline-flex;

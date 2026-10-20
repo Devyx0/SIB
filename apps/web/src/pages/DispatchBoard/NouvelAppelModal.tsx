@@ -7,7 +7,9 @@ import type { AccessChoice, AnimalsChoice, BuildingLookup, LeaseTenant, UnitByNu
 import type { SectorLookup } from '../../api/schema.d.ts';
 import { t } from '../../i18n';
 import type { Lang } from '../../i18n';
+import { shrinkImage } from '../../lib/shrinkImage';
 import styles from './NouvelAppelModal.module.css';
+import Select from '../../components/Select';
 
 interface Props {
   open: boolean;
@@ -58,13 +60,15 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
   const [accessDetails, setAccessDetails] = useState('');
   const [animals, setAnimals] = useState<AnimalsChoice | null>(null);
   const [animalDetails, setAnimalDetails] = useState('');
-  const [intakeUrgent, setIntakeUrgent] = useState(false);
   const [element, setElement] = useState('');
   const [symptome, setSymptome] = useState('');
   const [composante, setComposante] = useState('');
   const [emplacement, setEmplacement] = useState('');
   const [problem, setProblem] = useState('');
   const [attention, setAttention] = useState('');
+  // Photos of the problem (recommended): files + local previews.
+  const [photos, setPhotos] = useState<Array<{ file: File; url: string }>>([]);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -150,9 +154,9 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
     setUnits([]); setUnitId(null); setUnitsLoading(false); setUnitsError(null);
     setAccess('yes'); setAccessDetails('');
     resetPets();
-    setIntakeUrgent(false);
     setElement(''); setSymptome(''); setComposante(''); setEmplacement('');
     setProblem(''); setAttention('');
+    setPhotos((prev) => { prev.forEach((p) => URL.revokeObjectURL(p.url)); return []; });
     setSubmitting(false); setErrorMsg(null);
   }
 
@@ -321,6 +325,13 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
     }
     setSubmitting(true);
     try {
+      let encoded: Awaited<ReturnType<typeof shrinkImage>>[] = [];
+      try {
+        encoded = await Promise.all(photos.map((p) => shrinkImage(p.file)));
+      } catch {
+        setErrorMsg(t(lang, 'Une photo est illisible — retirez-la ou choisissez-en une autre.', 'A photo could not be read — remove it or pick another.'));
+        return;
+      }
       await createManualRequest({
         caller_name: callerName.trim(),
         phone_1: phone1.trim(),
@@ -336,12 +347,12 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
         symptome: symptome.trim(),
         composante: composante.trim(),
         emplacement: emplacement.trim(),
-        intake_urgent: intakeUrgent,
         secondary_name: secondaryName.trim() || undefined,
         secondary_email: secondaryEmail.trim() || undefined,
         problem: problem.trim(),
         attention: attention.trim() || undefined,
         ui_lang: lang,
+        photos: encoded.length ? encoded : undefined,
       });
       qc.invalidateQueries({ queryKey: ['requests'] });
       handleClose();
@@ -390,6 +401,27 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
 
   if (!open) return null;
 
+  const MAX_PHOTOS = 5;
+  function addPhotos(list: FileList | null) {
+    if (!list) return;
+    const picked = Array.from(list).filter((f) => f.type.startsWith('image/'));
+    setPhotos((prev) => [
+      ...prev,
+      ...picked.slice(0, MAX_PHOTOS - prev.length).map((file) => ({ file, url: URL.createObjectURL(file) })),
+    ]);
+    if (photoInputRef.current) photoInputRef.current.value = '';
+  }
+  function removePhoto(i: number) {
+    setPhotos((prev) => {
+      URL.revokeObjectURL(prev[i].url);
+      return prev.filter((_, j) => j !== i);
+    });
+  }
+
+  // The unique number was picked from the list and filled in the address.
+  const autoFilled = unitId != null && uniqueUnitNumber.trim() !== ''
+    && uniqueUnitNumber.trim() === unitPickedRef.current;
+
   // Footer chips show just the field ("Téléphone"), full sentence on hover.
   function shortReason(r: string): string {
     return r.replace(/\s*\b(requis|requise|requises|required)\b.*$/i, '').replace(/\.$/, '');
@@ -430,10 +462,15 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
             <header className={styles.sectionHead}>
               <span className={styles.stepNum} aria-hidden="true">1</span>
               <div>
-                <h3 className={styles.sectionHeading}>{t(lang, 'Recherche rapide', 'Quick lookup')}</h3>
-                <p className={styles.sectionSub}>{t(lang, 'Le numéro unique remplit l’adresse et le locataire.', 'The unique number fills in the address and tenant.')}</p>
+                <h3 className={styles.sectionHeading}>{t(lang, 'Logement', 'Unit')}</h3>
+                <p className={styles.sectionSub}>{t(lang, 'Par numéro unique, ou choisissez l’adresse.', 'By unique number, or pick the address.')}</p>
               </div>
             </header>
+            <div className={styles.option}>
+            <div className={styles.optionHead}>
+              <span className={styles.optionTitle}>{t(lang, 'Numéro unique connu', 'Unique number known')}</span>
+              <span className={styles.optionSub}>{t(lang, 'Remplit l’adresse et le locataire automatiquement', 'Fills in the address and tenant automatically')}</span>
+            </div>
             <div className={styles.field}>
               <label htmlFor="unique-unit-number" className={styles.label}>
                 {t(lang, "Numéro unique d'unité", 'Unique unit number')}
@@ -500,8 +537,96 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
               </div>
             </div>
             {unitLookupMsg && (
-              <p className={styles.hint} data-testid="unit-lookup-msg">{unitLookupMsg}</p>
+              <p className={autoFilled ? styles.lookupOk : styles.hint} data-testid="unit-lookup-msg">
+                {autoFilled && <span aria-hidden="true">✓ </span>}{unitLookupMsg}
+              </p>
             )}
+            </div>
+
+            <div className={styles.orDivider} role="separator" aria-label={t(lang, 'ou', 'or')}>
+              <span>{t(lang, 'OU', 'OR')}</span>
+            </div>
+
+            <div className={`${styles.option} ${autoFilled ? styles.optionFilled : ''}`}>
+            <div className={styles.optionHead}>
+              <span className={styles.optionTitle}>
+                {t(lang, 'Choisir l’adresse manuellement', 'Pick the address manually')}
+                {autoFilled && (
+                  <span className={styles.autoBadge} data-testid="address-autofilled">
+                    {t(lang, 'Rempli automatiquement', 'Auto-filled')}
+                  </span>
+                )}
+              </span>
+              <span className={styles.optionSub}>{t(lang, 'Si le numéro unique n’est pas connu', 'If the unique number is not known')}</span>
+            </div>
+              <div className={styles.field}>
+                <label htmlFor="picker-sector" className={styles.label}>
+                  {t(lang, 'Secteur *', 'Sector *')}
+                </label>
+                <Select id="picker-sector" className={styles.select} value={sectorId ?? ''}
+                  onChange={(e) => {
+                    setSectorId(e.target.value ? Number(e.target.value) : null);
+                    setBuildingId(null);
+                    setUnitId(null);
+                    resetPets();
+                    resetTenants();
+                  }}
+                  data-testid="sector-select">
+                  <option value="">— {t(lang, 'Choisir', 'Choose')} —</option>
+                  {sectors.map((s) => (
+                    <option key={s.sector_id} value={s.sector_id}>{s.territoire}</option>
+                  ))}
+                </Select>
+              </div>
+              <div className={styles.field}>
+                <label htmlFor="picker-building" className={styles.label}>
+                  {t(lang, 'Bâtiment *', 'Building *')}
+                </label>
+                <Select id="picker-building" className={styles.select} value={buildingId ?? ''}
+                  disabled={sectorId == null}
+                  onChange={(e) => {
+                    const bid = e.target.value ? Number(e.target.value) : null;
+                    setBuildingId(bid);
+                    setUnitId(null);
+                    resetPets();
+                    resetTenants();
+                  }}
+                  data-testid="building-select">
+                  <option value="">— {t(lang, 'Choisir', 'Choose')} —</option>
+                  {buildings.map((b) => (
+                    <option key={b.building_id} value={b.building_id}>
+                      {b.adresse ?? b.web_building_name ?? String(b.building_id)}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              {buildingId != null && (
+                <div className={styles.field}>
+                  <label htmlFor="picker-unit" className={styles.label}>
+                    {t(lang, 'Unité (optionnel)', 'Unit (optional)')}
+                  </label>
+                  {unitsLoading
+                    ? <p className={styles.hint}>{t(lang, 'Chargement…', 'Loading…')}</p>
+                    : !unitsError && units.length === 0
+                      ? <p className={styles.hint} data-testid="no-units-msg">
+                          {t(lang, 'Aucune unité enregistrée pour ce bâtiment', 'No units registered for this building')}
+                        </p>
+                      : (
+                        <Select id="picker-unit" className={styles.select} value={unitId ?? ''}
+                          onChange={(e) => {
+                            void onUnitPicked(e.target.value ? Number(e.target.value) : null);
+                          }}
+                          data-testid="unit-select">
+                          <option value="">— {t(lang, 'Aucune', 'None')} —</option>
+                          {units.map((u) => (
+                            <option key={u.unit_id} value={u.unit_id}>{unitOptionLabel(u)}</option>
+                          ))}
+                        </Select>
+                      )
+                  }
+                </div>
+              )}
+            </div>
           </section>
 
           <section className={`${styles.section} ${styles.areaCaller}`}>
@@ -517,7 +642,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                 <label htmlFor="tenant-select" className={styles.label}>
                   {t(lang, 'Locataire *', 'Tenant *')}
                 </label>
-                <select
+                <Select
                   id="tenant-select"
                   className={styles.select}
                   value={selectedTenantId ?? ''}
@@ -536,7 +661,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                       {tn.phone ? ` — ${tn.phone}` : ''}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             )}
             <div className={styles.field}>
@@ -597,89 +722,12 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
             </details>
           </section>
 
-          <section className={`${styles.section} ${styles.areaAddress}`}>
+          <section className={`${styles.section} ${styles.areaAccess}`}>
             <header className={styles.sectionHead}>
               <span className={styles.stepNum} aria-hidden="true">3</span>
               <div>
-                <h3 className={styles.sectionHeading}>{t(lang, 'Adresse', 'Address')}</h3>
-                <p className={styles.sectionSub}>{t(lang, 'Ou choisissez le logement manuellement.', 'Or pick the unit manually.')}</p>
-              </div>
-            </header>
-            <div className={styles.field}>
-              <label htmlFor="picker-sector" className={styles.label}>
-                {t(lang, 'Secteur *', 'Sector *')}
-              </label>
-              <select id="picker-sector" className={styles.select} value={sectorId ?? ''}
-                onChange={(e) => {
-                  setSectorId(e.target.value ? Number(e.target.value) : null);
-                  setBuildingId(null);
-                  setUnitId(null);
-                  resetPets();
-                  resetTenants();
-                }}
-                data-testid="sector-select">
-                <option value="">— {t(lang, 'Choisir', 'Choose')} —</option>
-                {sectors.map((s) => (
-                  <option key={s.sector_id} value={s.sector_id}>{s.territoire}</option>
-                ))}
-              </select>
-            </div>
-            <div className={styles.field}>
-              <label htmlFor="picker-building" className={styles.label}>
-                {t(lang, 'Bâtiment *', 'Building *')}
-              </label>
-              <select id="picker-building" className={styles.select} value={buildingId ?? ''}
-                disabled={sectorId == null}
-                onChange={(e) => {
-                  const bid = e.target.value ? Number(e.target.value) : null;
-                  setBuildingId(bid);
-                  setUnitId(null);
-                  resetPets();
-                  resetTenants();
-                }}
-                data-testid="building-select">
-                <option value="">— {t(lang, 'Choisir', 'Choose')} —</option>
-                {buildings.map((b) => (
-                  <option key={b.building_id} value={b.building_id}>
-                    {b.adresse ?? b.web_building_name ?? String(b.building_id)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {buildingId != null && (
-              <div className={styles.field}>
-                <label htmlFor="picker-unit" className={styles.label}>
-                  {t(lang, 'Unité (optionnel)', 'Unit (optional)')}
-                </label>
-                {unitsLoading
-                  ? <p className={styles.hint}>{t(lang, 'Chargement…', 'Loading…')}</p>
-                  : !unitsError && units.length === 0
-                    ? <p className={styles.hint} data-testid="no-units-msg">
-                        {t(lang, 'Aucune unité enregistrée pour ce bâtiment', 'No units registered for this building')}
-                      </p>
-                    : (
-                      <select id="picker-unit" className={styles.select} value={unitId ?? ''}
-                        onChange={(e) => {
-                          void onUnitPicked(e.target.value ? Number(e.target.value) : null);
-                        }}
-                        data-testid="unit-select">
-                        <option value="">— {t(lang, 'Aucune', 'None')} —</option>
-                        {units.map((u) => (
-                          <option key={u.unit_id} value={u.unit_id}>{unitOptionLabel(u)}</option>
-                        ))}
-                      </select>
-                    )
-                }
-              </div>
-            )}
-          </section>
-
-          <section className={`${styles.section} ${styles.areaAccess}`}>
-            <header className={styles.sectionHead}>
-              <span className={styles.stepNum} aria-hidden="true">4</span>
-              <div>
                 <h3 className={styles.sectionHeading}>{t(lang, 'Accès', 'Access')}</h3>
-                <p className={styles.sectionSub}>{t(lang, 'Entrée, animaux et urgence.', 'Entry, pets and urgency.')}</p>
+                <p className={styles.sectionSub}>{t(lang, 'Entrée et animaux.', 'Entry and pets.')}</p>
               </div>
             </header>
             <fieldset className={styles.fieldset}>
@@ -735,23 +783,11 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                 )}
               </>
             )}
-            <label className={`${styles.urgentToggle} ${intakeUrgent ? styles.urgentOn : ''}`} data-testid="intake-urgent-row">
-              <input
-                type="checkbox"
-                checked={intakeUrgent}
-                onChange={(e) => setIntakeUrgent(e.target.checked)}
-                data-testid="intake-urgent"
-              />
-              <span>
-                <strong>{t(lang, 'Urgent', 'Urgent')}</strong>
-                <span className={styles.urgentHint}>{t(lang, 'Signaler pour traitement prioritaire', 'Flag for priority handling')}</span>
-              </span>
-            </label>
           </section>
 
           <section className={`${styles.section} ${styles.areaProblem}`}>
             <header className={styles.sectionHead}>
-              <span className={styles.stepNum} aria-hidden="true">5</span>
+              <span className={styles.stepNum} aria-hidden="true">4</span>
               <div>
                 <h3 className={styles.sectionHeading}>{t(lang, 'Problème', 'Problem')}</h3>
                 <p className={styles.sectionSub}>{t(lang, 'Classification et description.', 'Classification and description.')}</p>
@@ -789,6 +825,56 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
               </label>
               <textarea id="problem" className={styles.textarea} value={problem}
                 onChange={(e) => setProblem(e.target.value)} data-testid="problem" rows={3} required />
+            </div>
+            <div className={styles.field} data-testid="photo-field">
+              <span className={styles.label} id="intake-photos-label">
+                {t(lang, 'Photos du problème', 'Photos of the problem')}
+                <span className={styles.recommended}>{t(lang, 'Recommandé', 'Recommended')}</span>
+              </span>
+              <p className={styles.hint}>
+                {t(lang,
+                  'Aide le technicien à préparer sa visite. Jusqu’à 5 photos.',
+                  'Helps the technician prepare. Up to 5 photos.')}
+              </p>
+              <div className={styles.photoGrid} aria-labelledby="intake-photos-label">
+                {photos.map((p, i) => (
+                  <div key={p.url} className={styles.photoTile}>
+                    <img src={p.url} alt={t(lang, `Photo ${i + 1}`, `Photo ${i + 1}`)} />
+                    <button
+                      type="button"
+                      className={styles.photoRemove}
+                      onClick={() => removePhoto(i)}
+                      aria-label={t(lang, `Retirer la photo ${i + 1}`, `Remove photo ${i + 1}`)}
+                    >
+                      <svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                        <path d="M5 5l10 10M15 5L5 15" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+                {photos.length < MAX_PHOTOS && (
+                  <button
+                    type="button"
+                    className={styles.photoAdd}
+                    onClick={() => photoInputRef.current?.click()}
+                    data-testid="add-photo"
+                  >
+                    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" />
+                    </svg>
+                    <span>{photos.length ? t(lang, 'Ajouter', 'Add') : t(lang, 'Ajouter des photos', 'Add photos')}</span>
+                  </button>
+                )}
+              </div>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/*"
+                multiple
+                hidden
+                onChange={(e) => addPhotos(e.target.files)}
+                data-testid="photo-input"
+              />
             </div>
             <div className={`${styles.field} ${styles.attentionField}`}>
               <label htmlFor="attention" className={styles.label}>

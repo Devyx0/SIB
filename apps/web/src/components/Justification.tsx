@@ -19,6 +19,8 @@ export interface JustifyRequest {
   decision: string;
   before?: string | null;
   after?: string | null;
+  /** Several edits saved together — listed under the title, one justification for all. */
+  changes?: Array<{ label: string; before: string; after: string }>;
 }
 
 type JustifyFn = (req: JustifyRequest) => Promise<Justification | null>;
@@ -196,6 +198,18 @@ function JustificationDialog({
                 </span>
               )}
             </p>
+            {request.changes && request.changes.length > 1 && (
+              <ul className={styles.changeList} data-testid="justification-changes">
+                {request.changes.map((c) => (
+                  <li key={c.label}>
+                    <span className={styles.changeLabel}>{c.label}</span>
+                    <span className={styles.before}>{c.before || '—'}</span>
+                    <span aria-hidden="true" className={styles.arrow}>→</span>
+                    <span className={styles.after}>{c.after || '—'}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           <button
             type="button"

@@ -26,6 +26,7 @@ from .schemas import (
     PhotoUrlResponse,
     RequestDetail,
     RescheduleBody,
+    SaveDispatchBody,
     RouteBody,
     SectorLookup,
     SetCostBody,
@@ -283,6 +284,12 @@ def request_set_next_steps(request_id: int, body: SetNextStepsBody, user: Curren
 @router.post("/{request_id}/cost", operation_id="request_set_cost", response_model=RequestDetail)
 def request_set_cost(request_id: int, body: SetCostBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> RequestDetail:
     return service.action_set_cost(conn, request_id, body, user)
+
+
+@router.post("/{request_id}/dispatch", operation_id="request_save_dispatch", response_model=RequestDetail)
+def request_save_dispatch(request_id: int, body: SaveDispatchBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> RequestDetail:
+    """One save for every dispatcher edit in the call details."""
+    return service.action_save_dispatch(conn, request_id, body, user)
 
 
 @router.post("/{request_id}/log", operation_id="request_add_log", response_model=RequestDetail)

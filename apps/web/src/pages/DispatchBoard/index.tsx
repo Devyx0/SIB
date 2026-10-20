@@ -245,6 +245,13 @@ export default function DispatchBoard({ lang, me }: Props) {
         onRedispatch={(v) => setFilter('redispatch', v ? '1' : null)}
         onStartDate={(v) => setFilter('start_date', v)}
         onEndDate={(v) => setFilter('end_date', v)}
+        onDateRange={(start, end) => setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('start_date', start);
+          next.set('end_date', end);
+          next.delete('offset');
+          return next;
+        })}
         onStatus={setStatusFilter}
         onSourceCalendar={(v) => setFilter('source_calendar', v)}
         onQ={(v) => setFilter('q', v || null)}

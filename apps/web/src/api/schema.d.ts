@@ -114,6 +114,8 @@ export interface RequestDetail extends ListRow {
   followup_log: FollowupEntry[];
   justification_log: JustificationEntry[];
   visits: VisitEntry[];
+  /** Photos attached when the call was created. */
+  intake_photo_ids?: number[];
   caller_name: string | null;
   caller_phone: string | null;
   caller_phone_placeholder: boolean;
