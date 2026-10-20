@@ -22,7 +22,8 @@ class ManualCreateBody(BaseModel):
     phone_1: str = Field(..., min_length=1)
     phone_2: Optional[str] = None
     building_id: int
-    unit_id: Optional[int] = None
+    # Success criteria: intake requires a real DB unit (no free-text / building-only).
+    unit_id: int
     access: AccessChoice
     access_details: Optional[str] = None
     # Only set when lease allows pets (oui/non). Omitted when pets not allowed.

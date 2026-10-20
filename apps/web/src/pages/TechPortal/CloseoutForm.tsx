@@ -14,6 +14,7 @@ interface Props {
   lang: Lang;
   me: MeResponse | null;
   onSignOut: () => void;
+  onToggleLang: () => void;
 }
 
 const OUTCOMES = ['complete', 'partial_reschedule', 'partial_expertise', 'failed'] as const;
@@ -39,7 +40,7 @@ function getPosition(): Promise<{ lat: number; lng: number } | null> {
   });
 }
 
-export default function CloseoutForm({ lang, me, onSignOut }: Props) {
+export default function CloseoutForm({ lang, me, onSignOut, onToggleLang }: Props) {
   const { id } = useParams();
   const requestId = Number(id);
   const { data: req } = useRequest(Number.isFinite(requestId) ? requestId : null);
@@ -111,7 +112,7 @@ export default function CloseoutForm({ lang, me, onSignOut }: Props) {
 
   return (
     <div className={styles.page}>
-      <TechHeader lang={lang} me={me} onSignOut={onSignOut} backTo={`/tech/appels/${requestId}`} />
+      <TechHeader lang={lang} me={me} onSignOut={onSignOut} onToggleLang={onToggleLang} backTo={`/tech/appels/${requestId}`} />
       <main className={styles.main}>
         <h1 className={styles.callViewTitle}>
           {t(lang, 'Clôturer', 'Close out')} — {req?.raw_title ?? `#${requestId}`}

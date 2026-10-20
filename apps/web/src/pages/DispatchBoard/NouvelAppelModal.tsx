@@ -295,6 +295,10 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
       setErrorMsg(t(lang, 'Sélectionnez un bâtiment.', 'Select a building.'));
       return;
     }
+    if (unitId == null) {
+      setErrorMsg(t(lang, 'Sélectionnez une unité valide dans la liste.', 'Select a valid unit from the list.'));
+      return;
+    }
     if (access === 'yes_instructions' && !accessDetails.trim()) {
       setErrorMsg(t(lang, "Précisions d'accès requises.", 'Access instructions required.'));
       return;
@@ -323,7 +327,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
         phone_2: phone2.trim() || undefined,
         caller_email: email || undefined,
         building_id: buildingId,
-        unit_id: unitId ?? undefined,
+        unit_id: unitId,
         access,
         access_details: accessDetails.trim() || undefined,
         animals: petsAllowed && animals ? animals : undefined,
@@ -353,6 +357,36 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
     document.body.classList.add('modal-open');
     return () => { document.body.classList.remove('modal-open'); };
   }, [open]);
+
+  const blockReasons: string[] = [];
+  if (buildingId == null) {
+    blockReasons.push(t(lang, 'Bâtiment requis.', 'Building required.'));
+  }
+  if (unitId == null) {
+    blockReasons.push(t(lang, 'Unité valide requise (choisir dans la liste).', 'Valid unit required (pick from the list).'));
+  }
+  if (petsAllowed && animals == null) {
+    blockReasons.push(t(lang, 'Indiquez si un animal est présent.', 'Say whether a pet is present.'));
+  }
+  if (access === 'yes_instructions' && !accessDetails.trim()) {
+    blockReasons.push(t(lang, "Précisions d'accès requises.", 'Access instructions required.'));
+  }
+  if (!callerName.trim()) {
+    blockReasons.push(t(lang, 'Nom requis.', 'Name required.'));
+  }
+  if (!phone1.trim()) {
+    blockReasons.push(t(lang, 'Téléphone requis.', 'Phone required.'));
+  }
+  if (!problem.trim()) {
+    blockReasons.push(t(lang, 'Description du problème requise.', 'Problem description required.'));
+  }
+  if (!element.trim() || !symptome.trim() || !composante.trim() || !emplacement.trim()) {
+    blockReasons.push(t(
+      lang,
+      'Taxonomie complète requise (élément, symptôme, composante, emplacement).',
+      'Complete taxonomy required (element, symptom, component, location).',
+    ));
+  }
 
   if (!open) return null;
 
@@ -715,20 +749,20 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
 
           {unitsError && <p className={styles.errorMsg} data-testid="units-error">{unitsError}</p>}
           {errorMsg && <p className={styles.errorMsg} data-testid="error-msg">{errorMsg}</p>}
+          {blockReasons.length > 0 && (
+            <ul className={styles.blockReasons} data-testid="block-reasons">
+              {blockReasons.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          )}
 
           <div className={styles.actions}>
             <button type="button" className={styles.cancelBtn} onClick={handleClose}>
               {t(lang, 'Annuler', 'Cancel')}
             </button>
             <button type="submit" className={styles.submitBtn}
-              disabled={
-                submitting
-                || buildingId == null
-                || !element.trim()
-                || !symptome.trim()
-                || !composante.trim()
-                || !emplacement.trim()
-              }
+              disabled={submitting || blockReasons.length > 0}
               data-testid="submit-btn">
               {submitting
                 ? t(lang, 'Création…', 'Creating…')

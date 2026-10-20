@@ -154,14 +154,11 @@ def test_coordinator_with_no_sector_can_list_all_sectors(ac, db_conn):
     assert len(r.json()) > 0
 
 
-def test_building_only_without_unit(ac, db_conn):
-    loc = _perigord(db_conn)
-    _ensure_coord_sector(db_conn, loc["sector_id"])
-    body = _valid_body(db_conn, unit_id=None)
+def test_missing_unit_id_422(ac, db_conn):
+    body = _valid_body(db_conn)
+    del body["unit_id"]
     r = ac(_user(_COORD, "coordinator")).post("/api/v1/intake", json=body)
-    assert r.status_code == 201
-    assert r.json()["match_status"] == "building_only"
-    assert r.json()["unit_id"] is None
+    assert r.status_code == 422
 
 
 def test_manual_create_writes_raw_caller_body(ac, db_conn):

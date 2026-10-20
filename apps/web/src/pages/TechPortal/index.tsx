@@ -10,6 +10,7 @@ import styles from './TechPortal.module.css';
 
 interface Props {
   lang: Lang;
+  onToggleLang: () => void;
   me: MeResponse | null;
   onSignOut: () => void;
 }
@@ -52,7 +53,7 @@ function Section({ title, rows, lang }: { title: string; rows: ListRow[]; lang: 
   );
 }
 
-export default function TechList({ lang, me, onSignOut }: Props) {
+export default function TechList({ lang, me, onSignOut, onToggleLang }: Props) {
   const params = me
     ? {
         assigned_employee_id: me.employee_id,
@@ -78,7 +79,7 @@ export default function TechList({ lang, me, onSignOut }: Props) {
 
   return (
     <div className={styles.page}>
-      <TechHeader lang={lang} me={me} onSignOut={onSignOut} />
+      <TechHeader lang={lang} me={me} onSignOut={onSignOut} onToggleLang={onToggleLang} />
       <main className={styles.main}>
         {isPending && <p className={styles.muted}>{t(lang, 'Chargement…', 'Loading…')}</p>}
         {isError && <p className={styles.error}>{t(lang, 'Erreur de chargement', 'Failed to load')}</p>}

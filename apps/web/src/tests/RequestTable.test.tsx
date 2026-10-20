@@ -37,6 +37,8 @@ function makeRow(overrides: Partial<ListRow> = {}): ListRow {
     en_route_at: null,
     closeout_outcome: null,
     closeout_urgent: null,
+    duplicate_of_request_id: null,
+    addition_to_request_id: null,
     ...overrides,
   };
 }

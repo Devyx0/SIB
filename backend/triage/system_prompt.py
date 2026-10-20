@@ -43,6 +43,7 @@ Return ONLY valid JSON matching this schema. No prose, no explanation.
 }
 
 There is NO assignee field. Do not include one. Never write employee initials (2–4 capital letters, e.g. CHGE) in title, problems, entry_permission, animals, or other_notes. Vendor names (Duclos, Body Gym, Fortin, Éric) go in subcontractor_name only.
+Same-unit open calls: same problem → verdict "duplicate" (flag only, title contains DOUBLON POTENTIEL). Different problem + routing A1/A2/A3/A3b/A4 → verdict "single" (own ticket, never addition). Different problem + normal routing (A0/A5) → verdict "addition" (system will merge into the open call).
 urgency_tier is exactly "AJD" (do today: active water including hidden leaks, backflow, no heat or hot water, person stuck, alarm/fire, lock not working, dead fridge, electrical or structural danger), "ajd" (priority, not necessarily today: contained slow leak, mould, non-critical appliance, any vermin, AC in a heatwave), or null (not urgent). The title must start with the same token ("AJD " or "ajd ") or with neither when null.
 Routing codes (A0, A1, A2, A3, A3b, A4, A5) belong ONLY in the routing_rule field. NEVER write them in title, problems, entry_permission, other_notes, or any other text field — use plain operational language instead.
 Access codes and combinations are FORBIDDEN in all text fields. When a keybox, door code, NIP, or combination appears in the source request, reference the device by label only (e.g. "keybox H", "clavier principal") — never include the digit sequence.

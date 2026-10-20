@@ -170,6 +170,8 @@ export default function RequestTable({
       }
 
       const isAJD = row.urgency_tier === 'AJD';
+      const isDup = row.duplicate_of_request_id != null;
+      const isAdd = row.addition_to_request_id != null;
       const isSelected = row.request_id === selectedId;
 
       result.push(
@@ -178,12 +180,16 @@ export default function RequestTable({
           className={[
             styles.row,
             isAJD ? styles.ajdRow : '',
+            isDup ? styles.dupRow : '',
+            isAdd ? styles.addRow : '',
             isSelected ? styles.selectedRow : '',
           ].join(' ')}
           aria-selected={isSelected}
           onClick={() => onSelect(row.request_id)}
           onKeyDown={(e) => { if (e.key === 'Enter') onSelect(row.request_id); }}
           data-testid="request-row"
+          data-duplicate={isDup || undefined}
+          data-addition={isAdd || undefined}
           tabIndex={0}
         >
           {/* mandatory cells */}
@@ -192,6 +198,16 @@ export default function RequestTable({
           <td className={styles.nowrap}><UrgencyTag tier={row.urgency_tier} /></td>
           <td className={styles.titleCell}>
             <span className={styles.clamp} title={row.raw_title ?? undefined}>{row.raw_title ?? '—'}</span>
+            {isDup && (
+              <span className={styles.tagDup} data-testid="dup-badge">
+                {t(lang, 'Doublon', 'Duplicate')} #{row.duplicate_of_request_id}
+              </span>
+            )}
+            {isAdd && (
+              <span className={styles.tagAdd} data-testid="add-badge">
+                {t(lang, 'Ajout', 'Addition')} #{row.addition_to_request_id}
+              </span>
+            )}
           </td>
           <td className={styles.nowrap}>{row.territoire ?? '—'}</td>
           <td className={styles.buildingCell}>

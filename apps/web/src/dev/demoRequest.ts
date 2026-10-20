@@ -46,6 +46,8 @@ export const DEMO_ROW: ListRow = {
   en_route_at: null,
   closeout_outcome: null,
   closeout_urgent: false,
+  duplicate_of_request_id: null,
+  addition_to_request_id: null,
 };
 
 export const DEMO_DETAIL: RequestDetail = {

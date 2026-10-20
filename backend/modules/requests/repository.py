@@ -58,7 +58,9 @@ _LIST_SELECT = """
         u.unique_unit_number,
         mr.en_route_at,
         mr.closeout_outcome::text        AS closeout_outcome,
-        mr.closeout_urgent
+        mr.closeout_urgent,
+        mr.duplicate_of_request_id,
+        mr.addition_to_request_id
     FROM maintenance_request mr
     LEFT JOIN building  b ON b.building_id = mr.building_id
     LEFT JOIN sector    s ON s.sector_id   = mr.sector_id

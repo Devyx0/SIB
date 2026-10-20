@@ -115,16 +115,15 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
         raise PermissionDenied("Bâtiment hors de votre secteur")
 
     unit_id = body.unit_id
-    if unit_id is not None:
-        unit = conn.execute(
-            "SELECT unit_id FROM unit WHERE unit_id = %(uid)s AND building_id = %(bid)s",
-            {"uid": unit_id, "bid": body.building_id},
-        ).fetchone()
-        if unit is None:
-            raise ValidationFailed("Unité introuvable pour ce bâtiment")
+    unit = conn.execute(
+        "SELECT unit_id FROM unit WHERE unit_id = %(uid)s AND building_id = %(bid)s",
+        {"uid": unit_id, "bid": body.building_id},
+    ).fetchone()
+    if unit is None:
+        raise ValidationFailed("Unité introuvable pour ce bâtiment")
 
     building_id = body.building_id
-    match_status = "exact" if unit_id is not None else "building_only"
+    match_status = "exact"
 
     # Cardinal rule 35: Lévis / rive-sud → Majordome queue; else Main.
     from backend.triage.calendar_route import source_calendar_for_sector

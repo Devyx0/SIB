@@ -75,9 +75,9 @@ export default function App() {
               <Navigate to="/login" replace />
             ) : techOnly ? (
               <Routes>
-                <Route path="tech" element={<TechList lang={lang} me={me} onSignOut={handleSignOut} />} />
-                <Route path="tech/appels/:id" element={<TechCallView lang={lang} me={me} onSignOut={handleSignOut} />} />
-                <Route path="tech/appels/:id/cloture" element={<CloseoutForm lang={lang} me={me} onSignOut={handleSignOut} />} />
+                <Route path="tech" element={<TechList lang={lang} me={me} onSignOut={handleSignOut} onToggleLang={() => setLang((l) => (l === 'fr' ? 'en' : 'fr'))} />} />
+                <Route path="tech/appels/:id" element={<TechCallView lang={lang} me={me} onSignOut={handleSignOut} onToggleLang={() => setLang((l) => (l === 'fr' ? 'en' : 'fr'))} />} />
+                <Route path="tech/appels/:id/cloture" element={<CloseoutForm lang={lang} me={me} onSignOut={handleSignOut} onToggleLang={() => setLang((l) => (l === 'fr' ? 'en' : 'fr'))} />} />
                 <Route path="*" element={<Navigate to="/tech" replace />} />
               </Routes>
             ) : (

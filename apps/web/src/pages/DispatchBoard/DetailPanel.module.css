@@ -230,6 +230,16 @@
   cursor: pointer;
 }
 
+.dupBanner {
+  border-color: #c45c26;
+  background: color-mix(in srgb, #c45c26 10%, var(--color-surface));
+}
+
+.addBanner {
+  border-color: #2f6fed;
+  background: color-mix(in srgb, #2f6fed 8%, var(--color-surface));
+}
+
 /* Label / value pairs inside the side cards. */
 .facts {
   display: grid;

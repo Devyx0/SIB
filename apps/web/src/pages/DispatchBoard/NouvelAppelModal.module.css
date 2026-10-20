@@ -261,6 +261,18 @@
   gap: 10px;
 }
 
+.blockReasons {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  list-style: disc inside;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-danger, #a12);
+  background: color-mix(in srgb, var(--color-danger, #a12) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger, #a12) 35%, transparent);
+  border-radius: var(--r-md);
+}
+
 .errorMsg {
   font-size: 13px;
   color: var(--color-danger);

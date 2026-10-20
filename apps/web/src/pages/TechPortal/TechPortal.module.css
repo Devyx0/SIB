@@ -74,6 +74,27 @@
   text-overflow: ellipsis;
 }
 
+.langBtn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--color-neutral-800);
+  cursor: pointer;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.langBtn:hover {
+  background: var(--navy-50);
+  border-color: var(--navy-300);
+  color: var(--navy-800);
+}
+
 .signOutBtn {
   min-height: 36px;
   background: var(--color-surface);

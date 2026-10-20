@@ -46,6 +46,8 @@ async function fillRequired(opts: { phone?: string; problem?: string } = {}) {
   await userEvent.type(screen.getByTestId('problem'), opts.problem ?? 'Fuite sous évier');
   await fillTaxonomy();
   await selectBuilding();
+  await waitFor(() => expect(screen.getByTestId('unit-select')).toBeTruthy());
+  await userEvent.selectOptions(screen.getByTestId('unit-select'), '100');
 }
 
 async function pickUnitFromSearch(opts: {
@@ -105,24 +107,29 @@ describe('NouvelAppelModal', () => {
     await waitFor(() => expect(mockFetchSectors).toHaveBeenCalled());
   });
 
-  it('shows validation error when phone is empty', async () => {
+  it('blocks submit when phone is empty and lists the reason', async () => {
     wrap(<NouvelAppelModal open onClose={vi.fn()} />);
     await userEvent.type(screen.getByTestId('caller-name'), 'Jean');
     await userEvent.type(screen.getByTestId('problem'), 'Fuite');
     await fillTaxonomy();
     await selectBuilding();
-    await userEvent.click(screen.getByTestId('submit-btn'));
-    expect(screen.getByTestId('error-msg')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('unit-select')).toBeTruthy());
+    await userEvent.selectOptions(screen.getByTestId('unit-select'), '100');
+    expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('block-reasons').textContent).toMatch(/téléphone|phone/i);
     expect(mockCreateManualRequest).not.toHaveBeenCalled();
   });
 
-  it('keeps submit disabled until all taxonomy axes are filled', async () => {
+  it('keeps submit disabled until unit + taxonomy are filled and shows reasons', async () => {
     wrap(<NouvelAppelModal open onClose={vi.fn()} />);
     await userEvent.type(screen.getByTestId('caller-name'), 'Jean');
     await userEvent.type(screen.getByTestId('phone-1'), '418-555-0101');
     await userEvent.type(screen.getByTestId('problem'), 'Fuite');
     await selectBuilding();
     expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('block-reasons').textContent).toMatch(/unité|unit/i);
+    await waitFor(() => expect(screen.getByTestId('unit-select')).toBeTruthy());
+    await userEvent.selectOptions(screen.getByTestId('unit-select'), '100');
     await userEvent.type(screen.getByTestId('element'), 'Plomberie');
     await userEvent.type(screen.getByTestId('symptome'), 'Fuite');
     await userEvent.type(screen.getByTestId('composante'), 'Robinet');
@@ -147,8 +154,8 @@ describe('NouvelAppelModal', () => {
     const radios = screen.getByTestId('access-group').querySelectorAll('input[type="radio"]');
     await userEvent.click(radios[1]); // yes_instructions
     await waitFor(() => expect(screen.getByTestId('access-details')).toBeTruthy());
-    await userEvent.click(screen.getByTestId('submit-btn'));
-    expect(screen.getByTestId('error-msg')).toBeTruthy();
+    expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('block-reasons').textContent).toMatch(/accès|access/i);
     expect(mockCreateManualRequest).not.toHaveBeenCalled();
   });
 

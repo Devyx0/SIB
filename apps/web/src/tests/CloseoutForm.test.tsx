@@ -56,7 +56,7 @@ function wrap() {
         <Routes>
           <Route
             path="/tech/appels/:id/cloture"
-            element={<CloseoutForm lang="fr" me={ME} onSignOut={vi.fn()} />}
+            element={<CloseoutForm lang="fr" me={ME} onSignOut={vi.fn()} onToggleLang={vi.fn()} />}
           />
           <Route path="/tech" element={<div>LISTE-TECH</div>} />
         </Routes>

@@ -141,8 +141,13 @@ def _format_context(ctx: dict) -> str:
         f"\n## Doublons / ajouts potentiels ({len(dups)} ouverts, même unité, −90j → +45j)"
     )
     parts.append(
-        "Même problème → verdict duplicate (+ DOUBLON POTENTIEL dans le titre). "
-        "Problème différent → verdict addition. Sinon → single."
+        "Règles de fusion (client) : "
+        "1) Même problème → verdict duplicate (+ DOUBLON POTENTIEL dans le titre) — ne pas fusionner. "
+        "2) Problème différent + routing A1/A2/A3/A3b/A4 (catégories exclusives) → verdict single "
+        "(appel distinct, jamais addition). "
+        "3) Problème différent + catégorie normale (A0/A5) → verdict addition "
+        "(le système fusionnera le problème dans l'appel ouvert). "
+        "Sinon → single."
     )
     if same:
         parts.append(f"### Même problème ({len(same)}) — candidats duplicate")
@@ -302,12 +307,59 @@ def _write_triage_provenance(cur, request_id: int, parsed: dict,
     )
 
 
+# Exclusive / auto-routed categories — never merge into an open same-unit call.
+_EXCLUSIVE_ROUTING = frozenset({"A1", "A2", "A3", "A3b", "A4"})
+
+
+def _merge_addition_into_peer(cur, request_id: int, peer_id: int, parsed: dict) -> None:
+    """Append this call's problems onto the open peer, then close this request as merged."""
+    new_problems = parsed.get("problems") or []
+    bullet = "\n".join(f"- {p}" for p in new_problems) if new_problems else None
+    note = (
+        f"Problème ajouté depuis l'appel #{request_id}"
+        + (f"\n{bullet}" if bullet else "")
+    )
+    cur.execute(
+        """
+        UPDATE maintenance_request SET
+            problems = CASE
+                WHEN problems IS NULL OR BTRIM(problems) = '' THEN %s
+                ELSE problems || E'\\n' || %s
+            END,
+            other_notes = CASE
+                WHEN other_notes IS NULL OR BTRIM(other_notes) = '' THEN %s
+                ELSE other_notes || E'\\n' || %s
+            END
+        WHERE request_id = %s
+          AND status::text NOT IN ('closed')
+        """,
+        (bullet or note, bullet or note, note, note, peer_id),
+    )
+    # Child is kept for audit but closed so it isn't dispatched separately.
+    merge_note = f"Fusionné dans l'appel ouvert #{peer_id} (ajout — même unité, problème différent)."
+    if parsed.get("other_notes"):
+        parsed["other_notes"] = f"{parsed['other_notes']}\n{merge_note}"
+    else:
+        parsed["other_notes"] = merge_note
+
+
 def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> None:
     cur.execute(
         f"SELECT {', '.join(_PROVENANCE_COLS)} FROM maintenance_request WHERE request_id = %s",
         (request_id,),
     )
     old_row = cur.fetchone()
+
+    # Client merge rules: exclusive routing never merges; normal addition merges into peer.
+    if parsed.get("verdict") == "addition" and parsed.get("routing_rule") in _EXCLUSIVE_ROUTING:
+        parsed["verdict"] = "single"
+        parsed["addition_to_request_id"] = None
+
+    merged = False
+    add_id = parsed.get("addition_to_request_id")
+    if parsed.get("verdict") == "addition" and isinstance(add_id, int):
+        _merge_addition_into_peer(cur, request_id, add_id, parsed)
+        merged = True
 
     problems_text = None
     if parsed.get("problems"):
@@ -317,10 +369,11 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
     from .calendar_route import infer_source_calendar_from_cur
     cal = infer_source_calendar_from_cur(cur, request_id)
 
+    status = "closed" if merged else "triaged"
     cur.execute(
         """
         UPDATE maintenance_request SET
-            status                  = 'triaged',
+            status                  = %(status)s::request_status,
             problem_summary         = %(title)s,
             problems                = %(problems)s,
             entry_permission        = %(entry_permission)s,
@@ -345,6 +398,7 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
           AND status = 'triage_pending'
         """,
         {
+            "status":             status,
             "title":              parsed.get("title"),
             "problems":           problems_text,
             "entry_permission":   parsed.get("entry_permission"),

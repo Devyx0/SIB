@@ -9,10 +9,11 @@ interface Props {
   lang: Lang;
   me: MeResponse | null;
   onSignOut: () => void;
+  onToggleLang: () => void;
   backTo?: string;
 }
 
-export default function TechHeader({ lang, me, onSignOut, backTo }: Props) {
+export default function TechHeader({ lang, me, onSignOut, onToggleLang, backTo }: Props) {
   return (
     <header className={styles.header}>
       {backTo ? (
@@ -30,6 +31,14 @@ export default function TechHeader({ lang, me, onSignOut, backTo }: Props) {
       )}
       <div className={styles.headerRight}>
         {me && <span className={styles.userName}>{me.nom_employe}</span>}
+        <button
+          type="button"
+          className={styles.langBtn}
+          onClick={onToggleLang}
+          aria-label={lang === 'fr' ? 'Switch to English' : 'Passer en français'}
+        >
+          {t(lang, 'EN', 'FR')}
+        </button>
         <button className={styles.signOutBtn} onClick={onSignOut}>
           {t(lang, 'Déconnexion', 'Sign out')}
         </button>

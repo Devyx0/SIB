@@ -402,13 +402,22 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                   )}
 
                   {(data.duplicate_of_request_id || data.addition_to_request_id) && (
-                    <section className={styles.card} data-testid="dup-add-section">
+                    <section
+                      className={`${styles.card} ${data.duplicate_of_request_id ? styles.dupBanner : styles.addBanner}`}
+                      data-testid="dup-add-section"
+                    >
                       <h3 className={styles.cardTitle}>
-                        {t(lang, 'Lien avec un appel actif', 'Link to active call')}
+                        {data.duplicate_of_request_id
+                          ? t(lang, 'Doublon potentiel', 'Possible duplicate')
+                          : t(lang, 'Ajout / fusion', 'Addition / merge')}
                       </h3>
                       {data.duplicate_of_request_id != null && (
                         <p className={styles.prose} data-testid="duplicate-of">
-                          {t(lang, 'Doublon de', 'Duplicate of')}{' '}
+                          {t(
+                            lang,
+                            'Même unité + même problème — ne pas fusionner automatiquement. Voir',
+                            'Same unit + same problem — do not auto-merge. See',
+                          )}{' '}
                           <button
                             type="button"
                             className={styles.peerLink}
@@ -420,7 +429,11 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                       )}
                       {data.addition_to_request_id != null && (
                         <p className={styles.prose} data-testid="addition-to">
-                          {t(lang, 'Ajout à', 'Addition to')}{' '}
+                          {t(
+                            lang,
+                            'Problème différent — fusionné dans / lié à',
+                            'Different problem — merged into / linked to',
+                          )}{' '}
                           <button
                             type="button"
                             className={styles.peerLink}

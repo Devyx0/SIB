@@ -216,6 +216,8 @@ class ListRow(BaseModel):
     en_route_at: Optional[datetime] = None
     closeout_outcome: Optional[str] = None
     closeout_urgent: Optional[bool] = None
+    duplicate_of_request_id: Optional[int] = None
+    addition_to_request_id: Optional[int] = None
 
 
 class RequestDetail(ListRow):
@@ -249,9 +251,6 @@ class RequestDetail(ListRow):
     raw_caller_body: Optional[dict] = None
     problems: Optional[str] = None
     triage_model_version: Optional[str] = None
-    # Triage linkage — same-unit duplicate / addition peers (Guide rule 12).
-    duplicate_of_request_id: Optional[int] = None
-    addition_to_request_id: Optional[int] = None
     # Fiche technique link — in the always-visible set for tech/contractor
     ft_link: Optional[str] = None
     ft_name: Optional[str] = None

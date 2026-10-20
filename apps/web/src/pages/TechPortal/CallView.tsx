@@ -14,6 +14,7 @@ interface Props {
   lang: Lang;
   me: MeResponse | null;
   onSignOut: () => void;
+  onToggleLang: () => void;
 }
 
 // Fiche technique data arrives in three shapes: link in ft_link; name only in
@@ -38,7 +39,7 @@ function getPosition(): Promise<{ lat: number; lng: number } | null> {
   });
 }
 
-export default function TechCallView({ lang, me, onSignOut }: Props) {
+export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Props) {
   const { id } = useParams();
   const requestId = Number(id);
   const { data: req, isPending, isError } = useRequest(Number.isFinite(requestId) ? requestId : null);
@@ -80,7 +81,7 @@ export default function TechCallView({ lang, me, onSignOut }: Props) {
 
   return (
     <div className={styles.page}>
-      <TechHeader lang={lang} me={me} onSignOut={onSignOut} backTo="/tech" />
+      <TechHeader lang={lang} me={me} onSignOut={onSignOut} onToggleLang={onToggleLang} backTo="/tech" />
       <main className={styles.main}>
         {isPending && <p className={styles.muted}>{t(lang, 'Chargement…', 'Loading…')}</p>}
         {isError && (

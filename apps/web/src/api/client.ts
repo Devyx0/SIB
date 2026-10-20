@@ -267,7 +267,7 @@ export interface IntakeBody {
   phone_1: string;
   phone_2?: string;
   building_id: number;
-  unit_id?: number;
+  unit_id: number;
   access: AccessChoice;
   access_details?: string;
   animals?: AnimalsChoice;

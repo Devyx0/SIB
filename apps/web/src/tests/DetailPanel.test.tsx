@@ -116,7 +116,7 @@ describe('DetailPanel', () => {
   it('invalidates board query after successful assign (justified dispatch action)', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([
-      { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' },
+      { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' , is_en_route: false },
     ]);
     vi.spyOn(client, 'dispatchAssign').mockResolvedValue({
       ...MOCK_REQUEST, assigned_employee_id: 14, assigned_employee_name: 'Jean Tech',
@@ -185,8 +185,8 @@ describe('DetailPanel', () => {
     const coordAssigned = { ...MOCK_REQUEST, assigned_employee_id: 4, assigned_employee_name: 'Marie Lavoie' };
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: coordAssigned, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([
-      { employee_id: 4, nom_employe: 'Marie Lavoie', role: 'coordinator' },
-      { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' },
+      { employee_id: 4, nom_employe: 'Marie Lavoie', role: 'coordinator' , is_en_route: false },
+      { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' , is_en_route: false },
     ]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 5, roles: ['director'] } as any} />);
     await waitFor(() => {
@@ -236,7 +236,7 @@ describe('DetailPanel', () => {
   it('shows French role label for assignable technician in select', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([
-      { employee_id: 7, nom_employe: 'Pierre Ouvrier', role: 'technician' },
+      { employee_id: 7, nom_employe: 'Pierre Ouvrier', role: 'technician' , is_en_route: false },
     ]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
     await waitFor(() => {
@@ -438,7 +438,7 @@ describe('en route assignment lock (fix 2026-10-19)', () => {
   it('shows the message when the API returns 409 REQUEST_EN_ROUTE', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([
-      { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' },
+      { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' , is_en_route: false },
     ]);
     vi.spyOn(client, 'dispatchAssign').mockRejectedValue(new ApiError('REQUEST_EN_ROUTE', EN_ROUTE_MSG));
     wrap(
@@ -461,7 +461,7 @@ describe('decision justification (system-wide)', () => {
   it('cancelling the prompt dispatches nothing and restores the assignee', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([
-      { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' },
+      { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' , is_en_route: false },
     ]);
     const assign = vi.spyOn(client, 'dispatchAssign').mockResolvedValue(ok);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
