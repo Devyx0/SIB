@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { t } from '../../i18n';
+import { statusLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import type { SectorLookup, EmployeeLookup } from '../../api/schema.d.ts';
 import StatusSelect from './StatusSelect';
+import RangeCalendar from '../../components/RangeCalendar';
 import styles from './FilterBar.module.css';
+import Select from '../../components/Select';
 
 interface Props {
   lang?: Lang;
@@ -22,6 +24,8 @@ interface Props {
   showAllCols?: boolean;
   onStartDate: (v: string) => void;
   onEndDate: (v: string) => void;
+  /** Set both dates at once (quick ranges). */
+  onDateRange?: (start: string, end: string) => void;
   onStatus: (v: string[]) => void;
   onSourceCalendar: (v: string) => void;
   onQ: (v: string | null) => void;
@@ -47,7 +51,7 @@ export default function FilterBar({
   showAllCols = false,
   dateNote,
   redispatch = false,
-  onStartDate, onEndDate, onStatus, onSourceCalendar, onQ,
+  onStartDate, onEndDate, onDateRange, onStatus, onSourceCalendar, onQ,
   onSectorId = () => {},
   onUrgency = () => {},
   onAssignedEmployeeId = () => {},
@@ -123,6 +127,49 @@ export default function FilterBar({
     ? `1 ${t(lang, 'appel', 'call')}`
     : `${total} ${t(lang, 'appels', 'calls')}`;
 
+  // Quick ranges end today (America/Toronto, like the board's default) and
+  // count today as one of the days: « 7 derniers jours » = today + 6 before.
+  const todayYmd = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
+  function daysBefore(ymd: string, n: number): string {
+    const [y, m, d] = ymd.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d - n)).toISOString().slice(0, 10);
+  }
+  const QUICK_RANGES = [7, 14, 30].map((days) => ({ days, start: daysBefore(todayYmd, days - 1) }));
+  const activeQuick = draftEnd === todayYmd
+    ? QUICK_RANGES.find((r) => r.start === draftStart)?.days
+    : undefined;
+  const shortDay = (v: string) => (v && v.length === 10 ? `${v.slice(8)}/${v.slice(5, 7)}` : '—');
+  const customLabel = `${shortDay(draftStart)} → ${shortDay(draftEnd)}`;
+
+  const [calOpen, setCalOpen] = useState(false);
+  const periodRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!calOpen) return;
+    function onDown(e: MouseEvent) {
+      if (periodRef.current && !periodRef.current.contains(e.target as Node)) setCalOpen(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [calOpen]);
+
+  function applyRange(start: string, end: string) {
+    if (startTimer.current) clearTimeout(startTimer.current);
+    if (endTimer.current) clearTimeout(endTimer.current);
+    setDraftStart(start);
+    setDraftEnd(end);
+    if (onDateRange) onDateRange(start, end);
+    else { onStartDate(start); onEndDate(end); }
+  }
+
+  function applyQuickRange(start: string) {
+    if (startTimer.current) clearTimeout(startTimer.current);
+    if (endTimer.current) clearTimeout(endTimer.current);
+    setDraftStart(start);
+    setDraftEnd(todayYmd);
+    if (onDateRange) onDateRange(start, todayYmd);
+    else { onStartDate(start); onEndDate(todayYmd); }
+  }
+
   const dateRangeError = (() => {
     if (!draftStart || !draftEnd) return null;
     if (!isCompleteDate(draftStart) || !isCompleteDate(draftEnd)) return null;
@@ -131,6 +178,37 @@ export default function FilterBar({
     if (days > 31) return t(lang, 'La plage de dates ne peut pas dépasser 31 jours.', 'Date range cannot exceed 31 days.');
     return null;
   })();
+
+  // ── Phone: the filters fold away behind a « Filtres » bar ──────────────
+  const OPEN_KEY = 'sib.board.filtersOpen';
+  const [filtersOpen, setFiltersOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem(OPEN_KEY) === '1'; } catch { return false; }
+  });
+  function toggleFilters() {
+    setFiltersOpen((o) => {
+      try { localStorage.setItem(OPEN_KEY, o ? '0' : '1'); } catch { /* private mode */ }
+      return !o;
+    });
+  }
+  const fmtDay = (ymd: string) => {
+    const [, m, d] = ymd.split('-');
+    return `${d}/${m}`;
+  };
+  const activeSummary = [
+    activeQuick
+      ? t(lang, `${activeQuick} jours`, `${activeQuick} days`)
+      : (draftStart && draftEnd ? `${fmtDay(draftStart)} → ${fmtDay(draftEnd)}` : null),
+    status.length === 1 ? statusLabel(lang, status[0])
+      : status.length > 1 ? t(lang, `${status.length} statuts`, `${status.length} statuses`) : null,
+    urgency ? URGENCY_OPTS.find((o) => o.value === urgency)?.label ?? urgency : null,
+    assignedEmployeeId != null ? employees.find((e) => e.employee_id === assignedEmployeeId)?.nom_employe ?? null : null,
+    sourceCalendar ? SOURCE_OPTS.find((o) => o.value === sourceCalendar)?.label ?? null : null,
+    hasSubcontractor != null ? SUB_OPTS.find((o) => o.value === String(hasSubcontractor))?.label ?? null : null,
+    sectorId != null ? sectors.find((x) => x.sector_id === sectorId)?.territoire ?? null : null,
+    redispatch ? t(lang, 'À redispatcher', 'To re-dispatch') : null,
+  ].filter(Boolean) as string[];
+  // Everything except the period counts as "active" (the period is always set).
+  const activeCount = activeSummary.length - (activeSummary[0] ? 1 : 0);
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -148,9 +226,9 @@ export default function FilterBar({
   }, []);
 
   return (
-    <div className={styles.bar}>
+    <div className={`${styles.bar} ${filtersOpen ? '' : styles.mobileCollapsed}`}>
       {/* Row 1: search + the filters people change most */}
-      <div className={styles.row}>
+      <div className={styles.row} id="board-filter-fields">
         <div className={styles.searchGroup}>
           <label className={styles.label} htmlFor="board-search">{t(lang, 'Recherche', 'Search')}</label>
           <input
@@ -165,28 +243,122 @@ export default function FilterBar({
           />
         </div>
 
+        {/* Phone only: fold the filters away once they are set. */}
+        <button
+          type="button"
+          className={styles.mobileToggle}
+          aria-expanded={filtersOpen}
+          aria-controls="board-filter-fields"
+          onClick={toggleFilters}
+          data-testid="filters-toggle"
+        >
+          <span className={styles.mobileToggleMain}>
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M3 5h14M6 10h8M8.5 15h3" />
+            </svg>
+            {t(lang, 'Filtres', 'Filters')}
+            {activeCount > 0 && <span className={styles.mobileBadge}>{activeCount}</span>}
+            <span className={styles.mobileToggleAction}>
+              {filtersOpen ? t(lang, 'Masquer', 'Hide') : t(lang, 'Afficher', 'Show')}
+              <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                className={filtersOpen ? styles.chevronUp : ''}>
+                <path d="M6 8l4 4 4-4" />
+              </svg>
+            </span>
+          </span>
+          {!filtersOpen && activeSummary.length > 0 && (
+            <span className={styles.mobileSummary} data-testid="filters-summary">{activeSummary.join(' · ')}</span>
+          )}
+        </button>
+
         <div className={styles.fieldGroup}>
           <span className={styles.label} id="board-period">{t(lang, 'Période', 'Period')}</span>
-          <div className={styles.dateRange} role="group" aria-labelledby="board-period">
-            <input
-              type="date"
-              className={styles.dateInput}
-              value={draftStart}
-              disabled={!!dateNote}
-              aria-label={t(lang, 'Du', 'From')}
-              data-testid="start-date-input"
-              onChange={(e) => handleStartDate(e.target.value)}
-            />
-            <span className={styles.dateSep} aria-hidden="true">→</span>
-            <input
-              type="date"
-              className={styles.dateInput}
-              value={draftEnd}
-              disabled={!!dateNote}
-              aria-label={t(lang, 'Au', 'To')}
-              data-testid="end-date-input"
-              onChange={(e) => handleEndDate(e.target.value)}
-            />
+          <div
+            className={styles.periodWrap}
+            ref={periodRef}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && calOpen) { e.stopPropagation(); setCalOpen(false); }
+            }}
+          >
+            <div className={styles.period} role="group" aria-labelledby="board-period">
+              {QUICK_RANGES.map((r) => (
+                <button
+                  key={r.days}
+                  type="button"
+                  className={`${styles.periodBtn} ${activeQuick === r.days ? styles.periodBtnActive : ''}`}
+                  aria-pressed={activeQuick === r.days}
+                  disabled={!!dateNote}
+                  title={t(lang, `${r.days} derniers jours`, `Last ${r.days} days`)}
+                  aria-label={t(lang, `${r.days} derniers jours`, `Last ${r.days} days`)}
+                  onClick={() => { applyQuickRange(r.start); setCalOpen(false); }}
+                  data-testid={`quick-range-${r.days}`}
+                >
+                  {t(lang, `${r.days} jours`, `${r.days} days`)}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={`${styles.periodBtn} ${styles.calBtn} ${!activeQuick ? styles.periodBtnActive : ''}`}
+                aria-haspopup="dialog"
+                aria-expanded={calOpen}
+                aria-controls="board-period-cal"
+                aria-label={activeQuick
+                  ? t(lang, 'Choisir une période personnalisée', 'Pick a custom range')
+                  : t(lang, `Période personnalisée : ${customLabel}. Modifier`, `Custom range: ${customLabel}. Change`)}
+                disabled={!!dateNote}
+                onClick={() => setCalOpen((o) => !o)}
+                data-testid="custom-range-btn"
+              >
+                <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4.5" width="14" height="12" rx="2" /><path d="M3 8.5h14M7 3v3M13 3v3" />
+                </svg>
+                {!activeQuick && <span className={styles.customLabel}>{customLabel}</span>}
+              </button>
+            </div>
+
+            {/* Custom range: calendar + exact dates. Kept mounted (hidden) so
+                typing a date keeps its debounce while the popover is closed. */}
+            <div
+              id="board-period-cal"
+              className={styles.calPopover}
+              role="dialog"
+              aria-label={t(lang, 'Période personnalisée', 'Custom range')}
+              hidden={!calOpen}
+            >
+              {calOpen && (
+                <RangeCalendar
+                  lang={lang}
+                  start={draftStart}
+                  end={draftEnd}
+                  maxDays={31}
+                  onChange={(a, b) => { applyRange(a, b); setCalOpen(false); }}
+                />
+              )}
+              <div className={styles.calInputs}>
+                <label className={styles.calInputLabel}>
+                  {t(lang, 'Du', 'From')}
+                  <input
+                    type="date"
+                    className={styles.dateInput}
+                    value={draftStart}
+                    disabled={!!dateNote}
+                    data-testid="start-date-input"
+                    onChange={(e) => handleStartDate(e.target.value)}
+                  />
+                </label>
+                <label className={styles.calInputLabel}>
+                  {t(lang, 'Au', 'To')}
+                  <input
+                    type="date"
+                    className={styles.dateInput}
+                    value={draftEnd}
+                    disabled={!!dateNote}
+                    data-testid="end-date-input"
+                    onChange={(e) => handleEndDate(e.target.value)}
+                  />
+                </label>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -197,7 +369,7 @@ export default function FilterBar({
 
         <div className={styles.fieldGroup}>
           <label className={styles.label} htmlFor="board-urgency">{t(lang, 'Urgence', 'Urgency')}</label>
-          <select
+          <Select
             id="board-urgency"
             className={`${styles.input} ${urgency ? styles.inputActive : ''}`}
             value={urgency}
@@ -206,13 +378,13 @@ export default function FilterBar({
             {URGENCY_OPTS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
-          </select>
+          </Select>
         </div>
 
         {employees.length > 0 && (
           <div className={styles.fieldGroup}>
             <label className={styles.label} htmlFor="board-employee">{t(lang, 'Employé', 'Employee')}</label>
-            <select
+            <Select
               id="board-employee"
               className={`${styles.input} ${styles.employeeSelect} ${assignedEmployeeId != null ? styles.inputActive : ''}`}
               value={assignedEmployeeId ?? ''}
@@ -224,13 +396,13 @@ export default function FilterBar({
                   {emp.nom_employe}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         )}
 
         <div className={styles.fieldGroup}>
           <label className={styles.label} htmlFor="board-source">{t(lang, 'Source', 'Source')}</label>
-          <select
+          <Select
             id="board-source"
             className={`${styles.input} ${sourceCalendar ? styles.inputActive : ''}`}
             value={sourceCalendar}
@@ -239,14 +411,14 @@ export default function FilterBar({
             {SOURCE_OPTS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div className={styles.fieldGroup}>
           <label className={styles.label} htmlFor="board-subcontractor">
             {t(lang, 'Sous-traitant', 'Subcontractor')}
           </label>
-          <select
+          <Select
             id="board-subcontractor"
             className={`${styles.input} ${hasSubcontractor != null ? styles.inputActive : ''}`}
             value={hasSubcontractor == null ? '' : String(hasSubcontractor)}
@@ -259,7 +431,7 @@ export default function FilterBar({
             {SUB_OPTS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
-          </select>
+          </Select>
         </div>
       </div>
 

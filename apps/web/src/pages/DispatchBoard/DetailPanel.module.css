@@ -523,6 +523,89 @@
   composes: applyBtn;
 }
 
+/* Edited, not yet saved */
+.editFieldChanged {
+  border-color: var(--navy-400);
+  background: var(--navy-50);
+  box-shadow: inset 3px 0 0 var(--navy-800);
+}
+
+.editFieldChanged .editLabel::after {
+  content: ' · Modifié';
+  color: var(--navy-700);
+  font-weight: 600;
+}
+
+/* One « Enregistrer » for every field above */
+.saveBar {
+  position: sticky;
+  bottom: -24px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 4px -18px -16px;
+  padding: 12px 18px;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-divider);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+}
+
+.saveBarDirty {
+  background: var(--navy-50);
+  border-top-color: var(--navy-200);
+}
+
+.saveStatus {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-neutral-600);
+  margin-right: auto;
+}
+
+.saveBarDirty .saveStatus {
+  color: var(--navy-800);
+}
+
+.discardBtn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  background: none;
+  color: var(--color-neutral-700);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  min-height: 36px;
+  padding: 0 4px;
+}
+
+.discardBtn:hover {
+  color: var(--navy-900);
+}
+
+.saveBtn {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  min-height: 40px;
+  padding: 8px 24px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--navy-800);
+  color: #fff;
+}
+
+.saveBtn:hover:not(:disabled) {
+  background: var(--navy-900);
+}
+
+.saveBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* ── Weather (SoW 3.4, draft) ───────────────────────────────────── */
 
 .weatherHint {

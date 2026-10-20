@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -19,6 +19,14 @@ vi.mock('../api/client', () => ({
   fetchUnitContext: (...args: unknown[]) => mockFetchUnitContext(...args),
   createManualRequest: (...args: unknown[]) => mockCreateManualRequest(...args),
 }));
+
+// jsdom has no canvas/image decoding: stub the shrink step and object URLs.
+const mockShrink = vi.fn(async (f: File) => ({ mime: 'image/jpeg' as const, data_base64: `b64-${f.name}` }));
+vi.mock('../lib/shrinkImage', () => ({ shrinkImage: (f: File) => mockShrink(f) }));
+let urlSeq = 0;
+URL.createObjectURL = vi.fn(() => `blob:preview-${++urlSeq}`);
+URL.revokeObjectURL = vi.fn();
+const photo = (name: string) => new File(['x'], name, { type: 'image/jpeg' });
 
 function wrap(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -101,7 +109,7 @@ describe('NouvelAppelModal', () => {
     expect(screen.getByTestId('symptome')).toBeTruthy();
     expect(screen.getByTestId('composante')).toBeTruthy();
     expect(screen.getByTestId('emplacement')).toBeTruthy();
-    expect(screen.getByTestId('intake-urgent')).toBeTruthy();
+    expect(screen.queryByTestId('intake-urgent')).toBeNull(); // urgent checkbox removed
     expect(screen.queryByTestId('animals-group')).toBeNull();
     expect(screen.queryByTestId('category')).toBeNull();
     await waitFor(() => expect(mockFetchSectors).toHaveBeenCalled());
@@ -192,6 +200,17 @@ describe('NouvelAppelModal', () => {
     expect((screen.getByTestId('caller-email') as HTMLInputElement).value).toBe('marie@example.com');
     expect(screen.getByTestId('animals-group')).toBeTruthy();
     expect(screen.queryByTestId('tenant-select')).toBeNull();
+    // The manual address part below the « OU » shows it was filled for you.
+    expect(screen.getByTestId('address-autofilled')).toBeTruthy();
+    expect((screen.getByTestId('sector-select') as HTMLSelectElement).value).toBe('1');
+  });
+
+  it('shows the manual address picker under an OU divider, not marked auto-filled', async () => {
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    await waitFor(() => expect(mockFetchSectors).toHaveBeenCalled());
+    expect(screen.getByRole('separator', { name: 'ou' }).textContent).toBe('OU');
+    expect(screen.getByTestId('sector-select')).toBeTruthy();
+    expect(screen.queryByTestId('address-autofilled')).toBeNull();
   });
 
   it('shows tenant picker when multiple occupants and fills on choose', async () => {
@@ -313,7 +332,7 @@ describe('NouvelAppelModal', () => {
     expect(screen.queryByTestId('animals-group')).toBeNull();
   });
 
-  it('creates with taxonomy axes, urgent, secondary contact', async () => {
+  it('creates with taxonomy axes and secondary contact', async () => {
     mockCreateManualRequest.mockResolvedValue({ request_id: 42, building_id: 10, unit_id: 100, match_status: 'exact' });
     wrap(<NouvelAppelModal open onClose={vi.fn()} />);
     await fillRequired();
@@ -322,7 +341,6 @@ describe('NouvelAppelModal', () => {
     await userEvent.type(screen.getByTestId('caller-email-confirm'), 'a@example.com');
     await userEvent.type(screen.getByTestId('secondary-name'), 'Marie');
     await userEvent.type(screen.getByTestId('secondary-email'), 'marie@example.com');
-    await userEvent.click(screen.getByTestId('intake-urgent'));
     await waitFor(() => expect(screen.getByTestId('unit-select')).toBeTruthy());
     await userEvent.selectOptions(screen.getByTestId('unit-select'), '100');
     await userEvent.click(screen.getByTestId('submit-btn'));
@@ -339,9 +357,48 @@ describe('NouvelAppelModal', () => {
     expect(body.symptome).toBe('Fuite');
     expect(body.composante).toBe('Robinet');
     expect(body.emplacement).toBe('Cuisine');
-    expect(body.intake_urgent).toBe(true);
+    expect(body.intake_urgent).toBeUndefined();
     expect(body.animals).toBeUndefined();
     expect(body.access).toBe('yes');
+  });
+
+  it('marks photos as recommended and sends them with Créer', async () => {
+    mockCreateManualRequest.mockResolvedValue({ request_id: 42, building_id: 10, unit_id: 100, match_status: 'exact' });
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    expect(screen.getByTestId('photo-field').textContent).toMatch(/Recommandé/);
+    await fillRequired();
+    await waitFor(() => expect(screen.getByTestId('unit-select')).toBeTruthy());
+    await userEvent.selectOptions(screen.getByTestId('unit-select'), '100');
+
+    fireEvent.change(screen.getByTestId('photo-input'), { target: { files: [photo('evier.jpg'), photo('armoire.jpg')] } });
+    expect(screen.getAllByRole('img', { name: /Photo \d/ })).toHaveLength(2);
+    await userEvent.click(screen.getByRole('button', { name: 'Retirer la photo 1' }));
+    expect(screen.getAllByRole('img', { name: /Photo \d/ })).toHaveLength(1);
+
+    await userEvent.click(screen.getByTestId('submit-btn'));
+    await waitFor(() => expect(mockCreateManualRequest).toHaveBeenCalledOnce());
+    expect(mockCreateManualRequest.mock.calls[0][0].photos).toEqual([
+      { mime: 'image/jpeg', data_base64: 'b64-armoire.jpg' },
+    ]);
+  });
+
+  it('caps photos at 5 and hides the add tile when full', () => {
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((n) => photo(`${n}.jpg`));
+    fireEvent.change(screen.getByTestId('photo-input'), { target: { files } });
+    expect(screen.getAllByRole('img', { name: /Photo \d/ })).toHaveLength(5);
+    expect(screen.queryByTestId('add-photo')).toBeNull();
+  });
+
+  it('sends no photos field when none were added', async () => {
+    mockCreateManualRequest.mockResolvedValue({ request_id: 43, building_id: 10, unit_id: 100, match_status: 'exact' });
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    await fillRequired();
+    await waitFor(() => expect(screen.getByTestId('unit-select')).toBeTruthy());
+    await userEvent.selectOptions(screen.getByTestId('unit-select'), '100');
+    await userEvent.click(screen.getByTestId('submit-btn'));
+    await waitFor(() => expect(mockCreateManualRequest).toHaveBeenCalledOnce());
+    expect(mockCreateManualRequest.mock.calls[0][0].photos).toBeUndefined();
   });
 
   it('submit button disabled while saving', async () => {

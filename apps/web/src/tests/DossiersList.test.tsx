@@ -79,7 +79,10 @@ describe('DossiersList', () => {
     wrap();
     expect(screen.getByLabelText('A fait une visite')).toBeTruthy();
     // only field staff are offered (options render once employees load)
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Marc Tech' })).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByTestId('filter-employee').querySelectorAll('option').length).toBeGreaterThan(1));
+    await userEvent.click(screen.getByRole('combobox', { name: 'A fait une visite' }));
+    expect(await screen.findByRole('option', { name: 'Marc Tech' })).toBeTruthy();
     expect(screen.queryByRole('option', { name: 'Coordo' })).toBeNull();
   });
 

@@ -72,6 +72,35 @@ function formatDate(dateStr: string | null | undefined, lang: Lang): string {
     .format(new Date(y, m - 1, d));
 }
 
+/** Photos attached to the call at intake; each opens full size in a new tab. */
+export function IntakePhotos({ requestId, ids, lang }: { requestId: number; ids: number[]; lang: Lang }) {
+  if (ids.length === 0) return null;
+  return (
+    <div className={styles.intakePhotos} data-testid="intake-photos">
+      <span className={styles.followupMeta}>
+        {t(lang, `Photos jointes à l’appel (${ids.length})`, `Photos attached to the call (${ids.length})`)}
+      </span>
+      <div className={styles.visitPhotos}>
+        {ids.map((id) => <IntakePhoto key={id} requestId={requestId} attachmentId={id} lang={lang} />)}
+      </div>
+    </div>
+  );
+}
+
+function IntakePhoto({ requestId, attachmentId, lang }: { requestId: number; attachmentId: number; lang: Lang }) {
+  const { data } = useQuery({
+    queryKey: ['photo-url', requestId, attachmentId],
+    queryFn: () => fetchPhotoUrl(requestId, attachmentId),
+    staleTime: 4 * 60 * 1000, // signed URLs live 5 min
+  });
+  if (!data) return <span className={styles.photoPlaceholder} aria-hidden="true" />;
+  return (
+    <a href={data.url} target="_blank" rel="noreferrer" title={t(lang, 'Ouvrir en grand', 'Open full size')}>
+      <img src={data.url} alt={t(lang, 'Photo de l’appel', 'Call photo')} className={styles.intakePhoto} data-testid="intake-photo" />
+    </a>
+  );
+}
+
 function VisitPhoto({ requestId, attachmentId }: { requestId: number; attachmentId: number }) {
   const { data } = useQuery({
     queryKey: ['photo-url', requestId, attachmentId],

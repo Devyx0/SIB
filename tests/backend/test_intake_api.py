@@ -368,3 +368,90 @@ def test_search_unit_numbers(ac, db_conn):
     assert len(body) >= 1
     assert "unique_unit_number" in body[0]
     assert "unit_id" in body[0]
+
+
+# ── Photos sent with the new call ────────────────────────────────────────────
+
+import base64  # noqa: E402
+
+_PNG = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 64).decode()
+
+
+@pytest.fixture
+def intake_storage(monkeypatch):
+    """Record uploads/deletes; no storage traffic."""
+    calls: dict[str, list] = {"uploaded": [], "deleted": []}
+    monkeypatch.setattr(
+        "backend.modules.requests.storage.upload_photo",
+        lambda path, content, mime: calls["uploaded"].append((path, len(content), mime)),
+    )
+    monkeypatch.setattr(
+        "backend.modules.requests.storage.delete_photo",
+        lambda path: calls["deleted"].append(path),
+    )
+    return calls
+
+
+def test_create_with_photos_stores_intake_attachments(ac, db_conn, intake_storage):
+    loc = _perigord(db_conn)
+    _ensure_coord_sector(db_conn, loc["sector_id"])
+    photos = [{"mime": "image/png", "data_base64": _PNG}, {"mime": "image/png", "data_base64": _PNG}]
+    r = ac(_user(_COORD, "coordinator")).post("/api/v1/intake", json=_valid_body(db_conn, photos=photos))
+    assert r.status_code == 201
+    rid = r.json()["request_id"]
+    rows = db_conn.execute(
+        "SELECT attachment_id, photo_context::text AS ctx, storage_path, uploaded_by_employee_id "
+        "FROM maintenance_attachment WHERE request_id = %s ORDER BY attachment_id", [rid],
+    ).fetchall()
+    assert [row["ctx"] for row in rows] == ["intake", "intake"]
+    assert all(row["storage_path"].startswith(f"intake/{rid}/") for row in rows)
+    assert all(row["uploaded_by_employee_id"] == _COORD for row in rows)
+    assert len(intake_storage["uploaded"]) == 2
+
+    detail = ac(_user(_COORD, "coordinator")).get(f"/api/v1/requests/{rid}")
+    assert detail.json()["intake_photo_ids"] == [row["attachment_id"] for row in rows]
+
+
+def test_create_without_photos_still_works(ac, db_conn, intake_storage):
+    loc = _perigord(db_conn)
+    _ensure_coord_sector(db_conn, loc["sector_id"])
+    r = ac(_user(_COORD, "coordinator")).post("/api/v1/intake", json=_valid_body(db_conn))
+    assert r.status_code == 201
+    assert intake_storage["uploaded"] == []
+
+
+def test_unreadable_photo_rejected_before_anything_is_written(ac, db_conn, intake_storage):
+    loc = _perigord(db_conn)
+    _ensure_coord_sector(db_conn, loc["sector_id"])
+    before = db_conn.execute("SELECT count(*) AS n FROM maintenance_request").fetchone()["n"]
+    r = ac(_user(_COORD, "coordinator")).post(
+        "/api/v1/intake",
+        json=_valid_body(db_conn, photos=[{"mime": "image/jpeg", "data_base64": "@@not-base64@@"}]),
+    )
+    assert r.status_code == 422
+    assert db_conn.execute("SELECT count(*) AS n FROM maintenance_request").fetchone()["n"] == before
+    assert intake_storage["uploaded"] == []
+
+
+def test_more_than_five_photos_422(ac, db_conn, intake_storage):
+    photos = [{"mime": "image/png", "data_base64": _PNG}] * 6
+    r = ac(_user(_COORD, "coordinator")).post("/api/v1/intake", json=_valid_body(db_conn, photos=photos))
+    assert r.status_code == 422
+
+
+def test_storage_failure_cleans_up_uploaded_files(ac, db_conn, monkeypatch):
+    loc = _perigord(db_conn)
+    _ensure_coord_sector(db_conn, loc["sector_id"])
+    uploaded, deleted = [], []
+
+    def upload(path, content, mime):
+        if len(uploaded) == 1:
+            raise RuntimeError("storage down")
+        uploaded.append(path)
+
+    monkeypatch.setattr("backend.modules.requests.storage.upload_photo", upload)
+    monkeypatch.setattr("backend.modules.requests.storage.delete_photo", lambda p: deleted.append(p))
+    photos = [{"mime": "image/png", "data_base64": _PNG}] * 2
+    r = ac(_user(_COORD, "coordinator")).post("/api/v1/intake", json=_valid_body(db_conn, photos=photos))
+    assert r.status_code >= 500
+    assert deleted == uploaded and len(uploaded) == 1

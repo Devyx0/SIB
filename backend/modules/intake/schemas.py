@@ -16,6 +16,16 @@ _ANIMALS_LABELS: dict[str, str | None] = {
 AccessChoice = Literal["yes", "yes_instructions", "tenant_required", "common_area"]
 
 
+class IntakePhoto(BaseModel):
+    """A photo sent with the new call, base64-encoded (the web form shrinks
+    it first). Same formats and size cap as closeout photos."""
+    mime: Literal["image/jpeg", "image/png", "image/webp"]
+    data_base64: str = Field(..., min_length=1)
+
+
+MAX_INTAKE_PHOTOS = 5
+
+
 class ManualCreateBody(BaseModel):
     caller_name: str = Field(..., min_length=1)
     caller_email: Optional[str] = None
@@ -41,6 +51,8 @@ class ManualCreateBody(BaseModel):
     secondary_email: Optional[str] = None
     attention: Optional[str] = None
     attachment_url: Optional[str] = None
+    # Recommended, optional: photos of the problem, saved with the call.
+    photos: list[IntakePhoto] = Field(default_factory=list, max_length=MAX_INTAKE_PHOTOS)
     # UI language for auto-triage text fields (title, problems, notes).
     ui_lang: Literal["fr", "en"] = "fr"
 

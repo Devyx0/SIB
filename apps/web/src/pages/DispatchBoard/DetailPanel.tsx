@@ -3,20 +3,20 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRequest } from '../../hooks/useRequest';
 import {
   ApiError, fetchEmployees,
-  dispatchAssign, dispatchReschedule, dispatchSetUrgency,
-  dispatchSetFollowUpDate, dispatchSetNextSteps, dispatchSetCost, dispatchAddLog,
+  dispatchAddLog, dispatchSave,
   triggerTriage,
 } from '../../api/client';
 import TriageFeedbackWidget from '../../components/TriageFeedbackWidget';
 import { useJustify, type JustifyRequest } from '../../components/Justification';
-import type { Justification } from '../../api/client';
+import type { DispatchFields, Justification } from '../../api/client';
 import {
-  DecisionHistorySection, FollowupLogSection, VisitsSection,
+  DecisionHistorySection, FollowupLogSection, IntakePhotos, VisitsSection,
 } from '../../components/RequestSections';
 import type { MeResponse } from '../../api/schema.d.ts';
 import { roleLabel, statusLabel, timeEstimateLabel, sourceCalendarLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import styles from './DetailPanel.module.css';
+import Select from '../../components/Select';
 
 
 function formatCost(amount: number | string, lang: Lang): string {
@@ -79,6 +79,8 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
   const [logText, setLogText] = useState('');
   const [rescheduleDate, setRescheduleDate] = useState<string | null>(null);
   const [assignEmpId, setAssignEmpId] = useState<number | null>(null);
+  // undefined = untouched; null = « Aucune »
+  const [urgencyDraft, setUrgencyDraft] = useState<string | null | undefined>(undefined);
   const weatherEnabled = !!me?.weather_escalation_enabled;
 
   // Sync controlled select with server data when data first loads or request changes
@@ -107,11 +109,11 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') requestCloseRef.current();
     }
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-  }, [onClose]);
+  }, []);
 
   useEffect(() => {
     document.body.classList.add('modal-open');
@@ -143,6 +145,7 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
       setNextSteps(null);
       setCost(null);
       setRescheduleDate(null);
+      setUrgencyDraft(undefined);
       setLogText('');
     } catch (err) {
       if (err instanceof ApiError && err.code === 'STALE_DATA') {
@@ -183,103 +186,86 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
       : (employees ?? []).find((e) => e.employee_id === id)?.nom_employe ?? `#${id}`;
   const clip = (v: string | null | undefined) => (v && v.length > 60 ? `${v.slice(0, 57)}…` : v || NONE);
 
-  function doAssign(employeeId: number | null) {
-    if (!data || employeeId === data.assigned_employee_id) return;
+  // ── Staged edits: everything is saved together with « Enregistrer » ──
+  const fmtCost = (v: number | null) => (v != null ? formatCost(v, lang) : NONE);
+  const costDraft: number | null | undefined =
+    cost === null ? undefined : cost.trim() === '' ? null : Number(cost);
+  type Pending = { key: keyof DispatchFields; label: string; before: string; after: string; value: unknown };
+  const pending: Pending[] = [];
+  if (data) {
+    if (assignEmpId !== (data.assigned_employee_id ?? null)) {
+      pending.push({ key: 'assigned_employee_id', label: t(lang, 'Assignation', 'Assignment'),
+        before: data.assigned_employee_name ?? employeeName(data.assigned_employee_id), after: employeeName(assignEmpId), value: assignEmpId });
+    }
+    if (rescheduleDate && rescheduleDate !== data.start_date) {
+      pending.push({ key: 'start_date', label: t(lang, 'Date de répartition', 'Schedule date'),
+        before: data.start_date ?? NONE, after: rescheduleDate, value: rescheduleDate });
+    }
+    if (urgencyDraft !== undefined && urgencyDraft !== (data.urgency_tier ?? null)) {
+      pending.push({ key: 'urgency_tier', label: t(lang, 'Urgence', 'Urgency'),
+        before: data.urgency_tier ?? t(lang, 'Aucune', 'None'), after: urgencyDraft ?? t(lang, 'Aucune', 'None'), value: urgencyDraft });
+    }
+    if (followUpDate !== null && (followUpDate || null) !== (data.next_follow_up_date ?? null)) {
+      pending.push({ key: 'next_follow_up_date', label: t(lang, 'Prochain suivi', 'Next follow-up'),
+        before: data.next_follow_up_date ?? NONE, after: followUpDate || NONE, value: followUpDate || null });
+    }
+    if (nextSteps !== null && (nextSteps.trim() || null) !== (data.next_steps ?? null)) {
+      pending.push({ key: 'next_steps', label: t(lang, 'Prochaines étapes', 'Next steps'),
+        before: clip(data.next_steps), after: clip(nextSteps.trim()), value: nextSteps.trim() || null });
+    }
+    const savedCost = data.estimated_cost != null ? Number(data.estimated_cost) : null;
+    if (costDraft !== undefined && !Number.isNaN(costDraft) && costDraft !== savedCost) {
+      pending.push({ key: 'estimated_cost', label: t(lang, 'Coût estimé', 'Estimated cost'),
+        before: fmtCost(savedCost), after: fmtCost(costDraft), value: costDraft });
+    }
+  }
+  const changedKeys = new Set(pending.map((p) => p.key));
+  const effectiveUrgency = urgencyDraft !== undefined ? urgencyDraft : (data?.urgency_tier ?? null);
+
+  function discardEdits() {
+    setAssignEmpId(data?.assigned_employee_id ?? null);
+    setRescheduleDate(null);
+    setUrgencyDraft(undefined);
+    setFollowUpDate(null);
+    setNextSteps(null);
+    setCost(null);
+  }
+
+  function doSave() {
+    if (!data || pending.length === 0) return;
+    const changes = Object.fromEntries(pending.map((p) => [p.key, p.value])) as Partial<DispatchFields>;
+    const n = pending.length;
     decide(
       {
-        decision: t(lang, 'Assignation', 'Assignment'),
-        before: data.assigned_employee_name ?? employeeName(data.assigned_employee_id),
-        after: employeeName(employeeId),
+        decision: n === 1 ? pending[0].label : t(lang, `${n} modifications`, `${n} changes`),
+        ...(n === 1 ? { before: pending[0].before, after: pending[0].after } : {}),
+        changes: pending.map(({ label, before, after }) => ({ label, before, after })),
       },
-      (justification) => dispatchAssign(requestId, {
-        employee_id: employeeId,
-        current_assigned_employee_id: data.assigned_employee_id,
-        current_start_date: data.start_date,
-        current_urgency_tier: data.urgency_tier,
-        justification,
-      }),
-      () => setAssignEmpId(data.assigned_employee_id ?? null),
-    );
-  }
-
-  function doReschedule(date: string) {
-    if (!data || date === data.start_date) return;
-    decide(
-      { decision: t(lang, 'Reprogrammation', 'Reschedule'), before: data.start_date, after: date },
-      (justification) => dispatchReschedule(requestId, {
-        start_date: date,
-        current_start_date: data.start_date,
-        current_assigned_employee_id: data.assigned_employee_id,
-        current_urgency_tier: data.urgency_tier,
+      (justification) => dispatchSave(requestId, {
+        current: {
+          assigned_employee_id: data.assigned_employee_id ?? null,
+          start_date: data.start_date ?? null,
+          urgency_tier: data.urgency_tier ?? null,
+          next_follow_up_date: data.next_follow_up_date ?? null,
+          next_steps: data.next_steps ?? null,
+          estimated_cost: data.estimated_cost != null ? Number(data.estimated_cost) : null,
+        },
+        changes,
         justification,
       }),
     );
   }
 
-  function doSetUrgency(tier: string | null) {
-    if (!data || tier === data.urgency_tier) return;
-    decide(
-      {
-        decision: t(lang, 'Urgence', 'Urgency'),
-        before: data.urgency_tier ?? t(lang, 'Aucune', 'None'),
-        after: tier ?? t(lang, 'Aucune', 'None'),
-      },
-      (justification) => dispatchSetUrgency(requestId, {
-        urgency_tier: tier as 'AJD' | 'ajd' | null,
-        current_urgency_tier: data.urgency_tier,
-        current_assigned_employee_id: data.assigned_employee_id,
-        current_start_date: data.start_date,
-        weather_evaluation_id: null,
-        justification,
-      }),
-    );
+  // Closing with unsaved edits asks first.
+  function requestClose() {
+    if (pending.length > 0 && !window.confirm(t(lang,
+      'Des modifications ne sont pas enregistrées. Fermer quand même ?',
+      'You have unsaved changes. Close anyway?'))) return;
+    onClose();
   }
+  const requestCloseRef = useRef(requestClose);
+  requestCloseRef.current = requestClose;
 
-  function doFollowUpDate() {
-    if (!data) return;
-    const next = followUpDate ?? data.next_follow_up_date;
-    if (next === data.next_follow_up_date) return;
-    decide(
-      { decision: t(lang, 'Prochain suivi', 'Next follow-up'), before: data.next_follow_up_date ?? NONE, after: next || NONE },
-      (justification) => dispatchSetFollowUpDate(requestId, {
-        next_follow_up_date: next || null,
-        current_next_follow_up_date: data.next_follow_up_date,
-        justification,
-      }),
-    );
-  }
-
-  function doNextSteps() {
-    if (!data) return;
-    const next = nextSteps ?? data.next_steps;
-    if ((next ?? '') === (data.next_steps ?? '')) return;
-    decide(
-      { decision: t(lang, 'Prochaines étapes', 'Next steps'), before: clip(data.next_steps), after: clip(next) },
-      (justification) => dispatchSetNextSteps(requestId, {
-        next_steps: next || null,
-        current_next_steps: data.next_steps,
-        justification,
-      }),
-    );
-  }
-
-  function doCost() {
-    if (!data) return;
-    const next = cost !== null && cost !== '' ? Number(cost) : cost === '' ? null : data.estimated_cost;
-    if (next === data.estimated_cost || (next != null && data.estimated_cost != null && Number(next) === Number(data.estimated_cost))) return;
-    decide(
-      {
-        decision: t(lang, 'Coût estimé', 'Estimated cost'),
-        before: data.estimated_cost != null ? formatCost(data.estimated_cost, lang) : NONE,
-        after: next != null ? formatCost(next, lang) : NONE,
-      },
-      (justification) => dispatchSetCost(requestId, {
-        estimated_cost: next,
-        current_estimated_cost: data.estimated_cost,
-        justification,
-      }),
-    );
-  }
 
   // Detect ineligible (coordinator/director) current assignee for item 8
   const currentAssigneeInAll = data?.assigned_employee_id != null
@@ -294,7 +280,7 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
 
   return (
     <>
-      <div className={styles.backdrop} onClick={onClose} aria-hidden />
+      <div className={styles.backdrop} onClick={requestClose} aria-hidden />
       <div className={styles.frame}>
         <section
           className={styles.panel}
@@ -331,7 +317,7 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                 </dl>
               )}
             </div>
-            <button ref={closeRef} className={styles.closeBtn} onClick={onClose} aria-label={t(lang, 'Fermer', 'Close')}>
+            <button ref={closeRef} className={styles.closeBtn} onClick={requestClose} aria-label={t(lang, 'Fermer', 'Close')}>
               <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M5 5l10 10M15 5L5 15" />
               </svg>
@@ -352,6 +338,7 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                     <section className={styles.card} data-testid="problems-section">
                       <h3 className={styles.cardTitle}>{t(lang, 'Problème décrit', 'Reported problem')}</h3>
                       <p className={styles.prose}>{data.raw_caller_body?.problems ?? data.problems}</p>
+                      <IntakePhotos requestId={data.request_id} ids={data.intake_photo_ids ?? []} lang={lang} />
                     </section>
                   )}
 
@@ -604,9 +591,9 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
 
                     <div className={styles.actionsGrid}>
                       {/* Assign — locked while the technician is en route */}
-                      <div className={styles.editField}>
+                      <div className={`${styles.editField} ${changedKeys.has('assigned_employee_id') ? styles.editFieldChanged : ''}`}>
                         <label className={styles.editLabel}>{t(lang, 'Assigné à', 'Assigned to')}</label>
-                        <select
+                        <Select
                           className={styles.editInput}
                           value={String(assignEmpId ?? '')}
                           disabled={isClosed || isEnRoute}
@@ -614,7 +601,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                           onChange={(e) => {
                             const empId = e.target.value === '' ? null : Number(e.target.value);
                             setAssignEmpId(empId);
-                            doAssign(empId);
                           }}
                         >
                           <option value="">— {t(lang, 'Non assigné', 'Unassigned')} —</option>
@@ -635,7 +621,7 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                                 : ''}
                             </option>
                           ))}
-                        </select>
+                        </Select>
                         {isEnRoute && (
                           <p className={styles.closedNotice} data-testid="en-route-notice">
                             {EN_ROUTE_MSG}
@@ -644,7 +630,7 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                       </div>
 
                       {/* Reschedule */}
-                      <div className={styles.editField}>
+                      <div className={`${styles.editField} ${changedKeys.has('start_date') ? styles.editFieldChanged : ''}`}>
                         <label className={styles.editLabel}>{t(lang, 'Date de répartition', 'Schedule date')}</label>
                         <input
                           type="date"
@@ -652,29 +638,22 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                           value={rescheduleDate ?? data.start_date ?? ''}
                           disabled={isClosed}
                           onChange={(e) => setRescheduleDate(e.target.value)}
+                          data-testid="reschedule-input"
                         />
-                        <button
-                          className={styles.applyBtn}
-                          disabled={isClosed}
-                          onClick={() => {
-                            const d = rescheduleDate ?? data.start_date;
-                            if (d) doReschedule(d);
-                          }}
-                        >
-                          {t(lang, 'Appliquer', 'Apply')}
-                        </button>
                       </div>
 
                       {/* Urgency */}
-                      <div className={styles.editField}>
+                      <div className={`${styles.editField} ${changedKeys.has('urgency_tier') ? styles.editFieldChanged : ''}`}>
                         <span className={styles.editLabel}>{t(lang, 'Urgence', 'Urgency')}</span>
                         <div className={styles.urgencyPills}>
                           {URGENCY_OPTIONS.map(({ value }) => (
                             <button
                               key={String(value)}
-                              className={`${styles.pill} ${data.urgency_tier === value ? styles.pillActive : ''}`}
+                              type="button"
+                              className={`${styles.pill} ${effectiveUrgency === value ? styles.pillActive : ''}`}
+                              aria-pressed={effectiveUrgency === value}
                               disabled={isClosed}
-                              onClick={() => doSetUrgency(value)}
+                              onClick={() => setUrgencyDraft(value)}
                             >
                               {value ?? t(lang, 'Aucune', 'None')}
                             </button>
@@ -683,7 +662,7 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                       </div>
 
                       {/* Next follow-up date */}
-                      <div className={styles.editField}>
+                      <div className={`${styles.editField} ${changedKeys.has('next_follow_up_date') ? styles.editFieldChanged : ''}`}>
                         <label className={styles.editLabel}>{t(lang, 'Prochain suivi', 'Next follow-up')}</label>
                         <input
                           type="date"
@@ -691,18 +670,12 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                           value={followUpDate ?? data.next_follow_up_date ?? ''}
                           disabled={isClosed}
                           onChange={(e) => setFollowUpDate(e.target.value)}
+                          data-testid="follow-up-input"
                         />
-                        <button
-                          className={styles.applyBtn}
-                          disabled={isClosed}
-                          onClick={doFollowUpDate}
-                        >
-                          {t(lang, 'Appliquer', 'Apply')}
-                        </button>
                       </div>
 
                       {/* Next steps */}
-                      <div className={styles.editField}>
+                      <div className={`${styles.editField} ${changedKeys.has('next_steps') ? styles.editFieldChanged : ''}`}>
                         <label className={styles.editLabel}>{t(lang, 'Prochaines étapes', 'Next steps')}</label>
                         <textarea
                           className={styles.editTextarea}
@@ -710,18 +683,12 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                           disabled={isClosed}
                           onChange={(e) => setNextSteps(e.target.value)}
                           rows={2}
+                          data-testid="next-steps-input"
                         />
-                        <button
-                          className={styles.applyBtn}
-                          disabled={isClosed}
-                          onClick={doNextSteps}
-                        >
-                          {t(lang, 'Appliquer', 'Apply')}
-                        </button>
                       </div>
 
                       {/* Cost */}
-                      <div className={styles.editField}>
+                      <div className={`${styles.editField} ${changedKeys.has('estimated_cost') ? styles.editFieldChanged : ''}`}>
                         <label className={styles.editLabel}>{t(lang, 'Coût estimé ($)', 'Est. cost ($)')}</label>
                         <input
                           type="number"
@@ -731,14 +698,8 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                           value={cost ?? (data.estimated_cost != null ? String(data.estimated_cost) : '')}
                           disabled={isClosed}
                           onChange={(e) => setCost(e.target.value)}
+                          data-testid="cost-input"
                         />
-                        <button
-                          className={styles.applyBtn}
-                          disabled={isClosed}
-                          onClick={doCost}
-                        >
-                          {t(lang, 'Appliquer', 'Apply')}
-                        </button>
                       </div>
 
                       {/* Log entry — always enabled even on closed */}
@@ -765,6 +726,32 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                         </div>
                       </div>
                     </div>
+
+                    {!isClosed && (
+                      <div className={`${styles.saveBar} ${pending.length ? styles.saveBarDirty : ''}`} data-testid="save-bar">
+                        <span className={styles.saveStatus} aria-live="polite">
+                          {pending.length === 0
+                            ? t(lang, 'Aucune modification', 'No changes')
+                            : t(lang,
+                              `${pending.length} modification${pending.length > 1 ? 's' : ''} non enregistrée${pending.length > 1 ? 's' : ''}`,
+                              `${pending.length} unsaved change${pending.length > 1 ? 's' : ''}`)}
+                        </span>
+                        {pending.length > 0 && (
+                          <button type="button" className={styles.discardBtn} onClick={discardEdits}>
+                            {t(lang, 'Annuler les modifications', 'Discard changes')}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className={styles.saveBtn}
+                          disabled={pending.length === 0}
+                          onClick={doSave}
+                          data-testid="save-btn"
+                        >
+                          {t(lang, 'Enregistrer', 'Save')}
+                        </button>
+                      </div>
+                    )}
                   </section>
                 )}
               </>

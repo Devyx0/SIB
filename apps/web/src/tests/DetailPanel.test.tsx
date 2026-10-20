@@ -110,40 +110,43 @@ describe('DetailPanel', () => {
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
     await userEvent.type(screen.getByTestId('log-text'), 'Note de suivi test.');
     await userEvent.click(screen.getByRole('button', { name: /ajouter/i }));
-    await waitFor(() => expect(screen.getByText(/modifi/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/La demande a été modifiée/)).toBeTruthy());
   });
 
-  it('invalidates board query after successful assign (justified dispatch action)', async () => {
+  it('Enregistrer saves the new assignee in one request, with the justification', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([
       { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' , is_en_route: false },
     ]);
-    vi.spyOn(client, 'dispatchAssign').mockResolvedValue({
+    const save = vi.spyOn(client, 'dispatchSave').mockResolvedValue({
       ...MOCK_REQUEST, assigned_employee_id: 14, assigned_employee_name: 'Jean Tech',
-    } as any);
+    } as unknown as RequestDetail);
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const invalidate = vi.spyOn(qc, 'invalidateQueries');
     render(
       <QueryClientProvider client={qc}>
         <JustificationProvider lang="fr">
-          <DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />
+          <DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />
         </JustificationProvider>
       </QueryClientProvider>
     );
-    // Pick an employee → the justification prompt opens → confirm → dispatch.
-    await waitFor(() => expect(screen.getByRole('combobox').querySelectorAll('option').length).toBeGreaterThan(1));
-    await userEvent.selectOptions(screen.getByRole('combobox'), '14');
-    expect(client.dispatchAssign).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByTestId('assign-select').querySelectorAll('option').length).toBeGreaterThan(1));
+    await userEvent.selectOptions(screen.getByTestId('assign-select'), '14');
+    // Picking only stages the edit.
+    expect(save).not.toHaveBeenCalled();
+    expect(screen.getByTestId('save-bar').textContent).toMatch(/1 modification non enregistrée/);
+    await userEvent.click(screen.getByTestId('save-btn'));
     await justifyWith();
     await waitFor(() =>
       expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['requests'] }))
     );
-    expect(vi.mocked(client.dispatchAssign)).toHaveBeenCalledWith(1, expect.objectContaining({
-      employee_id: 14,
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith(1, expect.objectContaining({
+      changes: { assigned_employee_id: 14 },
+      current: expect.objectContaining({ assigned_employee_id: null, start_date: MOCK_REQUEST.start_date }),
       justification: { text: 'Technicien le plus proche du secteur.', input_method: 'typed' },
     }));
   });
-
   it('renders both Estimation (time bucket) and Coût estimé (cost) rows', () => {
     const reqWithBoth = { ...MOCK_REQUEST, time_estimate_bucket: '<1h', estimated_cost: 350 };
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: reqWithBoth, isPending: false, isError: false, error: null });
@@ -164,7 +167,7 @@ describe('DetailPanel', () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: closedReq, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
-    const assignSelect = screen.getByRole('combobox') as HTMLSelectElement;
+    const assignSelect = screen.getByTestId('assign-select') as HTMLSelectElement;
     expect(assignSelect.disabled).toBe(true);
     // Log Add button exists (section not gated by isClosed)
     expect(screen.getByRole('button', { name: /ajouter/i })).toBeTruthy();
@@ -190,7 +193,7 @@ describe('DetailPanel', () => {
     ]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 5, roles: ['director'] } as any} />);
     await waitFor(() => {
-      const sel = screen.getByRole('combobox') as HTMLSelectElement;
+      const sel = screen.getByTestId('assign-select') as HTMLSelectElement;
       expect(sel.value).toBe('4');
       const ineligibleOpt = Array.from(sel.options).find((o) => o.disabled && o.value === '4');
       expect(ineligibleOpt).toBeTruthy();
@@ -240,7 +243,7 @@ describe('DetailPanel', () => {
     ]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
     await waitFor(() => {
-      const opt = Array.from(screen.getByRole('combobox').querySelectorAll('option'))
+      const opt = Array.from(screen.getByTestId('assign-select').querySelectorAll('option'))
         .find((o) => o.textContent?.includes('Pierre Ouvrier'));
       expect(opt?.textContent).toContain('Technicien');
     });
@@ -287,27 +290,22 @@ describe('DetailPanel', () => {
     expect(screen.queryByTestId('dual-display')).toBeNull();
   });
 
-  it('Appliquer asks for a justification, then dispatches the reschedule with it', async () => {
+  it('a changed schedule date is staged, then saved with Enregistrer', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
-    const reschedule = vi.spyOn(client, 'dispatchReschedule').mockResolvedValue(MOCK_REQUEST as any);
-    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+    const save = vi.spyOn(client, 'dispatchSave').mockResolvedValue(MOCK_REQUEST as unknown as RequestDetail);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />);
 
-    const rescheduleInput = screen.getByDisplayValue(MOCK_REQUEST.start_date) as HTMLInputElement;
-    fireEvent.change(rescheduleInput, { target: { value: '2026-11-01' } });
-
-    const applyBtns = screen.getAllByRole('button', { name: /appliquer/i });
-    await userEvent.click(applyBtns[0]);
-    expect(reschedule).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /appliquer/i })).toBeNull();
+    fireEvent.change(screen.getByTestId('reschedule-input'), { target: { value: '2026-11-01' } });
+    await userEvent.click(screen.getByTestId('save-btn'));
     await justifyWith('Locataire demande une date plus tard');
 
-    await waitFor(() => expect(reschedule).toHaveBeenCalledWith(1, expect.objectContaining({
-      start_date: '2026-11-01',
+    await waitFor(() => expect(save).toHaveBeenCalledWith(1, expect.objectContaining({
+      changes: { start_date: '2026-11-01' },
       justification: { text: 'Locataire demande une date plus tard.', input_method: 'typed' },
     })));
   });
-
-  // Item 4: Problème décrit shows tenant's raw text, not AI rewrite
   it('problems-section shows raw_caller_body.problems, not data.problems', () => {
     const req = {
       ...MOCK_REQUEST,
@@ -440,17 +438,32 @@ describe('en route assignment lock (fix 2026-10-19)', () => {
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([
       { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' , is_en_route: false },
     ]);
-    vi.spyOn(client, 'dispatchAssign').mockRejectedValue(new ApiError('REQUEST_EN_ROUTE', EN_ROUTE_MSG));
+    vi.spyOn(client, 'dispatchSave').mockRejectedValue(new ApiError('REQUEST_EN_ROUTE', EN_ROUTE_MSG));
     wrap(
       <DetailPanel requestId={1} onClose={vi.fn()} lang="fr"
-        me={{ employee_id: 4, roles: ['coordinator'] } as any} />
+        me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />
     );
     await waitFor(() =>
       expect(screen.getByTestId('assign-select').querySelectorAll('option').length).toBeGreaterThan(1)
     );
     await userEvent.selectOptions(screen.getByTestId('assign-select'), '14');
+    await userEvent.click(screen.getByTestId('save-btn'));
     await justifyWith();
     await waitFor(() => expect(screen.getByText(EN_ROUTE_MSG)).toBeTruthy());
+  });
+});
+
+describe('intake photos', () => {
+  it('shows the photos attached to the call in the problem card', async () => {
+    vi.spyOn(client, 'fetchPhotoUrl').mockResolvedValue({ url: 'https://signed.local/intake/1/7.jpg' });
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: { ...MOCK_REQUEST, problems: 'Fuite', intake_photo_ids: [7, 8] }, isPending: false, isError: false, error: null,
+    });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
+    const box = screen.getByTestId('intake-photos');
+    expect(box.textContent).toMatch(/Photos jointes à l’appel \(2\)/);
+    await waitFor(() => expect(screen.getAllByTestId('intake-photo')).toHaveLength(2));
+    expect(screen.getAllByTestId('intake-photo')[0].getAttribute('src')).toContain('signed.local');
   });
 });
 
@@ -458,79 +471,91 @@ describe('decision justification (system-wide)', () => {
   const coord = { employee_id: 4, nom_employe: 'Coord', roles: ['coordinator'] } as unknown as MeResponse;
   const ok = MOCK_REQUEST as unknown as RequestDetail;
 
-  it('cancelling the prompt dispatches nothing and restores the assignee', async () => {
+  it('cancelling the prompt saves nothing and keeps the edits; discard restores them', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([
       { employee_id: 14, nom_employe: 'Jean Tech', role: 'technician' , is_en_route: false },
     ]);
-    const assign = vi.spyOn(client, 'dispatchAssign').mockResolvedValue(ok);
+    const save = vi.spyOn(client, 'dispatchSave').mockResolvedValue(ok);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
     await waitFor(() =>
       expect(screen.getByTestId('assign-select').querySelectorAll('option').length).toBeGreaterThan(1)
     );
     await userEvent.selectOptions(screen.getByTestId('assign-select'), '14');
+    await userEvent.click(screen.getByTestId('save-btn'));
     await waitFor(() => expect(screen.getByTestId('justification-dialog')).toBeTruthy());
     expect(screen.getByTestId('justification-dialog').textContent).toContain('Jean Tech');
     await userEvent.click(screen.getByRole('button', { name: 'Annuler' }));
     await waitFor(() => expect(screen.queryByTestId('justification-dialog')).toBeNull());
-    expect(assign).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect((screen.getByTestId('assign-select') as HTMLSelectElement).value).toBe('14');
+    await userEvent.click(screen.getByRole('button', { name: 'Annuler les modifications' }));
     expect((screen.getByTestId('assign-select') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByTestId('save-btn') as HTMLButtonElement).disabled).toBe(true);
   });
-
   it('confirm stays disabled under 10 characters', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
     await userEvent.click(screen.getByRole('button', { name: 'AJD' }));
+    await userEvent.click(screen.getByTestId('save-btn'));
     await waitFor(() => expect(screen.getByTestId('justification-dialog')).toBeTruthy());
     const confirm = screen.getByTestId('justification-confirm') as HTMLButtonElement;
-    fireEvent.change(screen.getByTestId('justification-text'), { target: { value: 'trop court' .slice(0, 9) } });
+    fireEvent.change(screen.getByTestId('justification-text'), { target: { value: 'trop court'.slice(0, 9) } });
     expect(confirm.disabled).toBe(true);
     fireEvent.change(screen.getByTestId('justification-text'), { target: { value: 'Dégât d’eau actif' } });
     expect(confirm.disabled).toBe(false);
   });
-
-  it('urgency, follow-up, next steps and cost all send the justification', async () => {
+  it('urgency, follow-up, next steps and cost go out in ONE save with ONE justification', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
-    const urgency = vi.spyOn(client, 'dispatchSetUrgency').mockResolvedValue(ok);
-    const follow = vi.spyOn(client, 'dispatchSetFollowUpDate').mockResolvedValue(ok);
-    const steps = vi.spyOn(client, 'dispatchSetNextSteps').mockResolvedValue(ok);
-    const cost = vi.spyOn(client, 'dispatchSetCost').mockResolvedValue(ok);
-    const { container } = wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
-    const expected = expect.objectContaining({ justification: expect.objectContaining({ input_method: 'typed' }) });
+    const save = vi.spyOn(client, 'dispatchSave').mockResolvedValue(ok);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'AJD' }));
+    fireEvent.change(screen.getByTestId('follow-up-input'), { target: { value: '2026-11-03' } });
+    fireEvent.change(screen.getByTestId('next-steps-input'), { target: { value: 'Commander la pièce' } });
+    fireEvent.change(screen.getByTestId('cost-input'), { target: { value: '250' } });
+    expect(screen.getByTestId('save-bar').textContent).toMatch(/4 modifications non enregistrées/);
+
+    await userEvent.click(screen.getByTestId('save-btn'));
+    await waitFor(() => expect(screen.getByTestId('justification-changes').querySelectorAll('li')).toHaveLength(4));
     await justifyWith('Dégât d’eau actif chez le locataire');
-    await waitFor(() => expect(urgency).toHaveBeenCalledWith(1, expected));
-
-    const dates = container.querySelectorAll('input[type="date"]');
-    fireEvent.change(dates[1], { target: { value: '2026-11-03' } });
-    const apply = () => screen.getAllByRole('button', { name: /appliquer/i });
-    await userEvent.click(apply()[1]);
-    await justifyWith('Rappeler après la visite du plombier');
-    await waitFor(() => expect(follow).toHaveBeenCalledWith(1, expected));
-
-    fireEvent.change(container.querySelector('textarea:not([data-testid="log-text"])')!, { target: { value: 'Commander la pièce' } });
-    await userEvent.click(apply()[2]);
-    await justifyWith('Pièce introuvable sur place');
-    await waitFor(() => expect(steps).toHaveBeenCalledWith(1, expected));
-
-    fireEvent.change(container.querySelector('input[type="number"]')!, { target: { value: '250' } });
-    await userEvent.click(apply()[3]);
-    await justifyWith('Soumission du plombier reçue');
-    await waitFor(() => expect(cost).toHaveBeenCalledWith(1, expect.objectContaining({
-      estimated_cost: 250, justification: expect.anything(),
-    })));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save).toHaveBeenCalledWith(1, expect.objectContaining({
+      changes: {
+        urgency_tier: 'AJD',
+        next_follow_up_date: '2026-11-03',
+        next_steps: 'Commander la pièce',
+        estimated_cost: 250,
+      },
+      justification: expect.objectContaining({ input_method: 'typed' }),
+    }));
   });
-
-  it('choosing the current value does not open the prompt', async () => {
+  it('choosing the current value is not a change', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({
       data: { ...MOCK_REQUEST, urgency_tier: 'AJD' }, isPending: false, isError: false, error: null,
     });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
     await userEvent.click(screen.getByRole('button', { name: 'AJD' }));
-    expect(screen.queryByTestId('justification-dialog')).toBeNull();
+    expect((screen.getByTestId('save-btn') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('save-bar').textContent).toMatch(/Aucune modification/);
+  });
+
+  it('asks before closing with unsaved changes', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    const onClose = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    wrap(<DetailPanel requestId={1} onClose={onClose} lang="fr" me={coord} />);
+    await userEvent.click(screen.getByRole('button', { name: 'AJD' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Fermer' }));
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    confirmSpy.mockReturnValue(true);
+    await userEvent.click(screen.getByRole('button', { name: 'Fermer' }));
+    expect(onClose).toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 });

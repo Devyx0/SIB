@@ -151,6 +151,34 @@ class SetCostBody(BaseModel):
     justification: JustificationBody
 
 
+class DispatchSnapshot(BaseModel):
+    """What the dispatcher saw before editing — the stale-data check."""
+    assigned_employee_id: Optional[int] = None
+    start_date: Optional[date] = None
+    urgency_tier: Optional[str] = None
+    next_follow_up_date: Optional[date] = None
+    next_steps: Optional[str] = None
+    estimated_cost: Optional[Decimal] = None
+
+
+class DispatchChanges(BaseModel):
+    """Only the fields present are changed (an explicit null clears it)."""
+    assigned_employee_id: Optional[int] = None
+    start_date: Optional[date] = None
+    urgency_tier: Optional[Literal["AJD", "ajd"]] = None
+    next_follow_up_date: Optional[date] = None
+    next_steps: Optional[str] = None
+    estimated_cost: Optional[Decimal] = Field(None, ge=0)
+
+
+class SaveDispatchBody(BaseModel):
+    """One « Enregistrer » in the call details: every changed field, one
+    justification, applied together or not at all."""
+    current: DispatchSnapshot
+    changes: DispatchChanges
+    justification: JustificationBody
+
+
 class AddLogBody(BaseModel):
     entry_text: str = Field(..., min_length=1)
 
@@ -241,6 +269,8 @@ class RequestDetail(ListRow):
     followup_log: list[FollowupEntry] = Field(default_factory=list)
     justification_log: list[JustificationEntry] = Field(default_factory=list)
     visits: list[VisitEntry] = Field(default_factory=list)
+    # Photos attached at intake (new call form).
+    intake_photo_ids: list[int] = Field(default_factory=list)
     # PII — null for tech/contractor unless they are the case-assigned employee
     caller_name: Optional[str] = None
     caller_phone: Optional[str] = None

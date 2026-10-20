@@ -553,6 +553,7 @@ def next_attachment_id(conn) -> int:
 
 def insert_photo(
     conn, *, attachment_id: int, request_id: int, employee_id: int, storage_path: str,
+    photo_context: str = "closeout",
 ) -> None:
     """Insert the attachment row for an already-uploaded file. The explicit id
     comes from next_attachment_id (same sequence — no drift)."""
@@ -561,11 +562,12 @@ def insert_photo(
         INSERT INTO maintenance_attachment
             (attachment_id, request_id, file_type, photo_context,
              uploaded_by_employee_id, storage_path)
-        VALUES (%(attachment_id)s, %(request_id)s, 'photo', 'closeout',
+        VALUES (%(attachment_id)s, %(request_id)s, 'photo', %(photo_context)s,
                 %(employee_id)s, %(storage_path)s)
         """,
         {"attachment_id": attachment_id, "request_id": request_id,
-         "employee_id": employee_id, "storage_path": storage_path},
+         "employee_id": employee_id, "storage_path": storage_path,
+         "photo_context": photo_context},
     )
 
 
@@ -626,6 +628,19 @@ def mark_photos_used(conn, visit_id: int, attachment_ids: list[int]) -> None:
         "UPDATE maintenance_attachment SET visit_id = %(v)s WHERE attachment_id = ANY(%(ids)s)",
         {"v": visit_id, "ids": attachment_ids},
     )
+
+
+def list_intake_photo_ids(conn, request_id: int) -> list[int]:
+    """Photos attached when the call was created (not closeout photos)."""
+    rows = conn.execute(
+        """
+        SELECT attachment_id FROM maintenance_attachment
+        WHERE request_id = %(rid)s AND photo_context = 'intake' AND storage_path IS NOT NULL
+        ORDER BY attachment_id
+        """,
+        {"rid": request_id},
+    ).fetchall()
+    return [r["attachment_id"] for r in rows]
 
 
 def list_visits(conn, request_id: int) -> list[dict]:
