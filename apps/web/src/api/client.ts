@@ -239,6 +239,11 @@ export function dispatchSave(id: number, body: {
   return apiPost(`/api/v1/requests/${id}/dispatch`, body);
 }
 
+/** Single-use AssemblyAI streaming token (the API key stays on the server). */
+export function fetchSpeechToken(): Promise<{ token: string; expires_in_seconds: number }> {
+  return apiFetch('/api/v1/speech/token');
+}
+
 export function dispatchAddLog(id: number, body: { entry_text: string }): Promise<RequestDetail> {
   return apiPost(`/api/v1/requests/${id}/log`, body);
 }

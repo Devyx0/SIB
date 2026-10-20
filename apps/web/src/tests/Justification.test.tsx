@@ -5,26 +5,26 @@ import { JustificationProvider, useJustify } from '../components/Justification';
 import { appendSpoken, finishSentence } from '../hooks/useDictation';
 import type { Justification } from '../api/client';
 
-// Minimal stand-in for the browser speech engine.
-class FakeRecognition {
-  static last: FakeRecognition | null = null;
-  lang = '';
-  continuous = false;
-  interimResults = false;
-  maxAlternatives = 1;
-  started = 0;
-  onresult: ((e: unknown) => void) | null = null;
-  onend: (() => void) | null = null;
-  onerror: ((e: unknown) => void) | null = null;
-  constructor() { FakeRecognition.last = this; }
-  start() { this.started += 1; }
-  stop() { this.onend?.(); }
-  abort() {}
-  emit(chunks: Array<{ text: string; final: boolean }>) {
-    const results = chunks.map((c) => Object.assign([{ transcript: c.text }], { isFinal: c.final }));
-    this.onresult?.({ resultIndex: 0, results });
-  }
-}
+// Fake AssemblyAI stream: tests drive partial/final turns and errors.
+const stream = vi.hoisted(() => ({
+  supported: false,
+  handlers: null as null | {
+    onPartial: (t: string) => void; onFinal: (t: string) => void;
+    onLevel?: (n: number) => void; onError: (c: string) => void;
+  },
+  starts: 0,
+  stop: vi.fn(async () => {}),
+  failWith: null as null | string,
+}));
+vi.mock('../lib/assemblyStream', () => ({
+  streamingSupported: () => stream.supported,
+  startAssemblyStream: async (_lang: string, h: typeof stream.handlers) => {
+    stream.starts += 1;
+    stream.handlers = h;
+    if (stream.failWith) { h!.onError(stream.failWith); return null; }
+    return { stop: stream.stop };
+  },
+}));
 
 function Harness({ onResult }: { onResult: (j: Justification | null) => void }) {
   const justify = useJustify();
@@ -46,9 +46,11 @@ function setup() {
 }
 
 afterEach(() => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  delete (window as any).SpeechRecognition;
-  FakeRecognition.last = null;
+  stream.supported = false;
+  stream.handlers = null;
+  stream.starts = 0;
+  stream.failWith = null;
+  stream.stop.mockClear();
 });
 
 describe('text helpers', () => {
@@ -87,42 +89,41 @@ describe('JustificationProvider', () => {
   });
 
   it('voice: starts listening on open, streams live words, saves as voice', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).SpeechRecognition = FakeRecognition;
+    stream.supported = true;
     const onResult = setup();
     await userEvent.click(screen.getByText('open'));
+    await waitFor(() => expect(stream.starts).toBe(1));
 
-    const rec = FakeRecognition.last!;
-    expect(rec.started).toBe(1);
-    expect(rec.lang).toBe('fr-CA');
-    expect(rec.continuous).toBe(true);
-    expect(rec.interimResults).toBe(true);
-
-    act(() => rec.emit([{ text: 'dégât d’eau', final: false }]));
+    act(() => stream.handlers!.onPartial('dégât d’eau'));
     expect(screen.getByTestId('justification-interim').textContent).toBe('dégât d’eau');
 
-    act(() => rec.emit([{ text: 'dégât d’eau actif dans la cuisine', final: true }]));
+    act(() => { stream.handlers!.onPartial(''); stream.handlers!.onFinal('dégât d’eau actif dans la cuisine'); });
     expect((screen.getByTestId('justification-text') as HTMLTextAreaElement).value)
       .toBe('Dégât d’eau actif dans la cuisine');
 
-    // The browser ends a session after a pause; dictation picks back up.
-    act(() => rec.onend?.());
-    expect(rec.started).toBe(2);
-
+    // Confirm waits for the stream to flush its last words.
     await userEvent.click(screen.getByTestId('justification-confirm'));
     await waitFor(() => expect(onResult).toHaveBeenCalledWith({
       text: 'Dégât d’eau actif dans la cuisine.', input_method: 'voice',
     }));
+    expect(stream.stop).toHaveBeenCalled();
   });
 
   it('voice: a blocked microphone shows a clear message and typing still works', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).SpeechRecognition = FakeRecognition;
+    stream.supported = true;
+    stream.failWith = 'not-allowed';
     setup();
     await userEvent.click(screen.getByText('open'));
-    act(() => FakeRecognition.last!.onerror?.({ error: 'not-allowed' }));
-    expect(screen.getByRole('alert').textContent).toMatch(/Micro bloqué/);
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/Micro bloqué/));
     fireEvent.change(screen.getByTestId('justification-text'), { target: { value: 'Écrit à la main' } });
     expect((screen.getByTestId('justification-confirm') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('voice: dictation service down says so and falls back to typing', async () => {
+    stream.supported = true;
+    stream.failWith = 'unavailable';
+    setup();
+    await userEvent.click(screen.getByText('open'));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/Dictée indisponible/));
   });
 });

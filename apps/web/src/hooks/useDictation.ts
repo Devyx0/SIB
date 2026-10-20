@@ -1,25 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Lang } from '../i18n';
+import { startAssemblyStream, streamingSupported } from '../lib/assemblyStream';
+import type { StreamError, StreamSession } from '../lib/assemblyStream';
 
-// Live speech-to-text on the browser's built-in engine (Chrome, Edge, Safari).
-// Words stream in while the person talks (`interim`), settle into `final`
-// text, and the session restarts itself after the browser's silence cut-off
-// so long dictations are not chopped. Firefox has no engine: `supported` is
-// false and callers fall back to typing.
+// Live speech-to-text on AssemblyAI Universal-3.6 Pro (see lib/assemblyStream).
+// Words stream in while the person talks (`interim`) and settle into
+// punctuated turns passed to `onFinal`. Without a microphone or browser
+// support, `supported` is false and callers fall back to typing.
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Recognition = any;
+export type DictationError = StreamError;
 
-function getEngine(): (new () => Recognition) | undefined {
-  if (typeof window === 'undefined') return undefined;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const w = window as any;
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition;
-}
-
-export type DictationError = 'not-allowed' | 'no-microphone' | 'network' | 'other';
-
-/** Sentence-case a fragment and join it to what is already there. */
+/** Join a spoken fragment to what is already there, sentence-cased. */
 export function appendSpoken(existing: string, spoken: string): string {
   const piece = spoken.trim();
   if (!piece) return existing;
@@ -37,87 +28,70 @@ export function finishSentence(text: string): string {
 
 interface Options {
   lang: Lang;
-  /** Called with each settled chunk of speech. */
+  /** Called with each finished turn of speech. */
   onFinal: (chunk: string) => void;
 }
 
 export function useDictation({ lang, onFinal }: Options) {
-  const Engine = getEngine();
-  const supported = !!Engine;
+  const supported = streamingSupported();
   const [listening, setListening] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [interim, setInterim] = useState('');
+  const [level, setLevel] = useState(0);
   const [error, setError] = useState<DictationError | null>(null);
-  const recRef = useRef<Recognition | null>(null);
-  const wantRef = useRef(false);
+  const sessionRef = useRef<StreamSession | null>(null);
+  const startingRef = useRef(false);
+  const cancelledRef = useRef(false);
   const onFinalRef = useRef(onFinal);
   onFinalRef.current = onFinal;
 
-  const startSession = useCallback(() => {
-    if (!Engine) return;
-    const rec: Recognition = new Engine();
-    rec.lang = lang === 'fr' ? 'fr-CA' : 'en-CA';
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.maxAlternatives = 1;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onresult = (e: any) => {
-      let live = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) onFinalRef.current(r[0].transcript);
-        else live += r[0].transcript;
-      }
-      setInterim(live);
-    };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onerror = (e: any) => {
-      const code = e?.error;
-      if (code === 'no-speech' || code === 'aborted') return; // harmless; onend restarts
-      wantRef.current = false;
-      setError(
-        code === 'not-allowed' || code === 'service-not-allowed' ? 'not-allowed'
-          : code === 'audio-capture' ? 'no-microphone'
-            : code === 'network' ? 'network' : 'other',
-      );
-    };
-    rec.onend = () => {
-      setInterim('');
-      if (wantRef.current) {
-        // The browser ends sessions after a pause; keep going until told to stop.
-        try { rec.start(); return; } catch { /* fall through */ }
-      }
-      recRef.current = null;
-      setListening(false);
-    };
-    recRef.current = rec;
-    try {
-      rec.start();
-      setListening(true);
-      setError(null);
-    } catch {
-      wantRef.current = false;
-      setListening(false);
-    }
-  }, [Engine, lang]);
+  const start = useCallback(async () => {
+    if (!supported || startingRef.current || sessionRef.current) return;
+    startingRef.current = true;
+    cancelledRef.current = false;
+    setError(null);
+    setConnecting(true);
+    setListening(true);
+    const session = await startAssemblyStream(lang, {
+      onPartial: setInterim,
+      onFinal: (text) => onFinalRef.current(text),
+      onLevel: setLevel,
+      onError: (code) => {
+        setError(code);
+        setListening(false);
+        setConnecting(false);
+        setInterim('');
+        const s = sessionRef.current;
+        sessionRef.current = null;
+        void s?.stop();
+      },
+    });
+    startingRef.current = false;
+    setConnecting(false);
+    if (!session) { setListening(false); return; }
+    if (cancelledRef.current) { void session.stop(); setListening(false); return; }
+    sessionRef.current = session;
+  }, [supported, lang]);
 
-  const start = useCallback(() => {
-    if (!supported || wantRef.current) return;
-    wantRef.current = true;
-    startSession();
-  }, [supported, startSession]);
-
-  const stop = useCallback(() => {
-    wantRef.current = false;
-    recRef.current?.stop();
+  /** Stop and wait for the last words to arrive. */
+  const stop = useCallback(async () => {
+    cancelledRef.current = true;
+    const s = sessionRef.current;
+    sessionRef.current = null;
+    setListening(false);
+    setLevel(0);
+    if (s) await s.stop();
+    setInterim('');
   }, []);
 
-  const toggle = useCallback(() => (wantRef.current ? stop() : start()), [start, stop]);
+  const toggle = useCallback(() => (sessionRef.current || startingRef.current ? stop() : start()), [start, stop]);
 
   // Never leave the microphone on after the component goes away.
   useEffect(() => () => {
-    wantRef.current = false;
-    recRef.current?.abort?.();
+    cancelledRef.current = true;
+    void sessionRef.current?.stop();
+    sessionRef.current = null;
   }, []);
 
-  return { supported, listening, interim, error, start, stop, toggle };
+  return { supported, listening, connecting, interim, level, error, start, stop, toggle };
 }

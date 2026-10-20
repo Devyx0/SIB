@@ -69,43 +69,6 @@ export function JustificationProvider({ lang, children }: { lang: Lang; children
   );
 }
 
-/** Live microphone level (0–1) for the waveform, while `active`. */
-function useMicLevel(active: boolean): number {
-  const [level, setLevel] = useState(0);
-  useEffect(() => {
-    if (!active || !navigator.mediaDevices?.getUserMedia) return;
-    let stream: MediaStream | null = null;
-    let ctx: AudioContext | null = null;
-    let raf = 0;
-    let cancelled = false;
-    navigator.mediaDevices.getUserMedia({ audio: true }).then((s) => {
-      if (cancelled) { s.getTracks().forEach((tr) => tr.stop()); return; }
-      stream = s;
-      ctx = new AudioContext();
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      ctx.createMediaStreamSource(s).connect(analyser);
-      const buf = new Uint8Array(analyser.fftSize);
-      const tick = () => {
-        analyser.getByteTimeDomainData(buf);
-        let sum = 0;
-        for (const v of buf) { const d = (v - 128) / 128; sum += d * d; }
-        setLevel(Math.min(1, Math.sqrt(sum / buf.length) * 4));
-        raf = requestAnimationFrame(tick);
-      };
-      tick();
-    }).catch(() => { /* the speech engine reports permission problems */ });
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf);
-      stream?.getTracks().forEach((tr) => tr.stop());
-      ctx?.close();
-      setLevel(0);
-    };
-  }, [active]);
-  return level;
-}
-
 const BARS = [0.45, 0.7, 1, 0.8, 0.55, 0.9, 0.65];
 
 function JustificationDialog({
@@ -129,7 +92,11 @@ function JustificationDialog({
       setText((prev) => appendSpoken(prev, chunk));
     },
   });
-  const level = useMicLevel(dictation.listening);
+  const level = dictation.level;
+  // Latest text, readable after awaiting the last dictated words.
+  const latestText = useRef(text);
+  latestText.current = text;
+  const [finishing, setFinishing] = useState(false);
 
   // Voice-first: start listening as soon as the prompt opens.
   useEffect(() => {
@@ -155,24 +122,33 @@ function JustificationDialog({
     setText((prev) => finishSentence(prev));
   }
 
-  function confirm() {
-    if (!ready) return;
-    dictation.stop();
-    onConfirm({ text: finishSentence(trimmed), input_method: usedVoice ? 'voice' : 'typed' });
+  async function confirm() {
+    if (!ready || finishing) return;
+    if (dictation.listening) {
+      // Wait for the words still in flight before saving.
+      setFinishing(true);
+      await dictation.stop();
+      setFinishing(false);
+    }
+    const finalText = latestText.current.trim();
+    if (finalText.length < MIN_JUSTIFICATION) return;
+    onConfirm({ text: finishSentence(finalText), input_method: usedVoice ? 'voice' : 'typed' });
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Escape') { e.stopPropagation(); dictation.stop(); onCancel(); }
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); confirm(); }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void confirm(); }
   }
 
   const errorText = dictation.error === 'not-allowed'
     ? t(lang, 'Micro bloqué — autorisez-le dans le navigateur, ou écrivez.', 'Microphone blocked — allow it in the browser, or type.')
     : dictation.error === 'no-microphone'
       ? t(lang, 'Aucun micro détecté — écrivez votre justification.', 'No microphone found — type your justification.')
-      : dictation.error
-        ? t(lang, 'La dictée s’est interrompue — réessayez ou écrivez.', 'Dictation stopped — try again or type.')
-        : null;
+      : dictation.error === 'unavailable'
+        ? t(lang, 'Dictée indisponible pour le moment — écrivez votre justification.', 'Dictation unavailable right now — type your justification.')
+        : dictation.error
+          ? t(lang, 'La dictée s’est interrompue — réessayez ou écrivez.', 'Dictation stopped — try again or type.')
+          : null;
 
   const remaining = Math.max(0, MIN_JUSTIFICATION - trimmed.length);
 
@@ -244,9 +220,11 @@ function JustificationDialog({
             </button>
             <div className={styles.voiceText}>
               <span className={styles.voiceState} aria-live="polite">
-                {dictation.listening
-                  ? t(lang, 'À l’écoute — parlez naturellement', 'Listening — speak naturally')
-                  : t(lang, 'Appuyez pour dicter', 'Tap to dictate')}
+                {dictation.connecting
+                  ? t(lang, 'Connexion au micro…', 'Connecting…')
+                  : dictation.listening
+                    ? t(lang, 'À l’écoute — parlez naturellement', 'Listening — speak naturally')
+                    : t(lang, 'Appuyez pour dicter', 'Tap to dictate')}
               </span>
               <span className={styles.voiceHint}>
                 {dictation.listening
@@ -300,8 +278,8 @@ function JustificationDialog({
           <button
             type="button"
             className={styles.confirmBtn}
-            disabled={!ready}
-            onClick={confirm}
+            disabled={!ready || finishing}
+            onClick={() => void confirm()}
             data-testid="justification-confirm"
           >
             {t(lang, 'Confirmer la décision', 'Confirm decision')}
