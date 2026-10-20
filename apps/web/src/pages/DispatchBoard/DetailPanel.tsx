@@ -29,6 +29,7 @@ function formatCost(amount: number | string, lang: Lang): string {
 interface Props {
   requestId: number;
   onClose: () => void;
+  onSelectPeer?: (id: number) => void;
   lang?: Lang;
   me?: MeResponse | null;
 }
@@ -44,7 +45,7 @@ const BAND_FR: Record<string, string> = {
 };
 const LOC_FR: Record<string, string> = { quebec: 'Québec', levis: 'Lévis' };
 
-export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Props) {
+export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = 'fr', me }: Props) {
   const [polling, setPolling] = useState(false);
   const [triageTimeout, setTriageTimeout] = useState(false);
   const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -397,6 +398,38 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                         </>
                       )}
                       <TriageFeedbackWidget requestId={requestId} lang={lang} />
+                    </section>
+                  )}
+
+                  {(data.duplicate_of_request_id || data.addition_to_request_id) && (
+                    <section className={styles.card} data-testid="dup-add-section">
+                      <h3 className={styles.cardTitle}>
+                        {t(lang, 'Lien avec un appel actif', 'Link to active call')}
+                      </h3>
+                      {data.duplicate_of_request_id != null && (
+                        <p className={styles.prose} data-testid="duplicate-of">
+                          {t(lang, 'Doublon de', 'Duplicate of')}{' '}
+                          <button
+                            type="button"
+                            className={styles.peerLink}
+                            onClick={() => onSelectPeer?.(data.duplicate_of_request_id!)}
+                          >
+                            #{data.duplicate_of_request_id}
+                          </button>
+                        </p>
+                      )}
+                      {data.addition_to_request_id != null && (
+                        <p className={styles.prose} data-testid="addition-to">
+                          {t(lang, 'Ajout à', 'Addition to')}{' '}
+                          <button
+                            type="button"
+                            className={styles.peerLink}
+                            onClick={() => onSelectPeer?.(data.addition_to_request_id!)}
+                          >
+                            #{data.addition_to_request_id}
+                          </button>
+                        </p>
+                      )}
                     </section>
                   )}
 

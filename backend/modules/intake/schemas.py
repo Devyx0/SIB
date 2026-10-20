@@ -30,10 +30,11 @@ class ManualCreateBody(BaseModel):
     animal_details: Optional[str] = None
     problem: str = Field(..., min_length=1)
     category: Optional[str] = None
-    element: Optional[str] = None
-    symptome: Optional[str] = None
-    composante: Optional[str] = None
-    emplacement: Optional[str] = None
+    # 4-axis taxonomy — mandatory at intake (success criteria Main1).
+    element: str = Field(..., min_length=1)
+    symptome: str = Field(..., min_length=1)
+    composante: str = Field(..., min_length=1)
+    emplacement: str = Field(..., min_length=1)
     intake_urgent: bool = False
     secondary_name: Optional[str] = None
     secondary_email: Optional[str] = None

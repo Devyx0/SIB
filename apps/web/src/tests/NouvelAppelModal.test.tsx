@@ -33,10 +33,18 @@ async function selectBuilding(buildingId = '10') {
   await userEvent.selectOptions(buildingSelect, buildingId);
 }
 
+async function fillTaxonomy() {
+  await userEvent.type(screen.getByTestId('element'), 'Plomberie');
+  await userEvent.type(screen.getByTestId('symptome'), 'Fuite');
+  await userEvent.type(screen.getByTestId('composante'), 'Robinet');
+  await userEvent.type(screen.getByTestId('emplacement'), 'Cuisine');
+}
+
 async function fillRequired(opts: { phone?: string; problem?: string } = {}) {
   await userEvent.type(screen.getByTestId('caller-name'), 'Jean Tenant');
   await userEvent.type(screen.getByTestId('phone-1'), opts.phone ?? '418-555-0101');
   await userEvent.type(screen.getByTestId('problem'), opts.problem ?? 'Fuite sous évier');
+  await fillTaxonomy();
   await selectBuilding();
 }
 
@@ -101,10 +109,26 @@ describe('NouvelAppelModal', () => {
     wrap(<NouvelAppelModal open onClose={vi.fn()} />);
     await userEvent.type(screen.getByTestId('caller-name'), 'Jean');
     await userEvent.type(screen.getByTestId('problem'), 'Fuite');
+    await fillTaxonomy();
     await selectBuilding();
     await userEvent.click(screen.getByTestId('submit-btn'));
     expect(screen.getByTestId('error-msg')).toBeTruthy();
     expect(mockCreateManualRequest).not.toHaveBeenCalled();
+  });
+
+  it('keeps submit disabled until all taxonomy axes are filled', async () => {
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    await userEvent.type(screen.getByTestId('caller-name'), 'Jean');
+    await userEvent.type(screen.getByTestId('phone-1'), '418-555-0101');
+    await userEvent.type(screen.getByTestId('problem'), 'Fuite');
+    await selectBuilding();
+    expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.type(screen.getByTestId('element'), 'Plomberie');
+    await userEvent.type(screen.getByTestId('symptome'), 'Fuite');
+    await userEvent.type(screen.getByTestId('composante'), 'Robinet');
+    expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.type(screen.getByTestId('emplacement'), 'Cuisine');
+    expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('rejects mismatched email confirmation', async () => {
@@ -291,10 +315,6 @@ describe('NouvelAppelModal', () => {
     await userEvent.type(screen.getByTestId('caller-email-confirm'), 'a@example.com');
     await userEvent.type(screen.getByTestId('secondary-name'), 'Marie');
     await userEvent.type(screen.getByTestId('secondary-email'), 'marie@example.com');
-    await userEvent.type(screen.getByTestId('element'), 'Plomberie');
-    await userEvent.type(screen.getByTestId('symptome'), 'Fuite');
-    await userEvent.type(screen.getByTestId('composante'), 'Robinet');
-    await userEvent.type(screen.getByTestId('emplacement'), 'Cuisine');
     await userEvent.click(screen.getByTestId('intake-urgent'));
     await waitFor(() => expect(screen.getByTestId('unit-select')).toBeTruthy());
     await userEvent.selectOptions(screen.getByTestId('unit-select'), '100');

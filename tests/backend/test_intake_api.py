@@ -49,6 +49,10 @@ def _valid_body(db_conn, **overrides) -> dict:
         "animals": "non",
         "problem": "Robinet qui coule dans la cuisine.",
         "category": "Plomberie",
+        "element": "Plomberie",
+        "symptome": "Fuite",
+        "composante": "Robinet",
+        "emplacement": "Cuisine",
     }
     body.update(overrides)
     return body
@@ -246,14 +250,7 @@ def test_category_and_secondary_persisted(ac, db_conn):
 def test_taxonomy_axes_and_intake_urgent_persisted(ac, db_conn):
     loc = _perigord(db_conn)
     _ensure_coord_sector(db_conn, loc["sector_id"])
-    body = _valid_body(
-        db_conn,
-        element="Plomberie",
-        symptome="Fuite",
-        composante="Robinet",
-        emplacement="Cuisine",
-        intake_urgent=True,
-    )
+    body = _valid_body(db_conn, intake_urgent=True)
     r = ac(_user(_COORD, "coordinator")).post("/api/v1/intake", json=body)
     assert r.status_code == 201
     rid = r.json()["request_id"]
@@ -269,6 +266,19 @@ def test_taxonomy_axes_and_intake_urgent_persisted(ac, db_conn):
     assert row["composante"] == "Robinet"
     assert row["emplacement"] == "Cuisine"
     assert row["intake_urgent"] is True
+
+
+def test_missing_taxonomy_axis_422(ac, db_conn):
+    body = _valid_body(db_conn)
+    del body["emplacement"]
+    r = ac(_user(_DIR, "director")).post("/api/v1/intake", json=body)
+    assert r.status_code == 422
+
+
+def test_blank_taxonomy_axis_422(ac, db_conn):
+    body = _valid_body(db_conn, element="  ")
+    r = ac(_user(_DIR, "director")).post("/api/v1/intake", json=body)
+    assert r.status_code == 422
 
 
 def test_lookup_unit_by_number(ac, db_conn):

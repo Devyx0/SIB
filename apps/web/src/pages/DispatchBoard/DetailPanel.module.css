@@ -219,6 +219,17 @@
   color: var(--color-text);
 }
 
+.peerLink {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent, #0b57d0);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* Label / value pairs inside the side cards. */
 .facts {
   display: grid;

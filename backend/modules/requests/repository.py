@@ -370,6 +370,8 @@ def get_request(
             mr.raw_caller_body,
             mr.problems,
             mr.triage_model_version,
+            mr.duplicate_of_request_id,
+            mr.addition_to_request_id,
             mr.ft_link,
             mr.ft_name,
             mr.en_route_at,

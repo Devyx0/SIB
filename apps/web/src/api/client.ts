@@ -274,10 +274,10 @@ export interface IntakeBody {
   animal_details?: string;
   problem: string;
   category?: string;
-  element?: string;
-  symptome?: string;
-  composante?: string;
-  emplacement?: string;
+  element: string;
+  symptome: string;
+  composante: string;
+  emplacement: string;
   intake_urgent?: boolean;
   secondary_name?: string;
   secondary_email?: string;

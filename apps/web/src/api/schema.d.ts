@@ -121,6 +121,8 @@ export interface RequestDetail extends ListRow {
   raw_caller_body: { entry_permission: string | null; animals: string | null; problems: string | null } | null;
   problems: string | null;
   triage_model_version: string | null;
+  duplicate_of_request_id: number | null;
+  addition_to_request_id: number | null;
   ft_link: string | null;
   ft_name: string | null;
   // Latest evaluation (triage-time or manual re-check); null for tech/contractor.

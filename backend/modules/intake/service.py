@@ -141,10 +141,12 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
     entry_perm = access_label(body.access)
     animals_val = animals_db_value(body.animals)
     category = (body.category or "").strip() or None
-    element = (body.element or "").strip() or None
-    symptome = (body.symptome or "").strip() or None
-    composante = (body.composante or "").strip() or None
-    emplacement = (body.emplacement or "").strip() or None
+    element = body.element.strip()
+    symptome = body.symptome.strip()
+    composante = body.composante.strip()
+    emplacement = body.emplacement.strip()
+    if not all((element, symptome, composante, emplacement)):
+        raise ValidationFailed("Taxonomie incomplète (élément, symptôme, composante, emplacement)")
 
     raw_caller_body = json.dumps({
         "entry_permission": entry_perm,

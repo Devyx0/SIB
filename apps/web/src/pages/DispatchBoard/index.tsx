@@ -325,6 +325,7 @@ export default function DispatchBoard({ lang, me }: Props) {
           lang={lang}
           requestId={selectedId}
           onClose={() => setSelectedId(null)}
+          onSelectPeer={setSelectedId}
           me={me}
         />
       )}

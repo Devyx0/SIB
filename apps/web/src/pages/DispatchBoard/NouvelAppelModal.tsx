@@ -307,6 +307,14 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
       setErrorMsg(t(lang, 'Description du problème requise.', 'Problem description required.'));
       return;
     }
+    if (!element.trim() || !symptome.trim() || !composante.trim() || !emplacement.trim()) {
+      setErrorMsg(t(
+        lang,
+        'Taxonomie complète requise (élément, symptôme, composante, emplacement).',
+        'Complete taxonomy required (element, symptom, component, location).',
+      ));
+      return;
+    }
     setSubmitting(true);
     try {
       await createManualRequest({
@@ -320,10 +328,10 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
         access_details: accessDetails.trim() || undefined,
         animals: petsAllowed && animals ? animals : undefined,
         animal_details: petsAllowed && animals === 'oui' ? (animalDetails.trim() || undefined) : undefined,
-        element: element.trim() || undefined,
-        symptome: symptome.trim() || undefined,
-        composante: composante.trim() || undefined,
-        emplacement: emplacement.trim() || undefined,
+        element: element.trim(),
+        symptome: symptome.trim(),
+        composante: composante.trim(),
+        emplacement: emplacement.trim(),
         intake_urgent: intakeUrgent,
         secondary_name: secondaryName.trim() || undefined,
         secondary_email: secondaryEmail.trim() || undefined,
@@ -713,7 +721,15 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
               {t(lang, 'Annuler', 'Cancel')}
             </button>
             <button type="submit" className={styles.submitBtn}
-              disabled={submitting || buildingId == null} data-testid="submit-btn">
+              disabled={
+                submitting
+                || buildingId == null
+                || !element.trim()
+                || !symptome.trim()
+                || !composante.trim()
+                || !emplacement.trim()
+              }
+              data-testid="submit-btn">
               {submitting
                 ? t(lang, 'Création…', 'Creating…')
                 : t(lang, 'Créer', 'Create')}
