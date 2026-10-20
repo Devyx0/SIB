@@ -485,7 +485,7 @@ _MODEL_JSON = {
     "title": "Pas de chauffage", "problems": ["Aucun chauffage dans le logement"],
     "entry_permission": None, "animals": None, "urgency_tier": None,
     "heating_failure": True,
-    "complexity_tier": "C2", "congestion_level": "N2",
+    "complexity_tier": "C2", "congestion_level": "N1",
     "time_estimate_bucket": "H1_TO_2H", "delegable_status": "NO",
     "report_status": "CANNOT_WAIT", "routing_rule": "A0", "subcontractor_name": None,
     "vendor_id": None, "synergy_request_ids": [], "other_notes": None,

@@ -129,7 +129,7 @@ def test_background_runs_after_commit(app, db_conn):
 
     seen_rid = []
 
-    def spy_bg(rid):
+    def spy_bg(rid, lang="fr"):
         # Fresh psycopg2 connection — independent of the test's db_conn.
         # The row must be visible here (middleware committed before background tasks run).
         from backend.core.config import settings
@@ -261,7 +261,7 @@ def test_timeout_sets_triage_failed(app, db_conn):
     import backend.modules.requests.router as rtr
     from backend.core.config import settings
 
-    def triage_that_times_out(rid):
+    def triage_that_times_out(rid, lang="fr"):
         import psycopg2
         c = psycopg2.connect(
             host=settings.LOCAL_DB_HOST, port=settings.LOCAL_DB_PORT,
@@ -285,6 +285,7 @@ def test_timeout_sets_triage_failed(app, db_conn):
         finally:
             c.close()
 
+    original_bg = rtr._run_triage_background
     rtr._run_triage_background = triage_that_times_out
     app.dependency_overrides[get_db_conn] = lambda: db_conn
     app.dependency_overrides[get_current_user] = lambda: _user(_COORD, "coordinator")
@@ -301,6 +302,7 @@ def test_timeout_sets_triage_failed(app, db_conn):
         assert row["status"] == "triage_failed"
     finally:
         # Cleanup: psycopg2 committed status updates; runs even if assertion fails.
+        rtr._run_triage_background = original_bg
         app.dependency_overrides.clear()
         db_conn.execute("DELETE FROM maintenance_request WHERE request_id = %s", [rid])
         db_conn.commit()
