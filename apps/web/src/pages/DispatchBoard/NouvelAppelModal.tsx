@@ -390,6 +390,11 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
 
   if (!open) return null;
 
+  // Footer chips show just the field ("Téléphone"), full sentence on hover.
+  function shortReason(r: string): string {
+    return r.replace(/\s*\b(requis|requise|requises|required)\b.*$/i, '').replace(/\.$/, '');
+  }
+
   function unitOptionLabel(u: UnitLookup): string {
     const civic = u.rue ? u.rue.split(',')[0].trim() : null;
     return civic ? `${civic} – ${u.numero_appartement}` : u.numero_appartement;
@@ -399,7 +404,12 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
     <div className={styles.overlay} role="dialog" aria-modal aria-label={t(lang, 'Nouvel appel', 'New call')}>
       <div className={styles.modal}>
         <div className={styles.headRow}>
-          <h2 className={styles.heading}>{t(lang, 'Nouvel appel', 'New call')}</h2>
+          <div>
+            <h2 className={styles.heading}>{t(lang, 'Nouvel appel', 'New call')}</h2>
+            <p className={styles.subheading}>
+              {t(lang, 'Saisissez la demande du locataire — les champs * sont requis.', 'Enter the tenant’s request — fields marked * are required.')}
+            </p>
+          </div>
           <button
             type="button"
             className={styles.closeBtn}
@@ -414,8 +424,16 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
         </div>
 
         <form className={styles.modalForm} onSubmit={handleSubmit} noValidate>
-          <div className={styles.section}>
-            <h3 className={styles.sectionHeading}>{t(lang, 'Unité', 'Unit')}</h3>
+          <div className={styles.formBody}>
+          <div className={styles.grid}>
+          <section className={`${styles.section} ${styles.areaUnit}`}>
+            <header className={styles.sectionHead}>
+              <span className={styles.stepNum} aria-hidden="true">1</span>
+              <div>
+                <h3 className={styles.sectionHeading}>{t(lang, 'Recherche rapide', 'Quick lookup')}</h3>
+                <p className={styles.sectionSub}>{t(lang, 'Le numéro unique remplit l’adresse et le locataire.', 'The unique number fills in the address and tenant.')}</p>
+              </div>
+            </header>
             <div className={styles.field}>
               <label htmlFor="unique-unit-number" className={styles.label}>
                 {t(lang, "Numéro unique d'unité", 'Unique unit number')}
@@ -484,10 +502,16 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
             {unitLookupMsg && (
               <p className={styles.hint} data-testid="unit-lookup-msg">{unitLookupMsg}</p>
             )}
-          </div>
+          </section>
 
-          <div className={styles.section}>
-            <h3 className={styles.sectionHeading}>{t(lang, 'Appelant', 'Caller')}</h3>
+          <section className={`${styles.section} ${styles.areaCaller}`}>
+            <header className={styles.sectionHead}>
+              <span className={styles.stepNum} aria-hidden="true">2</span>
+              <div>
+                <h3 className={styles.sectionHeading}>{t(lang, 'Appelant', 'Caller')}</h3>
+                <p className={styles.sectionSub}>{t(lang, 'Qui appelle et comment le joindre.', 'Who is calling and how to reach them.')}</p>
+              </div>
+            </header>
             {leaseTenants.length > 1 && (
               <div className={styles.field}>
                 <label htmlFor="tenant-select" className={styles.label}>
@@ -552,26 +576,35 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                   placeholder="(999) 999-9999" data-testid="phone-2" />
               </div>
             </div>
-            <div className={styles.row}>
-              <div className={styles.field}>
-                <label htmlFor="secondary-name" className={styles.label}>
-                  {t(lang, 'Autre personne à contacter', 'Other person to contact')}
-                </label>
-                <input id="secondary-name" className={styles.input} value={secondaryName}
-                  onChange={(e) => setSecondaryName(e.target.value)} data-testid="secondary-name" />
+            <details className={styles.disclosure} open={Boolean(secondaryName || secondaryEmail) || undefined}>
+              <summary>{t(lang, '+ Autre personne à contacter (optionnel)', '+ Another contact person (optional)')}</summary>
+              <div className={styles.row}>
+                <div className={styles.field}>
+                  <label htmlFor="secondary-name" className={styles.label}>
+                    {t(lang, 'Autre personne à contacter', 'Other person to contact')}
+                  </label>
+                  <input id="secondary-name" className={styles.input} value={secondaryName}
+                    onChange={(e) => setSecondaryName(e.target.value)} data-testid="secondary-name" />
+                </div>
+                <div className={styles.field}>
+                  <label htmlFor="secondary-email" className={styles.label}>
+                    {t(lang, 'Courriel 2e personne', '2nd person email')}
+                  </label>
+                  <input id="secondary-email" className={styles.input} type="email" value={secondaryEmail}
+                    onChange={(e) => setSecondaryEmail(e.target.value)} data-testid="secondary-email" />
+                </div>
               </div>
-              <div className={styles.field}>
-                <label htmlFor="secondary-email" className={styles.label}>
-                  {t(lang, 'Courriel 2e personne', '2nd person email')}
-                </label>
-                <input id="secondary-email" className={styles.input} type="email" value={secondaryEmail}
-                  onChange={(e) => setSecondaryEmail(e.target.value)} data-testid="secondary-email" />
-              </div>
-            </div>
-          </div>
+            </details>
+          </section>
 
-          <div className={styles.section}>
-            <h3 className={styles.sectionHeading}>{t(lang, 'Adresse', 'Address')}</h3>
+          <section className={`${styles.section} ${styles.areaAddress}`}>
+            <header className={styles.sectionHead}>
+              <span className={styles.stepNum} aria-hidden="true">3</span>
+              <div>
+                <h3 className={styles.sectionHeading}>{t(lang, 'Adresse', 'Address')}</h3>
+                <p className={styles.sectionSub}>{t(lang, 'Ou choisissez le logement manuellement.', 'Or pick the unit manually.')}</p>
+              </div>
+            </header>
             <div className={styles.field}>
               <label htmlFor="picker-sector" className={styles.label}>
                 {t(lang, 'Secteur *', 'Sector *')}
@@ -639,10 +672,16 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                 }
               </div>
             )}
-          </div>
+          </section>
 
-          <div className={styles.section}>
-            <h3 className={styles.sectionHeading}>{t(lang, 'Accès', 'Access')}</h3>
+          <section className={`${styles.section} ${styles.areaAccess}`}>
+            <header className={styles.sectionHead}>
+              <span className={styles.stepNum} aria-hidden="true">4</span>
+              <div>
+                <h3 className={styles.sectionHeading}>{t(lang, 'Accès', 'Access')}</h3>
+                <p className={styles.sectionSub}>{t(lang, 'Entrée, animaux et urgence.', 'Entry, pets and urgency.')}</p>
+              </div>
+            </header>
             <fieldset className={styles.fieldset}>
               <legend className={styles.label}>{t(lang, 'Accès au logement *', 'Unit access *')}</legend>
               <div className={styles.radioGroup} data-testid="access-group">
@@ -696,19 +735,29 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                 )}
               </>
             )}
-            <label className={styles.radioRow} data-testid="intake-urgent-row">
+            <label className={`${styles.urgentToggle} ${intakeUrgent ? styles.urgentOn : ''}`} data-testid="intake-urgent-row">
               <input
                 type="checkbox"
                 checked={intakeUrgent}
                 onChange={(e) => setIntakeUrgent(e.target.checked)}
                 data-testid="intake-urgent"
               />
-              <span>{t(lang, 'Urgent', 'Urgent')}</span>
+              <span>
+                <strong>{t(lang, 'Urgent', 'Urgent')}</strong>
+                <span className={styles.urgentHint}>{t(lang, 'Signaler pour traitement prioritaire', 'Flag for priority handling')}</span>
+              </span>
             </label>
-          </div>
+          </section>
 
-          <div className={styles.section}>
-            <h3 className={styles.sectionHeading}>{t(lang, 'Problème', 'Problem')}</h3>
+          <section className={`${styles.section} ${styles.areaProblem}`}>
+            <header className={styles.sectionHead}>
+              <span className={styles.stepNum} aria-hidden="true">5</span>
+              <div>
+                <h3 className={styles.sectionHeading}>{t(lang, 'Problème', 'Problem')}</h3>
+                <p className={styles.sectionSub}>{t(lang, 'Classification et description.', 'Classification and description.')}</p>
+              </div>
+            </header>
+            <div className={styles.taxonomy}>
             <div className={styles.row}>
               <div className={styles.field}>
                 <label htmlFor="element" className={styles.label}>{t(lang, 'Élément', 'Element')}</label>
@@ -733,6 +782,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                   onChange={(e) => setEmplacement(e.target.value)} data-testid="emplacement" />
               </div>
             </div>
+            </div>
             <div className={styles.field}>
               <label htmlFor="problem" className={styles.label}>
                 {t(lang, 'Description du problème *', 'Problem description *')}
@@ -741,20 +791,34 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                 onChange={(e) => setProblem(e.target.value)} data-testid="problem" rows={3} required />
             </div>
             <div className={`${styles.field} ${styles.attentionField}`}>
-              <label htmlFor="attention" className={styles.label}>ATTENTION</label>
+              <label htmlFor="attention" className={styles.label}>
+                <span aria-hidden="true">⚠</span> ATTENTION{' '}
+                <span className={styles.labelHint}>{t(lang, '— note visible par le technicien', '— note shown to the technician')}</span>
+              </label>
               <input id="attention" className={styles.input} value={attention}
                 onChange={(e) => setAttention(e.target.value)} />
             </div>
+          </section>
+          </div>
           </div>
 
+          <footer className={styles.footer}>
           {unitsError && <p className={styles.errorMsg} data-testid="units-error">{unitsError}</p>}
           {errorMsg && <p className={styles.errorMsg} data-testid="error-msg">{errorMsg}</p>}
-          {blockReasons.length > 0 && (
-            <ul className={styles.blockReasons} data-testid="block-reasons">
-              {blockReasons.map((r) => (
-                <li key={r}>{r}</li>
-              ))}
-            </ul>
+          <div className={styles.footerRow}>
+          {blockReasons.length > 0 ? (
+            <div className={styles.status}>
+              <span className={styles.statusLabel}>
+                {t(lang, `À compléter (${blockReasons.length})`, `To complete (${blockReasons.length})`)}
+              </span>
+              <ul className={styles.blockReasons} data-testid="block-reasons">
+                {blockReasons.map((r) => (
+                  <li key={r} title={r}>{shortReason(r)}</li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <span className={styles.ready}>{t(lang, '✓ Prêt à créer', '✓ Ready to create')}</span>
           )}
 
           <div className={styles.actions}>
@@ -766,9 +830,11 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
               data-testid="submit-btn">
               {submitting
                 ? t(lang, 'Création…', 'Creating…')
-                : t(lang, 'Créer', 'Create')}
+                : t(lang, 'Créer l’appel', 'Create call')}
             </button>
           </div>
+          </div>
+          </footer>
         </form>
       </div>
     </div>
