@@ -66,6 +66,11 @@ class Settings(BaseSettings):
         ".EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"
     )
 
+    # AssemblyAI — speech-to-text (Universal-3.6 Pro streaming). Optional:
+    # without it the dictation button reports « dictée indisponible » and
+    # people type instead.
+    ASSEMBLYAI_API_KEY: str = ""
+
     # Anthropic — required at startup; prevents a silent triage_pending hang.
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_WORKSPACE_ID: str = ""
