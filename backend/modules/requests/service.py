@@ -9,8 +9,9 @@ from typing import Any
 from datetime import datetime, timezone
 
 from backend.core.exceptions import (
-    ConflictError, InvalidTransition, NotFoundError, PermissionDenied,
-    RequestClosedError, RequestEnRouteError, StaleDataError, ValidationFailed,
+    AssigneeEnRouteError, ConflictError, InvalidTransition, NotFoundError,
+    PermissionDenied, RequestClosedError, RequestEnRouteError, StaleDataError,
+    ValidationFailed,
 )
 from backend.domain.status_machine import transition
 from backend.core.security import CurrentUser
@@ -107,6 +108,7 @@ def list_requests(conn, params, user: CurrentUser) -> ListResponse:
         urgency=params.urgency,
         source_calendar=params.source_calendar,
         q=params.q,
+        has_subcontractor=params.has_subcontractor,
         sort_by=params.sort_by,
         sort_dir=params.sort_dir,
         limit=params.limit,
@@ -130,6 +132,7 @@ def list_requests(conn, params, user: CurrentUser) -> ListResponse:
             source_calendar=params.source_calendar,
             status=params.status,
             q=params.q,
+            has_subcontractor=params.has_subcontractor,
         )
     return ListResponse(
         total=total,
@@ -236,6 +239,8 @@ def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) ->
         raise StaleDataError()
     if body.employee_id is not None and not repo.is_valid_assignee(conn, body.employee_id):
         raise ValidationFailed("Employee must be an active technician or contractor")
+    if body.employee_id is not None and repo.employee_has_open_en_route(conn, body.employee_id):
+        raise AssigneeEnRouteError()
 
     repo.update_field(conn, request_id, "assigned_employee_id", body.employee_id)
     _write_justification(conn, request_id, user, body, decision_type="assign",
@@ -324,6 +329,13 @@ def action_set_follow_up_date(conn, request_id: int, body: SetFollowUpDateBody, 
         previous_value=_to_str(row["next_follow_up_date"]),
         new_value=_to_str(body.next_follow_up_date),
     )
+    if body.next_follow_up_date is not None:
+        title = (row.get("raw_title") or f"#{request_id}").strip()
+        from backend.modules.alerts import service as alerts
+        alerts.notify(
+            conn, request_id=request_id, kind="followup_added",
+            summary=f"Suivi planifié ({body.next_follow_up_date}) — {title}",
+        )
     return _after_action(conn, request_id, user)
 
 
@@ -552,13 +564,38 @@ def action_closeout(conn, request_id: int, body: CloseoutBody, user: CurrentUser
         "SELECT nom_employe FROM employee WHERE employee_id = %(emp_id)s",
         {"emp_id": user.employee_id},
     ).fetchone()
-    initials = "".join(w[0].upper() for w in (emp_row["nom_employe"] if emp_row else "?").split() if w)[:4]
+    tech_name = emp_row["nom_employe"] if emp_row else "?"
+    initials = "".join(w[0].upper() for w in tech_name.split() if w)[:4]
     followup_id = repo.add_log_entry(conn, request_id, body.comment, initials, today)
     repo.write_provenance(conn,
         target_table="maintenance_followup_entry", target_pk=str(followup_id),
         target_column="entry_text", employee_id=user.employee_id,
         previous_value=None, new_value=body.comment,
     )
+
+    title = (row.get("raw_title") or f"#{request_id}").strip()
+    from backend.modules.alerts import service as alerts
+    from backend.modules.survey import repository as survey_repo
+
+    if body.outcome == "complete":
+        survey_repo.create_survey(
+            conn, request_id=request_id, visit_id=visit["visit_id"],
+            employee_id=user.employee_id,
+        )
+        alerts.notify(
+            conn, request_id=request_id, kind="call_completed",
+            summary=f"Appel terminé — {tech_name}: {title}",
+        )
+    elif body.outcome in ("partial_expertise", "failed"):
+        alerts.notify(
+            conn, request_id=request_id, kind="expertise_needed",
+            summary=f"Expertise requise — {tech_name}: {title}",
+        )
+    elif body.outcome == "partial_reschedule":
+        alerts.notify(
+            conn, request_id=request_id, kind="followup_added",
+            summary=f"Retour prévu — {tech_name}: {title}",
+        )
 
     return get_request(conn, request_id, user, bypass_scope=True)
 
@@ -611,13 +648,17 @@ def action_add_log(conn, request_id: int, body: AddLogBody, user: CurrentUser) -
     # Allowed even on closed requests — no status check.
     # Lock the request row to confirm it exists.
     row = _lock_or_404(conn, request_id)
+    is_coord = bool(user.roles & {"coordinator", "director"})
+    if not is_coord and row["assigned_employee_id"] != user.employee_id:
+        raise PermissionDenied("Seul l'employé assigné peut ajouter une note")
 
     # Resolve initials from the employee's name
     emp_row = conn.execute(
         "SELECT nom_employe FROM employee WHERE employee_id = %(emp_id)s",
         {"emp_id": user.employee_id},
     ).fetchone()
-    initials = "".join(w[0].upper() for w in (emp_row["nom_employe"] if emp_row else "?").split() if w)[:4]
+    name = emp_row["nom_employe"] if emp_row else "?"
+    initials = "".join(w[0].upper() for w in name.split() if w)[:4]
     today = today_local()
 
     followup_id = repo.add_log_entry(conn, request_id, body.entry_text, initials, today)
@@ -626,4 +667,17 @@ def action_add_log(conn, request_id: int, body: AddLogBody, user: CurrentUser) -
         target_column="entry_text", employee_id=user.employee_id,
         previous_value=None, new_value=body.entry_text,
     )
+
+    title = (row.get("raw_title") or f"#{request_id}").strip()
+    from backend.modules.alerts import service as alerts
+    if is_coord:
+        alerts.notify(
+            conn, request_id=request_id, kind="followup_added",
+            summary=f"Suivi ajouté — {title}",
+        )
+    else:
+        alerts.notify(
+            conn, request_id=request_id, kind="tech_log",
+            summary=f"Note terrain — {name}: {title}",
+        )
     return _after_action(conn, request_id, user)

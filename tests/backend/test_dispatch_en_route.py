@@ -174,6 +174,88 @@ def test_route_en_route_allowed(en_route_call, db_conn):
     assert _visit_still_open(db_conn, rid)
 
 
+# ── Blocked: assign TO a tech who is en route on another call ──────────────────
+
+def _seed_assign_block(db_conn):
+    """Minimal sector/building + tech/coord for empty sib_test."""
+    sector_id = db_conn.execute(
+        "INSERT INTO sector (territoire, color_code) VALUES ('TEST-ASSIGN', '#222') "
+        "RETURNING sector_id"
+    ).fetchone()["sector_id"]
+    project_id = db_conn.execute(
+        "INSERT INTO project (nom_unique_projet) VALUES ('TestAssignEnRoute') "
+        "RETURNING project_id"
+    ).fetchone()["project_id"]
+    building_id = db_conn.execute(
+        "INSERT INTO building (project_id, sector_id, adresse) "
+        "VALUES (%(p)s, %(s)s, '9 rue Assign') RETURNING building_id",
+        {"p": project_id, "s": sector_id},
+    ).fetchone()["building_id"]
+    tech_id = db_conn.execute(
+        "INSERT INTO employee (nom_employe, is_active) VALUES ('Tech Assign', true) "
+        "RETURNING employee_id"
+    ).fetchone()["employee_id"]
+    db_conn.execute(
+        "INSERT INTO employee_role (employee_id, role) VALUES (%s, 'technician')",
+        [tech_id],
+    )
+    coord_id = db_conn.execute(
+        "INSERT INTO employee (nom_employe, is_active) VALUES ('Coord Assign', true) "
+        "RETURNING employee_id"
+    ).fetchone()["employee_id"]
+    db_conn.execute(
+        "INSERT INTO employee_role (employee_id, role) VALUES (%s, 'coordinator')",
+        [coord_id],
+    )
+    return building_id, tech_id, coord_id
+
+
+def test_assign_other_call_to_en_route_tech_is_409(ac, db_conn):
+    building_id, tech_id, coord_id = _seed_assign_block(db_conn)
+
+    busy_rid = db_conn.execute(
+        "INSERT INTO maintenance_request (status, building_id, assigned_employee_id, raw_title) "
+        "VALUES ('triaged', %s, %s, 'Appel busy') RETURNING request_id",
+        [building_id, tech_id],
+    ).fetchone()["request_id"]
+    other_rid = db_conn.execute(
+        "INSERT INTO maintenance_request (status, building_id, raw_title) "
+        "VALUES ('triaged', %s, 'Autre appel') RETURNING request_id",
+        [building_id],
+    ).fetchone()["request_id"]
+
+    tech = ac(_user(tech_id, "technician"))
+    assert tech.post(f"/api/v1/requests/{busy_rid}/en-route", json={
+        "current_status": "triaged", "current_start_date": None,
+        "lat": None, "lng": None,
+    }).status_code == 200
+
+    coord = ac(_user(coord_id, "coordinator"))
+    r = coord.post(f"/api/v1/requests/{other_rid}/assign", json={
+        "employee_id": tech_id, "current_assigned_employee_id": None,
+        "current_start_date": None, "current_urgency_tier": None,
+        "justification": _JUSTIF,
+    })
+    assert r.status_code == 409
+    err = r.json()["error"]
+    assert err["code"] == "ASSIGNEE_EN_ROUTE"
+    assert "en route" in err["message"].lower()
+
+    # Mark the busy call closed directly (skip photo closeout path).
+    db_conn.execute(
+        "UPDATE maintenance_request SET status = 'closed' WHERE request_id = %s",
+        [busy_rid],
+    )
+
+    r = coord.post(f"/api/v1/requests/{other_rid}/assign", json={
+        "employee_id": tech_id, "current_assigned_employee_id": None,
+        "current_start_date": None, "current_urgency_tier": None,
+        "justification": _JUSTIF,
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["assigned_employee_id"] == tech_id
+
+
 # ── Unblocked after closeout ───────────────────────────────────────────────────
 
 def test_reassign_works_after_closeout(en_route_call, ac, db_conn):

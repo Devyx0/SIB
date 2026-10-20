@@ -124,20 +124,35 @@
   border-bottom: 1px solid var(--color-divider);
 }
 
-.dayGroupOdd,
-.dayGroupEven {
-  background: var(--color-bg-alt);
-}
+/* Weekday swatches — Sun=0 … Sat=6 */
+.dayHeader[data-weekday="0"] { --day-tint: #f3e8e8; --day-accent: #a35d5d; }
+.dayHeader[data-weekday="1"] { --day-tint: #e8eef6; --day-accent: #3d5a80; }
+.dayHeader[data-weekday="2"] { --day-tint: #e8f2ec; --day-accent: #3d6b54; }
+.dayHeader[data-weekday="3"] { --day-tint: #f3efe6; --day-accent: #8a6d3b; }
+.dayHeader[data-weekday="4"] { --day-tint: #eceaf4; --day-accent: #5a4f7a; }
+.dayHeader[data-weekday="5"] { --day-tint: #e6f1f2; --day-accent: #3d6e73; }
+.dayHeader[data-weekday="6"] { --day-tint: #f4ebe6; --day-accent: #8a5a3b; }
 
 .dayHeaderCell {
   padding: 9px 14px;
   font-size: 13px;
   color: var(--navy-800);
   border-top: 1px solid var(--color-border);
+  background: var(--day-tint, var(--color-bg-alt));
 }
 
 .dayHeader:first-child .dayHeaderCell {
   border-top: none;
+}
+
+.daySwatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 8px;
+  vertical-align: 1px;
+  background: var(--day-accent, var(--navy-800));
 }
 
 .dayName {

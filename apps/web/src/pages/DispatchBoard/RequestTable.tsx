@@ -1,6 +1,6 @@
 import { useRef, KeyboardEvent } from 'react';
 import type { ListRow } from '../../api/schema.d.ts';
-import { statusLabel, t } from '../../i18n';
+import { statusLabel, t, timeEstimateLabel } from '../../i18n';
 import type { Lang } from '../../i18n';
 import styles from './RequestTable.module.css';
 
@@ -37,13 +37,13 @@ const MANDATORY_COLS: ColDef[] = [
   { key: 'building_address',      fr: 'Immeuble',       en: 'Building',      sortable: true  },
   { key: 'unique_unit_number',    fr: "N° d'unité",     en: 'Unit #',        sortable: true  },
   { key: 'assigned_employee_name',fr: 'Employé',        en: 'Employee',      sortable: true  },
+  { key: 'subcontractor_name',    fr: 'Sous-traitant',  en: 'Subcontractor', sortable: true  },
+  { key: 'time_estimate_bucket',  fr: 'Durée',          en: 'Est. time',     sortable: true  },
   { key: 'last_followup_date',    fr: 'Dernier suivi',  en: 'Last log',      sortable: true  },
   { key: 'status',                fr: 'Statut',         en: 'Status',        sortable: true  },
 ];
 
 const OPTIONAL_COLS: ColDef[] = [
-  { key: 'subcontractor_name',    fr: 'Sous-traitant',      en: 'Subcontractor', sortable: true  },
-  { key: 'time_estimate_bucket',  fr: 'Durée',              en: 'Est. time',     sortable: true  },
   { key: 'estimated_cost',        fr: 'Coût',               en: 'Est. cost',     sortable: false },
   { key: 'next_follow_up_date',   fr: 'Prochain suivi',     en: 'Next follow-up',sortable: false },
   { key: 'next_steps',            fr: 'Prochaines étapes',  en: 'Next steps',    sortable: false },
@@ -136,7 +136,6 @@ export default function RequestTable({
     const showDayHeaders = sortBy === 'start_date';
     const result: JSX.Element[] = [];
     let lastDate: string | null = null;
-    let dayGroupIndex = 0;
     const perDay = new Map<string, number>();
     rows.forEach((r) => {
       if (r.start_date) perDay.set(r.start_date, (perDay.get(r.start_date) ?? 0) + 1);
@@ -145,15 +144,18 @@ export default function RequestTable({
     rows.forEach((row) => {
       if (showDayHeaders && row.start_date !== lastDate) {
         if (row.start_date !== null) {
-          dayGroupIndex++;
           lastDate = row.start_date;
+          // Noon local avoids UTC date-shift when reading weekday from YYYY-MM-DD.
+          const weekday = new Date(`${row.start_date}T12:00:00`).getDay();
           result.push(
             <tr
               key={`day-${row.start_date}`}
-              className={`${styles.dayHeader} ${dayGroupIndex % 2 === 0 ? styles.dayGroupEven : styles.dayGroupOdd}`}
+              className={styles.dayHeader}
+              data-weekday={weekday}
               data-testid="day-header"
             >
               <td colSpan={colCount} className={styles.dayHeaderCell}>
+                <span className={styles.daySwatch} aria-hidden="true" />
                 <span className={styles.dayName}>{dayLabel(row.start_date)}</span>
                 {row.start_date === today && (
                   <span className={styles.todayTag}>{t(lang, "Aujourd'hui", 'Today')}</span>
@@ -199,6 +201,12 @@ export default function RequestTable({
             {row.unique_unit_number ?? '—'}
           </td>
           <td className={styles.nowrap + ' ' + styles.bold}>{row.assigned_employee_name ?? '—'}</td>
+          <td className={styles.titleCell}>
+            <span className={styles.clamp} title={row.subcontractor_name ?? undefined}>
+              {row.subcontractor_name ?? '—'}
+            </span>
+          </td>
+          <td className={styles.nowrap}>{timeEstimateLabel(lang, row.time_estimate_bucket)}</td>
           <td className={styles.nowrap}>{row.last_followup_date ?? '—'}</td>
           <td className={styles.nowrap}>
             <StatusTag status={row.status} lang={lang} />
@@ -207,8 +215,6 @@ export default function RequestTable({
             )}
           </td>
           {/* optional cells */}
-          {showAllCols && <td className={styles.nowrap}>{row.subcontractor_name ?? '—'}</td>}
-          {showAllCols && <td className={styles.nowrap}>{row.time_estimate_bucket ?? '—'}</td>}
           {showAllCols && <td className={styles.nowrap}>{row.estimated_cost != null ? String(row.estimated_cost) : '—'}</td>}
           {showAllCols && <td className={styles.nowrap}>{row.next_follow_up_date ?? '—'}</td>}
           {showAllCols && <td>{row.next_steps ?? '—'}</td>}

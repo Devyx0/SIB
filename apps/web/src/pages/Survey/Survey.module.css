@@ -1,0 +1,122 @@
+.page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(to bottom, var(--navy-800) 0, var(--navy-800) 36%, transparent 36%),
+    var(--color-bg);
+  border-top: 4px solid var(--charcoal);
+  padding: 24px;
+}
+
+.card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  padding: 28px 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.brand {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 650;
+  color: var(--color-text);
+}
+
+.meta {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--color-neutral-600);
+}
+
+.question {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.questionLabel {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.choices {
+  display: flex;
+  gap: 8px;
+}
+
+.choice {
+  flex: 1;
+  min-height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.choice:hover {
+  background: var(--navy-50);
+}
+
+.choiceSelected {
+  border-color: var(--navy-600);
+  background: var(--navy-100);
+  color: var(--navy-800);
+  font-weight: 600;
+}
+
+.comments {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.submit {
+  min-height: 42px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--navy-800);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error {
+  margin: 0;
+  color: #a33;
+  font-size: 0.9rem;
+}
+
+.done {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--color-text);
+  line-height: 1.45;
+}

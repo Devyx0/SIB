@@ -292,14 +292,63 @@ def validate(
     else:
         return "rejected_invalid_verdict", f"verdict must be single|duplicate|addition, got {verdict!r}"
 
+    # Gate 8 — synergy / peer refs must not cite §4.2 mechanically excluded titles
+    if conn is not None:
+        cite_ids: list[int] = []
+        for sid in parsed.get("synergy_request_ids") or []:
+            if isinstance(sid, int):
+                cite_ids.append(sid)
+        for key in ("duplicate_of_request_id", "addition_to_request_id"):
+            rid = parsed.get(key)
+            if isinstance(rid, int):
+                cite_ids.append(rid)
+        if cite_ids:
+            ok, detail = _check_not_mechanically_excluded(conn, cite_ids)
+            if not ok:
+                return "rejected_excluded_candidate", detail
+
     return "accepted", None
+
+
+def _check_not_mechanically_excluded(conn, request_ids: list[int]) -> tuple[bool, str | None]:
+    """Reject when any cited request_id has a §4.2-excluded raw_title."""
+    from .context_builder import is_mechanically_excluded
+
+    uniq = list(dict.fromkeys(request_ids))
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT request_id, raw_title
+                FROM maintenance_request
+                WHERE request_id = ANY(%s)
+                """,
+                (uniq,),
+            )
+            rows = cur.fetchall()
+    except Exception as exc:
+        return False, f"DB lookup failed: {exc}"
+
+    by_id: dict[int, str | None] = {}
+    for row in rows:
+        if isinstance(row, dict):
+            by_id[row["request_id"]] = row.get("raw_title")
+        else:
+            by_id[row[0]] = row[1]
+    for rid in uniq:
+        title = by_id.get(rid)
+        if rid not in by_id:
+            continue  # missing refs handled by gate 7
+        if is_mechanically_excluded(title):
+            return False, f"request {rid} is mechanically excluded ({title!r})"
+    return True, None
 
 
 def _check_dup_add_ref(
     conn, request_id: int, ref_id: int, *, expect_same_problem: bool, parsed: dict,
 ) -> tuple[bool, str | None]:
     """Same unit, not closed; same_problem for duplicate, different for addition."""
-    from .context_builder import problem_text, same_problem
+    from .context_builder import is_mechanically_excluded, problem_text, same_problem
 
     try:
         with conn.cursor() as cur:
@@ -337,6 +386,9 @@ def _check_dup_add_ref(
     cur_unit = _get(cur_row, "unit_id", 1)
     ref_unit = _get(ref_row, "unit_id", 1)
     ref_status = _get(ref_row, "status", 2)
+    ref_title = _get(ref_row, "raw_title", 3)
+    if is_mechanically_excluded(ref_title):
+        return False, f"referenced request {ref_id} is mechanically excluded"
     if ref_status == "closed":
         return False, f"referenced request {ref_id} is closed"
     if cur_unit is not None and ref_unit is not None and cur_unit != ref_unit:

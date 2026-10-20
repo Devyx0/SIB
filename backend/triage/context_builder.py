@@ -72,18 +72,49 @@ _PEST_RE = re.compile(
 )
 
 
-# ── Mechanical exclusion clause (injected into every candidate query) ─────────
-# Guide §4.2: recurring series, admin rows, building lists, the request itself.
-# The request_id exclusion is added separately per caller.
+# ── Mechanical exclusions (guide §4.2 / SKILL 4.2) ────────────────────────────
+# Recurring series, waste-ish admin lists, `!` admin prefix. Applied in SQL
+# candidate queries AND as a Python gate so the model cannot cite them.
 
-_EXCL = """
-    AND mr.raw_title NOT LIKE '!%%'
-    AND mr.raw_title NOT ILIKE '%%abri%%hiver%%'
-    AND mr.raw_title NOT ILIKE '%%tapis%%hiver%%'
-    AND mr.raw_title NOT ILIKE '%%lavage%%vitre%%'
-    AND mr.raw_title NOT ILIKE '%%inspection%%incendie%%'
-    AND mr.raw_title NOT ILIKE '%%liste choses à faire%%'
-"""
+# Each tuple = all substrings that must appear (case-insensitive) in raw_title.
+_EXCL_TOKEN_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("abri", "hiver"),
+    ("tapis", "hiver"),
+    ("lavage", "vitre"),
+    ("inspection", "incendie"),
+    ("liste choses à faire",),
+    ("compresseur",),
+    ("batterie",),
+)
+
+
+def is_mechanically_excluded(title: str | None) -> bool:
+    """True when raw_title matches SKILL §4.2 mechanical exclusions."""
+    t = title or ""
+    if t.startswith("!"):
+        return True
+    low = t.casefold()
+    for group in _EXCL_TOKEN_GROUPS:
+        if all(tok.casefold() in low for tok in group):
+            return True
+    return False
+
+
+def _excl_sql() -> str:
+    """SQL AND-clause mirroring is_mechanically_excluded (candidate filters)."""
+    parts = ["mr.raw_title NOT LIKE '!%%'"]
+    for group in _EXCL_TOKEN_GROUPS:
+        if len(group) == 1:
+            parts.append(f"mr.raw_title NOT ILIKE '%%{group[0]}%%'")
+        else:
+            # Same token-order as historical ILIKE '%%a%%b%%' patterns.
+            parts.append(
+                "mr.raw_title NOT ILIKE '%%" + "%%".join(group) + "%%'"
+            )
+    return "\n    AND " + "\n    AND ".join(parts)
+
+
+_EXCL = _excl_sql()
 
 # Candidate columns returned for duplicate / synergy / history blocks.
 _CAND_COLS = """
@@ -655,20 +686,8 @@ def congestion(cur, request: dict) -> dict:
     }
 
 
-_COMMON_AREA = re.compile(
-    r"\b(espace|partie|aire|zone)\s+commun",
-    re.IGNORECASE,
-)
 # Stated cap — the prompt always reports how many rows were left out.
 _HISTORY_CAP = 40
-
-
-def _is_common_area(request: dict) -> bool:
-    blob = " ".join(
-        str(request.get(k) or "")
-        for k in ("entry_permission", "raw_title", "unit_label", "problems")
-    )
-    return _COMMON_AREA.search(blob) is not None
 
 
 def _history_query(cur, *, where: str, params: tuple) -> list[dict]:
@@ -688,8 +707,10 @@ def _history_query(cur, *, where: str, params: tuple) -> list[dict]:
 
 
 def history(cur, request: dict) -> dict:
-    """Unit history −6mo → +21d. Building history when there is no unit or the
-    call is a common area. Caps are reported, never silent.
+    """Unit history −6mo → +21d, plus building-level history when building_id is set.
+
+    Building rows exclude anything already listed under the unit. Caps are
+    reported, never silent. (Guide synergy/history rules are building-aware.)
     """
     d = _ref_date(request)
     empty = {
@@ -707,9 +728,8 @@ def history(cur, request: dict) -> dict:
             where="mr.unit_id = %s",
             params=(request["unit_id"], rid, d, d),
         )
-    include_building = request.get("unit_id") is None or _is_common_area(request)
     building_rows: list[dict] = []
-    if include_building and request.get("building_id") is not None:
+    if request.get("building_id") is not None:
         seen = {r["request_id"] for r in unit_rows}
         building_rows = [
             r for r in _history_query(
@@ -719,6 +739,7 @@ def history(cur, request: dict) -> dict:
             )
             if r["request_id"] not in seen
         ]
+
     def _cap(rows: list[dict]) -> tuple[list[dict], int]:
         if len(rows) <= _HISTORY_CAP:
             return rows, 0
@@ -726,12 +747,14 @@ def history(cur, request: dict) -> dict:
 
     unit_shown, unit_omitted = _cap(unit_rows)
     bldg_shown, bldg_omitted = _cap(building_rows)
-    if request.get("unit_id") is None:
+    if request.get("unit_id") is None and request.get("building_id") is not None:
         scope = "building"
-    elif include_building:
+    elif request.get("unit_id") is not None and request.get("building_id") is not None:
         scope = "unit+building"
-    else:
+    elif request.get("unit_id") is not None:
         scope = "unit"
+    else:
+        scope = "none"
     return {
         "unit": unit_shown,
         "building": bldg_shown,

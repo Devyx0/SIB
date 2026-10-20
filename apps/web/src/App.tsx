@@ -13,6 +13,7 @@ import TechList from './pages/TechPortal';
 import TechCallView from './pages/TechPortal/CallView';
 import CloseoutForm from './pages/TechPortal/CloseoutForm';
 import Login from './pages/Login';
+import SurveyPage from './pages/Survey';
 import { JustificationProvider } from './components/Justification';
 import { fetchMe } from './api/client';
 import type { MeResponse } from './api/schema.d.ts';
@@ -62,6 +63,7 @@ export default function App() {
   return (
     <JustificationProvider lang={lang}>
       <Routes>
+        <Route path="/sondage/:token" element={<SurveyPage lang={lang} />} />
         <Route
           path="/login"
           element={session ? <Navigate to={techOnly ? '/tech' : '/board'} replace /> : <Login />}

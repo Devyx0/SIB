@@ -16,6 +16,7 @@ class LoadTodayRow(BaseModel):
     nom_employe: str
     assigned_count: int
     en_route_count: int
+    minutes_worked: int
 
 
 class TerritoryRow(BaseModel):

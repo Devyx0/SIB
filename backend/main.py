@@ -29,6 +29,8 @@ from backend.modules.units.router import router as units_router
 from backend.modules.weather.router import router as weather_router
 from backend.modules.analytics.router import router as analytics_router
 from backend.modules.portfolio.router import router as portfolio_router
+from backend.modules.survey.router import router as survey_router
+from backend.modules.alerts.router import router as alerts_router
 
 
 class HealthResponse(BaseModel):
@@ -52,7 +54,8 @@ def create_app() -> FastAPI:
 
     for router in (requests_router, lookup_router, dossiers_router, intake_router,
                    buildings_router, units_router, employees_router, feedback_router,
-                   weather_router, analytics_router, portfolio_router):
+                   weather_router, analytics_router, portfolio_router,
+                   survey_router, alerts_router):
         app.include_router(router, prefix="/api/v1")
 
     @app.get(

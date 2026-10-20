@@ -1,7 +1,7 @@
 """GET /api/v1/analytics/dashboard — coord/dir only, real aggregates."""
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -120,6 +120,55 @@ def test_dashboard_active_includes_en_route(ac, db_conn, building):
     r = ac(_user(_COORD, "coordinator")).get("/api/v1/analytics/dashboard")
     row = next(x for x in r.json()["by_territory"] if x["sector_id"] == building["sector_id"])
     assert row["active"] >= 1
+
+
+def test_load_today_en_route_and_minutes_scoped_to_start_date(ac, db_conn, building):
+    """Board + dashboard share start_date; minutes = closed duration + open elapsed."""
+    today = today_local()
+    yesterday = today - timedelta(days=1)
+    db_conn.execute(
+        "INSERT INTO maintenance_request (status, building_id, sector_id, assigned_employee_id, "
+        "raw_title, start_date) "
+        "VALUES ('en_route', %(b)s, %(s)s, %(e)s, 'Old en route', %(d)s)",
+        {"b": building["building_id"], "s": building["sector_id"], "e": _TECH, "d": yesterday},
+    )
+    rid = db_conn.execute(
+        "INSERT INTO maintenance_request (status, building_id, sector_id, assigned_employee_id, "
+        "raw_title, start_date) "
+        "VALUES ('triaged', %(b)s, %(s)s, %(e)s, 'Load today mins', %(d)s) "
+        "RETURNING request_id",
+        {"b": building["building_id"], "s": building["sector_id"], "e": _TECH, "d": today},
+    ).fetchone()["request_id"]
+    now = datetime.now(timezone.utc)
+    db_conn.execute(
+        "INSERT INTO request_visit (request_id, employee_id, en_route_at, closeout_at, "
+        "duration_minutes, outcome) "
+        "VALUES (%(r)s, %(e)s, %(era)s, %(ca)s, 45, 'complete')",
+        {
+            "r": rid, "e": _TECH,
+            "era": now - timedelta(hours=2),
+            "ca": now - timedelta(hours=1, minutes=15),
+        },
+    )
+    open_rid = db_conn.execute(
+        "INSERT INTO maintenance_request (status, building_id, sector_id, assigned_employee_id, "
+        "raw_title, start_date) "
+        "VALUES ('en_route', %(b)s, %(s)s, %(e)s, 'Open visit', %(d)s) "
+        "RETURNING request_id",
+        {"b": building["building_id"], "s": building["sector_id"], "e": _TECH, "d": today},
+    ).fetchone()["request_id"]
+    db_conn.execute(
+        "INSERT INTO request_visit (request_id, employee_id, en_route_at) "
+        "VALUES (%(r)s, %(e)s, %(era)s)",
+        {"r": open_rid, "e": _TECH, "era": now - timedelta(minutes=12)},
+    )
+
+    r = ac(_user(_COORD, "coordinator")).get("/api/v1/analytics/dashboard")
+    assert r.status_code == 200, r.text
+    row = next(x for x in r.json()["load_today"] if x["employee_id"] == _TECH)
+    assert row["en_route_count"] >= 1
+    assert row["assigned_count"] >= 2
+    assert row["minutes_worked"] >= 45 + 12
 
 
 def test_dashboard_weather_null_when_flag_off(ac, monkeypatch):

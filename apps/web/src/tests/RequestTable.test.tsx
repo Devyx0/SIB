@@ -91,6 +91,22 @@ describe('RequestTable', () => {
     render(<RequestTable {...defaultProps} rows={rows} sortBy="start_date" />);
     const headers = screen.getAllByTestId('day-header');
     expect(headers.length).toBe(2);
+    // 2026-09-10 = Thursday (4), 2026-09-11 = Friday (5)
+    expect(headers[0].getAttribute('data-weekday')).toBe('4');
+    expect(headers[1].getAttribute('data-weekday')).toBe('5');
+  });
+
+  it('always shows subcontractor and est. time columns', () => {
+    render(
+      <RequestTable
+        {...defaultProps}
+        rows={[makeRow({ subcontractor_name: 'Duclos', time_estimate_bucket: 'UNDER_30_MIN' })]}
+      />,
+    );
+    expect(screen.getByText('Duclos')).toBeTruthy();
+    expect(screen.getByText('< 30 min')).toBeTruthy();
+    expect(screen.getByText('Sous-traitant')).toBeTruthy();
+    expect(screen.getByText('Durée')).toBeTruthy();
   });
 
   it('does NOT insert day-header rows when sortBy != start_date', () => {

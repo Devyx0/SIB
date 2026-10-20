@@ -1,5 +1,5 @@
-import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover } from './schema.d.ts';
-export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover };
+import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse } from './schema.d.ts';
+export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse };
 import { supabase } from '../lib/supabase';
 
 // The portal never shows English generic errors — unknown failures map to this.
@@ -33,6 +33,7 @@ export interface RequestListParams {
   limit?: number;
   offset?: number;
   redispatch?: boolean;
+  has_subcontractor?: boolean;
 }
 
 async function request<T>(path: string, method: string, body?: unknown): Promise<T> {
@@ -66,6 +67,7 @@ async function request<T>(path: string, method: string, body?: unknown): Promise
     } catch { /* ignore parse error */ }
     throw new ApiError(code, message, traceId, details);
   }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -93,6 +95,7 @@ function buildQuery(params: RequestListParams): string {
   if (params.limit != null) q.set('limit', String(params.limit));
   if (params.offset != null) q.set('offset', String(params.offset));
   if (params.redispatch) q.set('redispatch', 'true');
+  if (params.has_subcontractor != null) q.set('has_subcontractor', String(params.has_subcontractor));
   return q.toString();
 }
 
@@ -375,4 +378,45 @@ export function fetchPortfolioUnit(unitId: number): Promise<PortfolioUnitDetail>
 
 export function fetchTenantTurnover(unitId: number, tenantId: number): Promise<TenantTurnover> {
   return apiFetch(`/api/v1/portfolio/units/${unitId}/tenants/${tenantId}/turnover`);
+}
+
+/** Public survey — no auth header; do not redirect to login on 401. */
+export async function fetchSurvey(token: string): Promise<SurveyPublic> {
+  const res = await fetch(`/api/v1/survey/${encodeURIComponent(token)}`);
+  if (!res.ok) {
+    let message = GENERIC_ERROR_FR;
+    try { message = (await res.json())?.error?.message ?? message; } catch { /* ignore */ }
+    throw new ApiError(`HTTP_${res.status}`, message);
+  }
+  return res.json();
+}
+
+export async function submitSurvey(
+  token: string,
+  body: { polite: boolean; satisfied: boolean; problem_solved: boolean; comments: string | null },
+): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/v1/survey/${encodeURIComponent(token)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let message = GENERIC_ERROR_FR;
+    try { message = (await res.json())?.error?.message ?? message; } catch { /* ignore */ }
+    throw new ApiError(`HTTP_${res.status}`, message);
+  }
+  return res.json();
+}
+
+export function fetchAlerts(unreadOnly = false): Promise<AlertListResponse> {
+  const q = unreadOnly ? '?unread_only=true' : '';
+  return apiFetch(`/api/v1/alerts${q}`);
+}
+
+export function markAlertRead(alertId: number): Promise<void> {
+  return apiPost(`/api/v1/alerts/${alertId}/read`, {});
+}
+
+export function markAllAlertsRead(): Promise<void> {
+  return apiPost('/api/v1/alerts/read-all', {});
 }

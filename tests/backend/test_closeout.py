@@ -166,6 +166,8 @@ def test_outcome_complete(open_call, db_conn):
     assert v["closeout_at"] is not None
     assert v["outcome"] == "complete"
     assert v["closeout_comment"] == _COMMENT
+    assert v["duration_minutes"] is not None
+    assert v["duration_minutes"] >= 0
     # photo consumed
     used = db_conn.execute(
         "SELECT visit_id FROM maintenance_attachment WHERE attachment_id = %s", [pids[0]]

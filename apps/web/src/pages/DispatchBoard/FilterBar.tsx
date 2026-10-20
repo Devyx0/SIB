@@ -18,6 +18,7 @@ interface Props {
   urgency?: string;
   employees?: EmployeeLookup[];
   assignedEmployeeId?: number | null;
+  hasSubcontractor?: boolean | null;
   showAllCols?: boolean;
   onStartDate: (v: string) => void;
   onEndDate: (v: string) => void;
@@ -27,6 +28,7 @@ interface Props {
   onSectorId?: (v: number | null) => void;
   onUrgency?: (v: string) => void;
   onAssignedEmployeeId?: (v: number | null) => void;
+  onHasSubcontractor?: (v: boolean | null) => void;
   onToggleCols?: () => void;
   dateNote?: string;
   redispatch?: boolean;
@@ -41,6 +43,7 @@ export default function FilterBar({
   startDate, endDate, status, sourceCalendar, q, total,
   sectors = [], sectorId = null, urgency = '',
   employees = [], assignedEmployeeId = null,
+  hasSubcontractor = null,
   showAllCols = false,
   dateNote,
   redispatch = false,
@@ -48,6 +51,7 @@ export default function FilterBar({
   onSectorId = () => {},
   onUrgency = () => {},
   onAssignedEmployeeId = () => {},
+  onHasSubcontractor = () => {},
   onToggleCols = () => {},
   onRedispatch = () => {},
   hasActiveFilters = false,
@@ -107,6 +111,12 @@ export default function FilterBar({
     { value: 'AJD', label: 'AJD' },
     { value: 'ajd', label: 'ajd' },
     { value: 'none', label: t(lang, 'Aucune', 'None') },
+  ];
+
+  const SUB_OPTS = [
+    { value: '', label: t(lang, 'Tous', 'All') },
+    { value: 'true', label: t(lang, 'Avec sous-traitant', 'With subcontractor') },
+    { value: 'false', label: t(lang, 'Sans sous-traitant', 'No subcontractor') },
   ];
 
   const countLabel = total === 1
@@ -227,6 +237,26 @@ export default function FilterBar({
             onChange={(e) => onSourceCalendar(e.target.value)}
           >
             {SOURCE_OPTS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className={styles.fieldGroup}>
+          <label className={styles.label} htmlFor="board-subcontractor">
+            {t(lang, 'Sous-traitant', 'Subcontractor')}
+          </label>
+          <select
+            id="board-subcontractor"
+            className={`${styles.input} ${hasSubcontractor != null ? styles.inputActive : ''}`}
+            value={hasSubcontractor == null ? '' : String(hasSubcontractor)}
+            onChange={(e) => {
+              const v = e.target.value;
+              onHasSubcontractor(v === '' ? null : v === 'true');
+            }}
+            data-testid="subcontractor-filter"
+          >
+            {SUB_OPTS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>

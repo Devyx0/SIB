@@ -33,19 +33,62 @@ def today_by_status(conn, today: date) -> list[dict]:
 
 
 def load_today(conn, today: date) -> list[dict]:
+    """Assigned + en_route on board start_date=today; minutes from today's visits."""
     rows = conn.execute(
         """
-        SELECT e.employee_id,
-               e.nom_employe,
-               count(*) FILTER (WHERE mr.start_date = %(today)s)::int AS assigned_count,
-               count(*) FILTER (WHERE mr.status::text = 'en_route')::int AS en_route_count
-        FROM employee e
-        JOIN maintenance_request mr ON mr.assigned_employee_id = e.employee_id
-        WHERE mr.start_date = %(today)s OR mr.status::text = 'en_route'
-        GROUP BY e.employee_id, e.nom_employe
-        HAVING count(*) FILTER (WHERE mr.start_date = %(today)s) > 0
-            OR count(*) FILTER (WHERE mr.status::text = 'en_route') > 0
-        ORDER BY e.nom_employe
+        WITH assigned AS (
+            SELECT e.employee_id,
+                   e.nom_employe,
+                   count(*)::int AS assigned_count,
+                   count(*) FILTER (WHERE mr.status::text = 'en_route')::int AS en_route_count
+            FROM employee e
+            JOIN maintenance_request mr ON mr.assigned_employee_id = e.employee_id
+            WHERE mr.start_date = %(today)s
+            GROUP BY e.employee_id, e.nom_employe
+        ),
+        mins AS (
+            -- Closed visits that started today + any still-open visit (elapsed clipped to today).
+            SELECT rv.employee_id,
+                   coalesce(sum(
+                       CASE
+                           WHEN rv.closeout_at IS NOT NULL THEN
+                               coalesce(
+                                   rv.duration_minutes,
+                                   GREATEST(
+                                       0,
+                                       ROUND(
+                                           EXTRACT(EPOCH FROM (rv.closeout_at - rv.en_route_at))
+                                           / 60.0
+                                       )::integer
+                                   )
+                               )
+                           ELSE
+                               GREATEST(
+                                   0,
+                                   ROUND(
+                                       EXTRACT(EPOCH FROM (
+                                           NOW() - GREATEST(
+                                               rv.en_route_at,
+                                               (%(today)s::timestamp AT TIME ZONE 'America/Toronto')
+                                           )
+                                       )) / 60.0
+                                   )::integer
+                               )
+                       END
+                   ), 0)::int AS minutes_worked
+            FROM request_visit rv
+            WHERE (rv.en_route_at AT TIME ZONE 'America/Toronto')::date = %(today)s
+               OR rv.closeout_at IS NULL
+            GROUP BY rv.employee_id
+        )
+        SELECT a.employee_id,
+               a.nom_employe,
+               a.assigned_count,
+               a.en_route_count,
+               coalesce(m.minutes_worked, 0)::int AS minutes_worked
+        FROM assigned a
+        LEFT JOIN mins m ON m.employee_id = a.employee_id
+        ORDER BY a.nom_employe
         """,
         {"today": today},
     ).fetchall()
@@ -156,7 +199,10 @@ def utilization_rows(conn, start: date, end: date) -> list[dict]:
             SELECT rv.employee_id,
                    count(*)::int AS visits_count,
                    coalesce(sum(
-                       EXTRACT(EPOCH FROM (rv.closeout_at - rv.en_route_at)) / 60.0
+                       coalesce(
+                           rv.duration_minutes::numeric,
+                           EXTRACT(EPOCH FROM (rv.closeout_at - rv.en_route_at)) / 60.0
+                       )
                    ), 0)::int AS visit_minutes,
                    count(*) FILTER (WHERE rv.outcome::text = 'complete')::int AS complete,
                    count(*) FILTER (WHERE rv.outcome::text = 'partial_reschedule')::int AS partial_reschedule,

@@ -108,6 +108,7 @@ class VisitEntry(BaseModel):
     employee_name: Optional[str] = None
     en_route_at: datetime
     closeout_at: Optional[datetime] = None
+    duration_minutes: Optional[int] = None
     outcome: Optional[str] = None
     closeout_comment: Optional[str] = None
     photo_ids: list[int] = Field(default_factory=list)
@@ -300,6 +301,7 @@ class EmployeeLookup(BaseModel):
     employee_id: int
     nom_employe: str
     role: str
+    is_en_route: bool = False
 
 
 class UnitLookup(BaseModel):

@@ -3,6 +3,7 @@ import { Link, NavLink } from 'react-router-dom';
 import type { MeResponse } from '../api/schema.d.ts';
 import type { Lang } from '../i18n';
 import { roleLabel, t } from '../i18n';
+import AlertBell from './AlertBell';
 import BrandMark from './BrandMark';
 import styles from './AppShell.module.css';
 
@@ -90,6 +91,7 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
           )}
 
           <div className={styles.bottomRow}>
+            <AlertBell lang={lang} />
             <button className={styles.langBtn} onClick={onToggleLang} aria-label={lang === 'fr' ? 'Switch to English' : 'Passer en français'}>
               {t(lang, 'EN', 'FR')}
             </button>

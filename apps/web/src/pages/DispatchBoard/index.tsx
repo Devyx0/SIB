@@ -49,6 +49,12 @@ export default function DispatchBoard({ lang, me }: Props) {
     if (newCallParam) setShowNewCall(true);
   }, [newCallParam]);
 
+  // Alert bell deep-link: ?request_id=N selects that call in the detail panel.
+  const deepRequestId = searchParams.get('request_id');
+  useEffect(() => {
+    if (deepRequestId) setSelectedId(Number(deepRequestId));
+  }, [deepRequestId]);
+
   function closeNewCall() {
     setShowNewCall(false);
     if (newCallParam) {
@@ -76,6 +82,10 @@ export default function DispatchBoard({ lang, me }: Props) {
     ? Number(searchParams.get('assigned_employee_id'))
     : undefined;
   const redispatch = searchParams.get('redispatch') === '1';
+  const hasSubParam = searchParams.get('has_subcontractor');
+  const hasSubcontractor = hasSubParam === 'true' ? true
+    : hasSubParam === 'false' ? false
+    : undefined;
 
   const params = {
     start_date: startDate,
@@ -91,6 +101,7 @@ export default function DispatchBoard({ lang, me }: Props) {
     urgency: urgency || undefined,
     assigned_employee_id: assignedEmployeeId,
     redispatch: redispatch || undefined,
+    has_subcontractor: hasSubcontractor,
   };
 
   const isDateRangeValid = (() => {
@@ -131,6 +142,7 @@ export default function DispatchBoard({ lang, me }: Props) {
   const FILTER_KEYS = [
     'start_date', 'end_date', 'status', 'source_calendar', 'q',
     'sector_id', 'urgency', 'assigned_employee_id', 'redispatch',
+    'has_subcontractor',
   ];
   const hasActiveFilters = FILTER_KEYS.some((k) => searchParams.has(k));
 
@@ -227,6 +239,7 @@ export default function DispatchBoard({ lang, me }: Props) {
         urgency={urgency ?? ''}
         employees={employees ?? []}
         assignedEmployeeId={assignedEmployeeId ?? null}
+        hasSubcontractor={hasSubcontractor ?? null}
         showAllCols={showAllCols}
         redispatch={redispatch}
         onRedispatch={(v) => setFilter('redispatch', v ? '1' : null)}
@@ -239,6 +252,9 @@ export default function DispatchBoard({ lang, me }: Props) {
         onUrgency={(v) => setFilter('urgency', v || null)}
         onAssignedEmployeeId={(v) =>
           setFilter('assigned_employee_id', v !== null ? String(v) : null)
+        }
+        onHasSubcontractor={(v) =>
+          setFilter('has_subcontractor', v == null ? null : String(v))
         }
         dateNote={sourceCalendar === 'unrouted'
           ? t(lang, 'dates ignorées — 90 derniers jours', 'dates ignored — last 90 days')

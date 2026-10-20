@@ -250,6 +250,24 @@ def test_list_response_includes_total(ac):
     assert body["total"] >= len(body["items"])
 
 
+def test_list_has_subcontractor_filter(ac, db_conn):
+    with_n = db_conn.execute(
+        "SELECT count(*)::int AS n FROM maintenance_request "
+        "WHERE start_date BETWEEN %s AND %s "
+        "AND subcontractor_name IS NOT NULL AND btrim(subcontractor_name) <> ''",
+        [_START, _END],
+    ).fetchone()["n"]
+    without_n = db_conn.execute(
+        "SELECT count(*)::int AS n FROM maintenance_request "
+        "WHERE start_date BETWEEN %s AND %s "
+        "AND (subcontractor_name IS NULL OR btrim(subcontractor_name) = '')",
+        [_START, _END],
+    ).fetchone()["n"]
+    c = ac(_user(_COORD_EMP, "coordinator"))
+    assert c.get(f"/api/v1/requests?{_BASE}&has_subcontractor=true&limit=1").json()["total"] == with_n
+    assert c.get(f"/api/v1/requests?{_BASE}&has_subcontractor=false&limit=1").json()["total"] == without_n
+
+
 # ── Role visibility — list ─────────────────────────────────────────────────────
 
 def test_list_coordinator_sees_all(ac, db_conn):

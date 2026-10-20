@@ -457,7 +457,7 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT request_id, status, triage_started_at
+            SELECT request_id, status, triage_started_at, raw_title
             FROM maintenance_request
             WHERE request_id = %s
             FOR UPDATE SKIP LOCKED
@@ -471,7 +471,17 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
         conn.rollback()
         return {"result": "skipped", "reason": "row locked by another worker"}
 
-    _, current_status, started_at = row
+    if isinstance(row, dict):
+        current_status = row["status"]
+        started_at = row["triage_started_at"]
+        raw_title = row.get("raw_title")
+    else:
+        _, current_status, started_at, raw_title = row
+
+    from backend.triage.context_builder import is_mechanically_excluded
+    if is_mechanically_excluded(raw_title):
+        conn.rollback()
+        return {"result": "skipped", "reason": "mechanically excluded title (SKILL §4.2)"}
 
     if current_status in ("triaged", "en_route", "closed"):
         conn.rollback()

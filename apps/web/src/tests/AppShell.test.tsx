@@ -1,8 +1,17 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppShell from '../components/AppShell';
 import type { MeResponse } from '../api/schema.d.ts';
+
+vi.mock('../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/client')>();
+  return {
+    ...actual,
+    fetchAlerts: vi.fn().mockResolvedValue({ items: [], unread_count: 0 }),
+  };
+});
 
 function me(role: string): MeResponse {
   return { employee_id: 1, nom_employe: 'Test User', roles: [role] };
@@ -10,7 +19,12 @@ function me(role: string): MeResponse {
 
 // The nav uses NavLink, so AppShell needs a Router in tests.
 function wrap(ui: React.ReactElement, initial = '/board') {
-  return render(<MemoryRouter initialEntries={[initial]}>{ui}</MemoryRouter>);
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={[initial]}>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 const CASES: [string, string][] = [

@@ -107,6 +107,7 @@ export default function Dashboard({ lang = 'fr' }: { lang?: Lang }) {
                   <th>{t(lang, 'Employé', 'Employee')}</th>
                   <th className={styles.num}>{t(lang, 'Assignés', 'Assigned')}</th>
                   <th className={styles.num}>{t(lang, 'En route', 'En route')}</th>
+                  <th className={styles.num}>{t(lang, 'Minutes', 'Minutes')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -115,6 +116,7 @@ export default function Dashboard({ lang = 'fr' }: { lang?: Lang }) {
                     <td>{r.nom_employe}</td>
                     <td className={styles.num}>{r.assigned_count}</td>
                     <td className={styles.num}>{r.en_route_count}</td>
+                    <td className={styles.num}>{r.minutes_worked}</td>
                   </tr>
                 ))}
               </tbody>

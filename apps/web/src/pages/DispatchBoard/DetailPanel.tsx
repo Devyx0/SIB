@@ -56,6 +56,9 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
   const EN_ROUTE_MSG = t(lang,
     "Appel en cours — le technicien doit d'abord clôturer",
     'Call in progress — the technician must close it out first');
+  const ASSIGNEE_EN_ROUTE_MSG = t(lang,
+    'Technicien déjà en route — clôturer d\'abord',
+    'Technician already en route — close out first');
 
   const { data: employees } = useQuery({
     queryKey: ['employees'],
@@ -151,6 +154,10 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
         setStaleMsg(EN_ROUTE_MSG);
         qc.invalidateQueries({ queryKey: ['requests'] });
         qc.invalidateQueries({ queryKey: ['request', requestId] });
+      } else if (err instanceof ApiError && err.code === 'ASSIGNEE_EN_ROUTE') {
+        setStaleMsg(ASSIGNEE_EN_ROUTE_MSG);
+        qc.invalidateQueries({ queryKey: ['employees'] });
+        if (data) setAssignEmpId(data.assigned_employee_id ?? null);
       }
     }
   }
@@ -571,8 +578,15 @@ export default function DetailPanel({ requestId, onClose, lang = 'fr', me }: Pro
                             </option>
                           )}
                           {assignableEmployees.map((e) => (
-                            <option key={e.employee_id} value={e.employee_id}>
+                            <option
+                              key={e.employee_id}
+                              value={e.employee_id}
+                              disabled={e.is_en_route}
+                            >
                               {e.nom_employe} ({roleLabel(lang, e.role)})
+                              {e.is_en_route
+                                ? ` — ${t(lang, 'en route', 'en route')}`
+                                : ''}
                             </option>
                           ))}
                         </select>

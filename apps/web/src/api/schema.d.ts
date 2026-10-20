@@ -74,6 +74,8 @@ export interface VisitEntry {
   employee_name: string | null;
   en_route_at: string;
   closeout_at: string | null;
+  /** Whole minutes en route → closeout; set on close for tech KPIs. */
+  duration_minutes: number | null;
   outcome: string | null;
   closeout_comment: string | null;
   photo_ids: number[];
@@ -221,6 +223,36 @@ export interface EmployeeLookup {
   employee_id: number;
   nom_employe: string;
   role: string;
+  is_en_route: boolean;
+}
+
+export interface SurveyPublic {
+  token: string;
+  request_id: number;
+  building_address: string | null;
+  technician_name: string | null;
+  already_submitted: boolean;
+}
+
+export type AlertKind =
+  | 'call_completed'
+  | 'tech_log'
+  | 'followup_added'
+  | 'expertise_needed';
+
+export interface CoordinatorAlert {
+  alert_id: number;
+  request_id: number;
+  kind: AlertKind;
+  summary: string;
+  created_at: string;
+  read_at: string | null;
+  raw_title: string | null;
+}
+
+export interface AlertListResponse {
+  items: CoordinatorAlert[];
+  unread_count: number;
 }
 
 export interface UnitLookup {
@@ -237,6 +269,7 @@ export interface DashboardResponse {
     nom_employe: string;
     assigned_count: number;
     en_route_count: number;
+    minutes_worked: number;
   }>;
   by_territory: Array<{
     sector_id: number;

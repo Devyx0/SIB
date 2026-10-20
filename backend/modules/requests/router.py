@@ -66,6 +66,7 @@ class RequestListParams:
         urgency: Optional[Literal["AJD", "ajd", "none"]] = Query(default=None),
         source_calendar: Optional[Literal["main", "st_maj", "unrouted"]] = Query(default=None),
         q: Optional[str] = Query(default=None),
+        has_subcontractor: Optional[bool] = Query(default=None),
         sort_by: SortKey = Query(default="start_date"),
         sort_dir: Literal["asc", "desc"] = Query(default="asc"),
         limit: int = Query(default=50, ge=1, le=200),
@@ -88,6 +89,7 @@ class RequestListParams:
         self.urgency = urgency
         self.source_calendar = source_calendar
         self.q = q
+        self.has_subcontractor = has_subcontractor
         self.sort_by = sort_by
         self.sort_dir = sort_dir
         self.limit = limit
@@ -284,7 +286,7 @@ def request_set_cost(request_id: int, body: SetCostBody, user: CurrentUser = _CO
 
 
 @router.post("/{request_id}/log", operation_id="request_add_log", response_model=RequestDetail)
-def request_add_log(request_id: int, body: AddLogBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> RequestDetail:
+def request_add_log(request_id: int, body: AddLogBody, user: CurrentUser = _ALL_ROLES, conn=Depends(get_db_conn)) -> RequestDetail:
     return service.action_add_log(conn, request_id, body, user)
 
 

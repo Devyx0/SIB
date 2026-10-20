@@ -33,11 +33,21 @@ function inputLabel(lang: Lang, method: string | null | undefined): string {
   return INPUT_LABELS[method]?.[lang] ?? method;
 }
 
-export function durationLabel(startIso: string, endIso: string | null): string | null {
+export function formatDurationMinutes(mins: number): string {
+  const m = Math.max(0, Math.round(mins));
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
+}
+
+export function durationLabel(
+  startIso: string,
+  endIso: string | null,
+  storedMinutes?: number | null,
+): string | null {
+  if (storedMinutes != null) return formatDurationMinutes(storedMinutes);
   if (!endIso) return null;
   const mins = Math.max(0, Math.round(
     (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000));
-  return mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, '0')}`;
+  return formatDurationMinutes(mins);
 }
 
 function formatTime(iso: string | null, lang: Lang): string {
@@ -86,7 +96,9 @@ export function VisitsSection({ requestId, visits, lang }:
             {v.employee_name ?? `#${v.employee_id}`}
             {' · '}{t(lang, 'En route', 'En route')} {formatTime(v.en_route_at, lang)}
             {v.closeout_at && <>{' · '}{t(lang, 'Clôturé', 'Closed')} {formatTime(v.closeout_at, lang)}</>}
-            {durationLabel(v.en_route_at, v.closeout_at) && <>{' · '}{durationLabel(v.en_route_at, v.closeout_at)}</>}
+            {durationLabel(v.en_route_at, v.closeout_at, v.duration_minutes) && (
+              <>{' · '}{durationLabel(v.en_route_at, v.closeout_at, v.duration_minutes)}</>
+            )}
           </span>
           <p className={styles.followupText}>
             {closeoutOutcomeLabel(lang, v.outcome)}

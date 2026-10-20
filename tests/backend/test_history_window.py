@@ -1,4 +1,4 @@
-"""6-month history: unit scope, building scope for common areas, stated cap."""
+"""6-month history: unit + building scope, stated cap."""
 from __future__ import annotations
 
 from datetime import date
@@ -7,7 +7,7 @@ from backend.triage import context_builder as cb
 
 
 def _pair(db_conn):
-    return db_conn.execute(
+    row = db_conn.execute(
         """
         SELECT u1.unit_id AS unit_a, u2.unit_id AS unit_b,
                u1.building_id, b.sector_id
@@ -18,6 +18,35 @@ def _pair(db_conn):
         LIMIT 1
         """
     ).fetchone()
+    if row:
+        return row
+    # Empty sib_test — seed a minimal project / sector / building / two units.
+    sector_id = db_conn.execute(
+        "INSERT INTO sector (territoire, color_code) VALUES ('TEST-HIST', '#000') "
+        "RETURNING sector_id"
+    ).fetchone()["sector_id"]
+    project_id = db_conn.execute(
+        "INSERT INTO project (nom_unique_projet) VALUES ('TestHist') RETURNING project_id"
+    ).fetchone()["project_id"]
+    building_id = db_conn.execute(
+        "INSERT INTO building (project_id, sector_id, adresse) "
+        "VALUES (%(p)s, %(s)s, '1 rue Test') RETURNING building_id",
+        {"p": project_id, "s": sector_id},
+    ).fetchone()["building_id"]
+    u1 = db_conn.execute(
+        "INSERT INTO unit (building_id, rue, numero_appartement) "
+        "VALUES (%(b)s, 'rue Test', '101') RETURNING unit_id",
+        {"b": building_id},
+    ).fetchone()["unit_id"]
+    u2 = db_conn.execute(
+        "INSERT INTO unit (building_id, rue, numero_appartement) "
+        "VALUES (%(b)s, 'rue Test', '102') RETURNING unit_id",
+        {"b": building_id},
+    ).fetchone()["unit_id"]
+    return {
+        "unit_a": u1, "unit_b": u2,
+        "building_id": building_id, "sector_id": sector_id,
+    }
 
 
 def _ins(db_conn, *, unit_id, building_id, sector_id, title, cal="main"):
@@ -35,7 +64,7 @@ def _ins(db_conn, *, unit_id, building_id, sector_id, title, cal="main"):
     ).fetchone()["request_id"]
 
 
-def test_history_is_unit_scoped_by_default(db_conn):
+def test_history_includes_unit_and_building(db_conn):
     loc = _pair(db_conn)
     same = _ins(
         db_conn, unit_id=loc["unit_a"], building_id=loc["building_id"],
@@ -57,14 +86,16 @@ def test_history_is_unit_scoped_by_default(db_conn):
     with db_conn.cursor() as cur:
         hist = cb.history(cur, req)
     unit_ids = {r["request_id"] for r in hist["unit"]}
+    bld_ids = {r["request_id"] for r in hist["building"]}
     assert same in unit_ids
     assert other not in unit_ids
-    assert hist["building"] == []
-    assert hist["scope"] == "unit"
+    assert other in bld_ids
+    assert same not in bld_ids  # already under unit
+    assert hist["scope"] == "unit+building"
     assert hist["unit"][0]["source_calendar"] == "main"
 
 
-def test_common_area_adds_building_history(db_conn):
+def test_common_area_still_gets_building_history(db_conn):
     loc = _pair(db_conn)
     other = _ins(
         db_conn, unit_id=loc["unit_b"], building_id=loc["building_id"],

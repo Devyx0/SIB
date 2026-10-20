@@ -66,6 +66,11 @@ class RequestEnRouteError(ConflictError):
     detail = "Appel en cours — le technicien doit d'abord clôturer"
 
 
+class AssigneeEnRouteError(ConflictError):
+    code = "ASSIGNEE_EN_ROUTE"
+    detail = "Technicien déjà en route — clôturer d'abord"
+
+
 class StorageError(AppError):
     # 502: the storage backend failed, not us — the client can safely retry
     status_code = 502

@@ -116,6 +116,7 @@ def list_requests(
     scope_sql: str,
     scope_params: dict[str, Any],
     redispatch: bool = False,
+    has_subcontractor: bool | None = None,
 ) -> tuple[int, list[dict]]:
     conditions: list[str] = []
     params: dict[str, Any] = {**scope_params}
@@ -157,6 +158,14 @@ def list_requests(
         conditions.append(
             "mr.status::text = 'triaged' AND mr.assigned_employee_id IS NULL"
             " AND mr.closeout_outcome::text IN ('partial_expertise', 'failed')"
+        )
+    if has_subcontractor is True:
+        conditions.append(
+            "mr.subcontractor_name IS NOT NULL AND btrim(mr.subcontractor_name) <> ''"
+        )
+    elif has_subcontractor is False:
+        conditions.append(
+            "(mr.subcontractor_name IS NULL OR btrim(mr.subcontractor_name) = '')"
         )
     if q is not None:
         conditions.append("""(
@@ -403,7 +412,7 @@ def lock_request(conn, request_id: int) -> dict | None:
                urgency_tier::text AS urgency_tier, next_follow_up_date,
                next_steps, estimated_cost, source_calendar, en_route_at,
                closed_at, closeout_outcome::text AS closeout_outcome,
-               closeout_urgent, work_performed
+               closeout_urgent, work_performed, raw_title
         FROM maintenance_request
         WHERE request_id = %(request_id)s
         FOR UPDATE
@@ -420,6 +429,18 @@ def is_valid_assignee(conn, employee_id: int) -> bool:
         JOIN employee_role er ON er.employee_id = e.employee_id
         WHERE e.employee_id = %(emp_id)s AND e.is_active = true
           AND er.role IN ('technician', 'contractor')
+        LIMIT 1
+        """,
+        {"emp_id": employee_id},
+    ).fetchone()
+    return row is not None
+
+
+def employee_has_open_en_route(conn, employee_id: int) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1 FROM maintenance_request
+        WHERE assigned_employee_id = %(emp_id)s AND status = 'en_route'
         LIMIT 1
         """,
         {"emp_id": employee_id},
@@ -581,7 +602,12 @@ def close_visit(
     conn.execute(
         """
         UPDATE request_visit
-        SET closeout_at = NOW(), outcome = %(outcome)s::closeout_outcome,
+        SET closeout_at = NOW(),
+            duration_minutes = GREATEST(
+                0,
+                ROUND(EXTRACT(EPOCH FROM (NOW() - en_route_at)) / 60.0)::integer
+            ),
+            outcome = %(outcome)s::closeout_outcome,
             closeout_comment = %(comment)s,
             closeout_lat = %(lat)s, closeout_lng = %(lng)s
         WHERE visit_id = %(visit_id)s
@@ -602,7 +628,8 @@ def list_visits(conn, request_id: int) -> list[dict]:
     rows = conn.execute(
         """
         SELECT v.visit_id, v.employee_id, e.nom_employe AS employee_name,
-               v.en_route_at, v.closeout_at, v.outcome::text AS outcome,
+               v.en_route_at, v.closeout_at, v.duration_minutes,
+               v.outcome::text AS outcome,
                v.closeout_comment,
                COALESCE(array_agg(a.attachment_id) FILTER (WHERE a.attachment_id IS NOT NULL),
                         '{}') AS photo_ids
@@ -865,10 +892,17 @@ def list_buildings(conn, sector_id: int | None) -> list[dict]:
 
 
 def list_employees(conn, role: str | None) -> list[dict]:
+    en_route_flag = """
+            EXISTS (
+                SELECT 1 FROM maintenance_request mr
+                WHERE mr.assigned_employee_id = e.employee_id
+                  AND mr.status = 'en_route'
+            ) AS is_en_route
+    """
     if role is not None:
         rows = conn.execute(
-            """
-            SELECT e.employee_id, e.nom_employe, er.role
+            f"""
+            SELECT e.employee_id, e.nom_employe, er.role, {en_route_flag}
             FROM employee e
             JOIN employee_role er ON er.employee_id = e.employee_id
             WHERE e.is_active = true AND er.role = %(role)s
@@ -878,8 +912,8 @@ def list_employees(conn, role: str | None) -> list[dict]:
         ).fetchall()
     else:
         rows = conn.execute(
-            """
-            SELECT e.employee_id, e.nom_employe, er.role
+            f"""
+            SELECT e.employee_id, e.nom_employe, er.role, {en_route_flag}
             FROM employee e
             JOIN employee_role er ON er.employee_id = e.employee_id
             WHERE e.is_active = true
@@ -909,6 +943,7 @@ def list_routed_unscheduled(
     source_calendar: str | None,
     status: list[str],
     q: str | None,
+    has_subcontractor: bool | None = None,
 ) -> list[dict]:
     """Open calls with no start_date — coordinator inbox ('À planifier').
 
@@ -938,6 +973,14 @@ def list_routed_unscheduled(
     if status:
         conditions.append("mr.status::text = ANY(%(status)s)")
         params["status"] = status
+    if has_subcontractor is True:
+        conditions.append(
+            "mr.subcontractor_name IS NOT NULL AND btrim(mr.subcontractor_name) <> ''"
+        )
+    elif has_subcontractor is False:
+        conditions.append(
+            "(mr.subcontractor_name IS NULL OR btrim(mr.subcontractor_name) = '')"
+        )
     if q is not None:
         conditions.append("""(
             unaccent(mr.asnu) ILIKE unaccent(%(q_pat)s)

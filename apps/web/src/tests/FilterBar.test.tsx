@@ -24,6 +24,13 @@ describe('FilterBar', () => {
     expect(screen.getByText(/17 appels/i)).toBeTruthy();
   });
 
+  it('calls onHasSubcontractor when the subcontractor filter changes', async () => {
+    const onHasSubcontractor = vi.fn();
+    render(<FilterBar {...defaultProps} onHasSubcontractor={onHasSubcontractor} />);
+    await userEvent.selectOptions(screen.getByTestId('subcontractor-filter'), 'true');
+    expect(onHasSubcontractor).toHaveBeenCalledWith(true);
+  });
+
   it('shows singular for total=1', () => {
     render(<FilterBar {...defaultProps} total={1} onQ={noop} />);
     // textContent is split across nodes; match the span's full content
