@@ -2,6 +2,9 @@ import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, Buildin
 export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse };
 import { supabase } from '../lib/supabase';
 
+// Dev: same-origin (Vite proxies /api → backend). Prod: absolute API host.
+const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL ?? '');
+
 // The portal never shows English generic errors — unknown failures map to this.
 export const GENERIC_ERROR_FR = 'Une erreur est survenue — réessayez';
 
@@ -41,7 +44,7 @@ async function request<T>(path: string, method: string, body?: unknown): Promise
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (session?.access_token) headers['authorization'] = `Bearer ${session.access_token}`;
 
-  const res = await fetch(path, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -161,7 +164,7 @@ export async function uploadPhoto(id: number, file: File): Promise<{ attachment_
   const { data: { session } } = await supabase.auth.getSession();
   const headers: Record<string, string> = { 'Content-Type': file.type };
   if (session?.access_token) headers['authorization'] = `Bearer ${session.access_token}`;
-  const res = await fetch(`/api/v1/requests/${id}/photos`, { method: 'POST', headers, body: file });
+  const res = await fetch(`${API_BASE}/api/v1/requests/${id}/photos`, { method: 'POST', headers, body: file });
   if (!res.ok) {
     let message = GENERIC_ERROR_FR;
     try { message = (await res.json())?.error?.message ?? message; } catch { /* ignore */ }
@@ -382,7 +385,7 @@ export function fetchTenantTurnover(unitId: number, tenantId: number): Promise<T
 
 /** Public survey — no auth header; do not redirect to login on 401. */
 export async function fetchSurvey(token: string): Promise<SurveyPublic> {
-  const res = await fetch(`/api/v1/survey/${encodeURIComponent(token)}`);
+  const res = await fetch(`${API_BASE}/api/v1/survey/${encodeURIComponent(token)}`);
   if (!res.ok) {
     let message = GENERIC_ERROR_FR;
     try { message = (await res.json())?.error?.message ?? message; } catch { /* ignore */ }
@@ -395,7 +398,7 @@ export async function submitSurvey(
   token: string,
   body: { polite: boolean; satisfied: boolean; problem_solved: boolean; comments: string | null },
 ): Promise<{ ok: boolean }> {
-  const res = await fetch(`/api/v1/survey/${encodeURIComponent(token)}`, {
+  const res = await fetch(`${API_BASE}/api/v1/survey/${encodeURIComponent(token)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

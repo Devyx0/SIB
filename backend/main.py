@@ -7,9 +7,11 @@ from __future__ import annotations
 
 from fastapi import Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException
 
+from backend.core.config import settings
 from backend.core.db import DBTransactionMiddleware, get_db_conn
 from backend.core.exceptions import AppError
 from backend.middleware.error_handler import (
@@ -41,10 +43,17 @@ def create_app() -> FastAPI:
     app = FastAPI(title="SIB Platform API", version="0.1.0")
 
     # Middleware — add_middleware applies in reverse: last-added is outermost.
-    # Execution order on request: RequestID → Logging → DBTransaction → handler
+    # Execution order on request: CORS → RequestID → Logging → DBTransaction → handler
     app.add_middleware(DBTransactionMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(RequestIDMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     # Exception handlers — all failures use the same envelope
     app.add_exception_handler(AppError, app_error_handler)

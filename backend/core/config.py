@@ -77,5 +77,13 @@ class Settings(BaseSettings):
     # Set WEATHER_ESCALATION_ENABLED=true in .env to turn it on locally.
     WEATHER_ESCALATION_ENABLED: bool = False
 
+    # Comma-separated browser origins allowed to call the API (Railway frontend URL).
+    # Empty = no cross-origin (local Vite proxies same-origin, so leave blank locally).
+    CORS_ORIGINS: str = ""
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
 
 settings = Settings()
