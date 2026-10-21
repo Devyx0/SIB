@@ -9,7 +9,10 @@ export const portfolioPath = {
   root: () => '/portfolio',
   sector: (sectorId: number) => `/portfolio/secteurs/${sectorId}`,
   project: (sectorId: number, projectId: number) => `/portfolio/secteurs/${sectorId}/projets/${projectId}`,
+  /** The building's units. */
   building: (buildingId: number) => `/portfolio/batiments/${buildingId}`,
+  /** The building's information page (characteristics, paint, fiche, documents). */
+  buildingInfo: (buildingId: number) => `/portfolio/batiments/${buildingId}/informations`,
   unit: (unitId: number) => `/portfolio/unites/${unitId}`,
 };
 

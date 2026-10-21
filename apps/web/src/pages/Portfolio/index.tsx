@@ -28,15 +28,18 @@ import styles from './Portfolio.module.css';
 
 export { portfolioPath } from './shared';
 
-/** A project / building card: the title links to it; eye and pencil sit top right. */
-function ItemCard({ to, title, testId, lang, onEdit, children }: {
-  to: string; title: string; testId: string; lang: Lang; onEdit: () => void; children: React.ReactNode;
+/** A project / building card: the title links to it; eye and pencil sit top right.
+ *  `viewTo` sends the eye somewhere else (a building's information page). */
+function ItemCard({ to, viewTo, viewLabel, title, testId, lang, onEdit, children }: {
+  to: string; viewTo?: string; viewLabel?: string; title: string; testId: string; lang: Lang;
+  onEdit: () => void; children: React.ReactNode;
 }) {
   return (
     <div className={`${styles.card} ${styles.itemCard}`} data-testid={testId}>
       <div className={styles.cardTools}>
-        <Link to={to} className={styles.toolBtn} aria-label={t(lang, `Voir ${title}`, `View ${title}`)}
-              title={t(lang, 'Voir', 'View')}>
+        <Link to={viewTo ?? to} className={styles.toolBtn} data-testid={`${testId}-view`}
+              aria-label={viewLabel ? `${viewLabel} — ${title}` : t(lang, `Voir ${title}`, `View ${title}`)}
+              title={viewLabel ?? t(lang, 'Voir', 'View')}>
           <EyeIcon />
         </Link>
         <button type="button" className={styles.toolBtn} onClick={onEdit} data-testid={`${testId}-edit`}
@@ -283,6 +286,8 @@ function ProjectView({ lang }: { lang: Lang }) {
         <div className={styles.grid}>
           {data.buildings.map((b) => (
             <ItemCard key={b.building_id} to={portfolioPath.building(b.building_id)}
+                      viewTo={portfolioPath.buildingInfo(b.building_id)}
+                      viewLabel={t(lang, 'Informations du bâtiment', 'Building information')}
                       title={buildingName(lang, b)} testId="building-card"
                       lang={lang} onEdit={() => setDialog({ edit: b.building_id })}>
               <p className={styles.cardSub}>
@@ -363,6 +368,10 @@ function BuildingView({ lang }: { lang: Lang }) {
               <SearchBox value={q} onChange={setQ}
                          placeholder={t(lang, 'Logement, locataire, grandeur…', 'Unit, tenant, size…')} />
             )}
+            <Link className={`${styles.btn} ${styles.btnIcon}`} to={portfolioPath.buildingInfo(buildingId)}
+                  data-testid="building-info-link" title={t(lang, 'Informations du bâtiment', 'Building information')}>
+              <EyeIcon /> <span className={styles.btnText}>{t(lang, 'Informations du bâtiment', 'Building information')}</span>
+            </Link>
             <EditButton label={t(lang, 'Modifier le bâtiment', 'Edit building')} testId="edit-building"
                         onClick={() => setDialog('building')} />
             <AddButton label={t(lang, 'Logement', 'Unit')} onClick={() => setDialog('new')} testId="add-unit" />
@@ -437,7 +446,6 @@ function BuildingView({ lang }: { lang: Lang }) {
           </table>
         </div>
       )}
-      {data && <BuildingInfo building={data} lang={lang} />}
       {dialog === 'building' && (
         <BuildingDialog mode="edit" buildingId={buildingId} lang={lang} onClose={() => setDialog(null)} />
       )}
@@ -452,6 +460,55 @@ function BuildingView({ lang }: { lang: Lang }) {
                       onClose={() => setDialog(null)} />
         );
       })()}
+    </>
+  );
+}
+
+// ── Level 4b: the building's information (eye icon on a building card) ──────
+
+function BuildingInfoView({ lang }: { lang: Lang }) {
+  const buildingId = Number(useParams().buildingId);
+  const [editing, setEditing] = useState(false);
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['portfolio', 'building', buildingId],
+    queryFn: () => fetchPortfolioBuilding(buildingId),
+  });
+  const name = data ? buildingName(lang, data) : '…';
+  const infoLabel = t(lang, 'Informations', 'Information');
+
+  return (
+    <>
+      <Breadcrumbs items={data ? [
+        rootCrumb(lang),
+        { label: sectorName(lang, data.territoire, data.sector_id), to: portfolioPath.sector(data.sector_id) },
+        { label: projectName(lang, data.nom_unique_projet, data.project_id), to: portfolioPath.project(data.sector_id, data.project_id) },
+        { label: name, to: portfolioPath.building(buildingId) },
+        { label: infoLabel },
+      ] : [rootCrumb(lang), { label: '…' }]} lang={lang} />
+      <Header
+        eyebrow={t(lang, 'Bâtiment', 'Building')}
+        title={name}
+        subtitle={data && buildingPlace(data)}
+        chips={data ? [
+          plural(data.unit_count, lang, UNIT_FR, UNIT_EN),
+          data.nb_etages ? t(lang, `${data.nb_etages} étages`, `${data.nb_etages} floors`) : null,
+          data.annee_construction ? t(lang, `Construit en ${data.annee_construction}`, `Built ${data.annee_construction}`) : null,
+        ] : []}
+        search={data && (
+          <div className={styles.headerActions}>
+            <Link className={styles.btn} to={portfolioPath.building(buildingId)} data-testid="building-units-link">
+              {t(lang, 'Voir les logements', 'View units')}
+            </Link>
+            <EditButton label={t(lang, 'Modifier le bâtiment', 'Edit building')} testId="edit-building"
+                        onClick={() => setEditing(true)} />
+          </div>
+        )}
+      />
+      <LevelState isLoading={isLoading} error={error} lang={lang} onRetry={refetch} rows={3} />
+      {data && <BuildingInfo building={data} lang={lang} />}
+      {editing && (
+        <BuildingDialog mode="edit" buildingId={buildingId} lang={lang} onClose={() => setEditing(false)} />
+      )}
     </>
   );
 }
@@ -502,7 +559,7 @@ function UnitPaint({ unit, lang }: { unit: PortfolioUnitDetail; lang: Lang }) {
           ))}
         </dl>
       )}
-      <Link className={styles.panelLink} to={`${portfolioPath.building(unit.building_id)}#fiche-technique`}>
+      <Link className={styles.panelLink} to={`${portfolioPath.buildingInfo(unit.building_id)}#fiche-technique`}>
         {t(lang, 'Modifier sur la fiche du bâtiment', 'Edit on the building sheet')}
       </Link>
     </div>
@@ -649,6 +706,7 @@ export default function Portfolio({ lang = 'fr' }: { lang?: Lang }) {
         <Route path="secteurs/:sectorId" element={<SectorView lang={lang} />} />
         <Route path="secteurs/:sectorId/projets/:projectId" element={<ProjectView lang={lang} />} />
         <Route path="batiments/:buildingId" element={<BuildingView lang={lang} />} />
+        <Route path="batiments/:buildingId/informations" element={<BuildingInfoView lang={lang} />} />
         <Route path="unites/:unitId" element={<UnitView lang={lang} />} />
         <Route path="*" element={<Navigate to="/portfolio" replace />} />
       </Routes>
