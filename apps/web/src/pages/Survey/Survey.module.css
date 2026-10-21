@@ -147,14 +147,14 @@
   border-radius: var(--r-sm);
 }
 
+/* Survey stars are brand blue (the app's gold --color-star stays for staff views). */
 .starOn {
-  color: var(--color-star);
+  color: #0b3263;
 }
 
 .ratingHint {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   color: var(--color-neutral-600);
-  min-height: 1.2em;
 }
 
 .comments {
