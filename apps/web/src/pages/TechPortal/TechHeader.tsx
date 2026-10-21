@@ -3,6 +3,8 @@ import type { MeResponse } from '../../api/schema.d.ts';
 import type { Lang } from '../../i18n';
 import { t } from '../../i18n';
 import BrandMark from '../../components/BrandMark';
+import DemoUserSwitcher from '../../dev/DemoUserSwitcher';
+import { demoUserSwitchEnabled } from '../../dev/demoUserSwitch';
 import styles from './TechPortal.module.css';
 
 interface Props {
@@ -30,7 +32,16 @@ export default function TechHeader({ lang, me, onSignOut, onToggleLang, backTo }
         </span>
       )}
       <div className={styles.headerRight}>
-        {me && <span className={styles.userName}>{me.nom_employe}</span>}
+        {me && (demoUserSwitchEnabled() ? (
+          <DemoUserSwitcher
+            lang={lang}
+            displayName={me.nom_employe}
+            displayRole=""
+            compact
+          />
+        ) : (
+          <span className={styles.userName}>{me.nom_employe}</span>
+        ))}
         <button
           type="button"
           className={styles.langBtn}

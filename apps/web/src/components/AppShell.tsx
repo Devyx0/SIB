@@ -3,6 +3,8 @@ import { Link, NavLink } from 'react-router-dom';
 import type { MeResponse } from '../api/schema.d.ts';
 import type { Lang } from '../i18n';
 import { roleLabel, t } from '../i18n';
+import DemoUserSwitcher from '../dev/DemoUserSwitcher';
+import { demoUserSwitchEnabled } from '../dev/demoUserSwitch';
 import AlertBell from './AlertBell';
 import BrandMark from './BrandMark';
 import styles from './AppShell.module.css';
@@ -96,8 +98,18 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
         <div className={styles.bottom}>
           {me && (
             <div className={styles.userInfo}>
-              <span className={styles.userName}>{me.nom_employe}</span>
-              <span className={styles.userRole}>{roleLabel(lang, me.roles[0] ?? '')}</span>
+              {demoUserSwitchEnabled() ? (
+                <DemoUserSwitcher
+                  lang={lang}
+                  displayName={me.nom_employe}
+                  displayRole={roleLabel(lang, me.roles[0] ?? '')}
+                />
+              ) : (
+                <>
+                  <span className={styles.userName}>{me.nom_employe}</span>
+                  <span className={styles.userRole}>{roleLabel(lang, me.roles[0] ?? '')}</span>
+                </>
+              )}
             </div>
           )}
 
