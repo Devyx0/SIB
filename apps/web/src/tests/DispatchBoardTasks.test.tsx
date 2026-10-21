@@ -96,11 +96,16 @@ describe('/tasks board', () => {
     expect(within(group).queryByText('Tâche 3')).toBeNull();
   });
 
-  it('« À redispatcher » lists needs_expertise tasks across dates', async () => {
+  it('« À redispatcher » lists un-followed needs_expertise / return_visit tasks across dates', async () => {
+    mocks.fetchTasks.mockResolvedValue({ total: 2, items: [
+      taskRow(1, { status: 'needs_expertise', has_followup: false }),
+      taskRow(2, { status: 'return_visit', has_followup: true }),
+    ] });
     wrap('tasks', '/tasks?redispatch=1');
-    await waitFor(() => expect(mocks.fetchTasks).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText('Tâche 1')).toBeTruthy());
+    expect(screen.queryByText('Tâche 2')).toBeNull();
     const p = mocks.fetchTasks.mock.calls[0][0];
-    expect(p.status).toEqual(['needs_expertise']);
+    expect(p.status).toEqual(['needs_expertise', 'return_visit']);
     expect(p.start_date).toBeUndefined();
   });
 

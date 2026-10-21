@@ -57,6 +57,7 @@ class TaskListItem(TaskOut):
     territoire: Optional[str] = None
     building_address: Optional[str] = None
     unit_label: Optional[str] = None
+    has_followup: bool = False
 
 
 class TaskListResponse(BaseModel):
@@ -69,6 +70,7 @@ class CreateTaskBody(BaseModel):
     description: str = Field(min_length=1, max_length=2000)
     due_at: Optional[datetime] = None
     assigned_employee_id: Optional[int] = None
+    parent_task_id: Optional[int] = None
     justification: JustificationBody
 
     @field_validator("description")

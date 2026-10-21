@@ -174,8 +174,36 @@ describe('DetailPanel', () => {
       description: 'Remplacer le robinet',
       assigned_employee_id: 14,
       due_at: '2026-11-02T08:00:00',
+      parent_task_id: null,
       justification: { text: 'Deuxième corps de métier requis.', input_method: 'typed' },
     }));
+  });
+
+  it('« Redispatcher » on a needs_expertise task creates the child with parent_task_id', async () => {
+    const req = { ...MOCK_REQUEST, status: 'open', tasks: [task(5, { status: 'needs_expertise', description: 'Fuite toiture' })] };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([JEAN]);
+    const create = vi.spyOn(client, 'createTask').mockResolvedValue(task(8) as never);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />);
+    await userEvent.click(screen.getByTestId('task-redispatch-5'));
+    expect(screen.getByTestId('new-task-parent').textContent).toContain('Fuite toiture');
+    expect((screen.getByTestId('new-task-desc') as HTMLTextAreaElement).value).toBe('Fuite toiture');
+    await userEvent.click(screen.getByTestId('new-task-btn'));
+    await justifyWith('Couvreur requis pour la toiture');
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      request_id: 1, description: 'Fuite toiture', parent_task_id: 5,
+    })));
+  });
+
+  it('no « Redispatcher » once the task has a follow-up child', () => {
+    const req = { ...MOCK_REQUEST, status: 'open', tasks: [
+      task(5, { status: 'return_visit' }),
+      task(6, { status: 'queued', parent_task_id: 5 }),
+    ] };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />);
+    expect(screen.queryByTestId('task-redispatch-5')).toBeNull();
   });
 
   it('no new task while the AI proposal is pending; proposals are listed read-only', () => {

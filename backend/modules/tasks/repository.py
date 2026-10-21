@@ -219,7 +219,10 @@ def list_accepted_tasks(
                mr.sector_id,
                s.territoire,
                b.adresse           AS building_address,
-               COALESCE(mr.unit_label, u.numero_appartement) AS unit_label
+               COALESCE(mr.unit_label, u.numero_appartement) AS unit_label,
+               EXISTS (SELECT 1 FROM dispatch_task c
+                       WHERE c.parent_task_id = t.task_id AND c.accepted_at IS NOT NULL)
+                                   AS has_followup
         FROM dispatch_task t
         JOIN maintenance_request mr ON mr.request_id = t.request_id
         LEFT JOIN employee e ON e.employee_id = t.assigned_employee_id

@@ -161,9 +161,10 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
 
   const requestsQuery = useRequests(isTriage ? lastValidParamsRef.current : null);
 
-  // « À redispatcher » = tasks that came back needing expertise, any date.
+  // « À redispatcher » = tasks that came back needing expertise or a return
+  // visit, any date, until a follow-up task is created for them.
   const taskParams = isTriage ? null : (redispatch
-    ? { status: ['needs_expertise'], assigned_employee_id: assignedEmployeeId }
+    ? { status: ['needs_expertise', 'return_visit'], assigned_employee_id: assignedEmployeeId }
     : { start_date: startDate, end_date: endDate, status: statusForApi, assigned_employee_id: assignedEmployeeId });
   const lastValidTaskParamsRef = useRef(taskParams);
   if (isDateRangeValid) lastValidTaskParamsRef.current = taskParams;
@@ -178,7 +179,8 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
   const data = requestsQuery.data;
   const taskFilters = { sectorId, urgency, q, hasSubcontractor };
   const taskRows = sortTasks(
-    (tasksQuery.data?.items ?? []).filter((r) => matchesTaskFilters(r, taskFilters)),
+    (tasksQuery.data?.items ?? []).filter((r) =>
+      matchesTaskFilters(r, taskFilters) && !(redispatch && r.has_followup)),
     sortBy, sortDir,
   );
   const undatedTasks = showUndated

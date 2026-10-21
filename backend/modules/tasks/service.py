@@ -132,6 +132,13 @@ def create_task(conn, body: CreateTaskBody, user: CurrentUser) -> TaskOut:
         # Draft tasks are accepted explicitly; a dispatcher task must not skip that.
         raise InvalidTransition("Accept or reject the AI proposal before adding tasks")
     _check_assignee(conn, body.assigned_employee_id)
+    if body.parent_task_id is not None:
+        parent = repo.get_task(conn, body.parent_task_id)
+        if (parent is None or parent["request_id"] != body.request_id
+                or parent["accepted_at"] is None or parent["status"] not in repo._FOLLOWED_UP):
+            raise ValidationFailed(
+                "La tâche parente doit être « expertise requise » ou « retour requis » sur cet appel"
+            )
 
     if req["status"] != "open":  # triaged / legacy fieldwork states → container is now open
         transition(req["status"], "open")  # raises InvalidTransition before triage is done
@@ -149,6 +156,7 @@ def create_task(conn, body: CreateTaskBody, user: CurrentUser) -> TaskOut:
         conn, request_id=body.request_id, description=body.description, status=status,
         assigned_employee_id=body.assigned_employee_id, due_at=body.due_at,
         source="dispatcher", accepted_at=datetime.now(timezone.utc),
+        parent_task_id=body.parent_task_id,
     )
     tid = task["task_id"]
     for col in ("assigned_employee_id", "due_at"):
@@ -159,7 +167,8 @@ def create_task(conn, body: CreateTaskBody, user: CurrentUser) -> TaskOut:
         conn, body.request_id, user, body.justification, decision_type="task_create",
         before=None,
         after={"task_id": tid, "description": body.description,
-               "assigned_employee_id": body.assigned_employee_id, "due_at": _str(body.due_at)},
+               "assigned_employee_id": body.assigned_employee_id, "due_at": _str(body.due_at),
+               "parent_task_id": body.parent_task_id},
     )
     return TaskOut(**task)
 

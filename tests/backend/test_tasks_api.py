@@ -8,7 +8,9 @@ from fastapi.testclient import TestClient
 
 from backend.core.db import get_db_conn
 from backend.core.security import CurrentUser, get_current_user
-from backend.modules.tasks.repository import get_task, insert_task, update_task_status
+from backend.modules.tasks.repository import (
+    get_task, insert_task, maybe_close_request, update_task_status,
+)
 
 _COORD = 4    # coordinator
 _TECH = 14    # technician
@@ -84,6 +86,55 @@ def test_create_task_on_open_call(ac, open_request_id):
     assert body["accepted_at"] is not None
     assert body["source"] == "dispatcher"
     assert body["request_id"] == open_request_id
+
+
+@pytest.mark.parametrize("parent_status", ["needs_expertise", "return_visit"])
+def test_create_task_with_parent_links_lineage(ac, db_conn, open_request_id, parent_status):
+    parent = _accepted(db_conn, open_request_id, status=parent_status)
+    r = ac(_coord()).post("/api/v1/tasks", json={
+        "request_id": open_request_id, "description": "Redispatch", "justification": _JUST,
+        "parent_task_id": parent["task_id"],
+    })
+    assert r.status_code == 200, r.text
+    child_id = r.json()["task_id"]
+    assert r.json()["parent_task_id"] == parent["task_id"]
+
+    rows = {t["task_id"]: t for t in ac(_coord()).get(
+        "/api/v1/tasks", params={"status": parent_status}).json()["items"]}
+    assert rows[parent["task_id"]]["has_followup"] is True
+
+    # The parent no longer blocks auto-close; the child's own outcome decides.
+    update_task_status(db_conn, child_id, "done")
+    assert maybe_close_request(db_conn, open_request_id) is True
+
+
+def test_list_tasks_has_followup_false_without_child(ac, db_conn, open_request_id):
+    parent = _accepted(db_conn, open_request_id, status="needs_expertise")
+    rows = {t["task_id"]: t for t in ac(_coord()).get(
+        "/api/v1/tasks", params={"status": "needs_expertise"}).json()["items"]}
+    assert rows[parent["task_id"]]["has_followup"] is False
+
+
+@pytest.mark.parametrize("case", ["other_call", "wrong_status", "proposal", "unknown"])
+def test_create_task_invalid_parent_422(ac, db_conn, open_request_id, case):
+    if case == "other_call":
+        pid = _accepted(db_conn, _mk_request(db_conn), status="needs_expertise")["task_id"]
+    elif case == "wrong_status":
+        pid = _accepted(db_conn, open_request_id, status="done")["task_id"]
+    elif case == "proposal":
+        pid = insert_task(db_conn, request_id=open_request_id, description="IA",
+                          status="needs_expertise", source="ai_recommended",
+                          accepted_at=None)["task_id"]
+    else:
+        pid = 999_999_999
+    r = ac(_coord()).post("/api/v1/tasks", json={
+        "request_id": open_request_id, "description": "Redispatch", "justification": _JUST,
+        "parent_task_id": pid,
+    })
+    assert r.status_code == 422, r.text
+    assert db_conn.execute(
+        "SELECT count(*) AS n FROM dispatch_task WHERE description = 'Redispatch'",
+    ).fetchone()["n"] == 0
 
 
 def test_create_task_with_assignee_and_due_is_scheduled(ac, open_request_id):

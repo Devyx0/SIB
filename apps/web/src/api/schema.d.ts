@@ -55,6 +55,8 @@ export interface TaskListItem extends TaskOut {
   territoire: string | null;
   building_address: string | null;
   unit_label: string | null;
+  /** needs_expertise / return_visit task already has an accepted follow-up child. */
+  has_followup?: boolean;
 }
 
 export interface TaskListResponse {

@@ -23,6 +23,8 @@ interface Props {
 // Assignee and date are dispatcher-editable until the tech leaves (backend _EDITABLE).
 const EDITABLE = new Set(['queued', 'scheduled']);
 const IN_PROGRESS = new Set(['en_route', 'arrived', 'working']);
+// A follow-up child resolves these for auto-close (backend _FOLLOWED_UP).
+const NEEDS_FOLLOW_UP = new Set(['needs_expertise', 'return_visit']);
 // Task creation opens the call; it is refused before triage is done and on proposals.
 const NO_NEW_TASK = new Set([
   'intake_received', 'triage_pending', 'triage_clarify', 'triage_failed', 'triage_proposal', 'closed',
@@ -39,6 +41,7 @@ export default function TaskEditor({
   const [newDesc, setNewDesc] = useState('');
   const [newAssignee, setNewAssignee] = useState<number | null>(null);
   const [newDay, setNewDay] = useState('');
+  const [parent, setParent] = useState<TaskOut | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -50,6 +53,12 @@ export default function TaskEditor({
   const assignable = employees.filter((e) => e.role === 'technician' || e.role === 'contractor');
   const isClosed = callStatus === 'closed';
   const canCreate = !NO_NEW_TASK.has(callStatus);
+  const hasFollowUp = (id: number) => accepted.some((x) => x.parent_task_id === id);
+
+  function startFollowUp(task: TaskOut) {
+    setParent(task);
+    setNewDesc(task.description);
+  }
   const UNASSIGNED = t(lang, 'Non assigné', 'Unassigned');
   const NONE = t(lang, 'Aucune', 'None');
   const nameOf = (id: number | null) =>
@@ -121,7 +130,9 @@ export default function TaskEditor({
     if (!description) return;
     const ok = await run(
       {
-        decision: t(lang, 'Nouvelle tâche', 'New task'),
+        decision: parent
+          ? `${t(lang, 'Redispatcher', 'Redispatch')} — ${parent.description}`
+          : t(lang, 'Nouvelle tâche', 'New task'),
         changes: [
           { label: t(lang, 'Tâche', 'Task'), before: NONE, after: description },
           { label: t(lang, 'Assignation', 'Assignment'), before: NONE, after: nameOf(newAssignee) },
@@ -134,11 +145,12 @@ export default function TaskEditor({
           description,
           assigned_employee_id: newAssignee,
           due_at: newDay ? dueAtFromDay(newDay) : null,
+          parent_task_id: parent?.task_id ?? null,
           justification,
         });
       },
     );
-    if (ok) { setNewDesc(''); setNewAssignee(null); setNewDay(''); }
+    if (ok) { setNewDesc(''); setNewAssignee(null); setNewDay(''); setParent(null); }
   }
 
   function assigneeOptions(current: number | null) {
@@ -221,6 +233,17 @@ export default function TaskEditor({
                 {t(lang, 'Enregistrer', 'Save')}
               </button>
             )}
+            {NEEDS_FOLLOW_UP.has(task.status) && !hasFollowUp(task.task_id) && canCreate && (
+              <button
+                type="button"
+                className={styles.applyBtn}
+                disabled={busy || parent?.task_id === task.task_id}
+                onClick={() => startFollowUp(task)}
+                data-testid={`task-redispatch-${task.task_id}`}
+              >
+                {t(lang, 'Redispatcher', 'Redispatch')}
+              </button>
+            )}
           </div>
         );
       })}
@@ -234,6 +257,20 @@ export default function TaskEditor({
 
       <div className={styles.editField} data-testid="new-task">
         <span className={styles.editLabel}>{t(lang, 'Nouvelle tâche', 'New task')}</span>
+        {parent && (
+          <p className={styles.closedNotice} data-testid="new-task-parent">
+            {t(lang, 'Suite de', 'Follow-up to')} : {parent.description} · {statusLabel(lang, parent.status)}{' '}
+            <button
+              type="button"
+              className={styles.applyBtn}
+              disabled={busy}
+              onClick={() => setParent(null)}
+              data-testid="new-task-parent-clear"
+            >
+              {t(lang, 'Retirer', 'Remove')}
+            </button>
+          </p>
+        )}
         <textarea
           className={styles.editTextarea}
           value={newDesc}

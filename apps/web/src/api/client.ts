@@ -169,6 +169,7 @@ export function createTask(body: {
   description: string;
   due_at: string | null;
   assigned_employee_id: number | null;
+  parent_task_id?: number | null;
   justification: Justification;
 }): Promise<TaskOut> {
   return apiPost('/api/v1/tasks', body);
