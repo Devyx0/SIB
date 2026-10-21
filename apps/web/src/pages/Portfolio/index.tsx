@@ -617,24 +617,6 @@ function UnitView({ lang }: { lang: Lang }) {
       <LevelState isLoading={isLoading} error={error} lang={lang} onRetry={refetch} rows={2} />
       {data && (
         <div className={styles.unitLayout}>
-          <section className={styles.panel} aria-labelledby="lease-title">
-            <h2 id="lease-title" className={styles.panelTitle}>{t(lang, 'Bail en cours', 'Current lease')}</h2>
-            {lease ? (
-              <>
-                <dl className={styles.facts}>
-                  <dt>{t(lang, 'Début', 'Start')}</dt><dd>{fmtDate(lease.debut_bail, lang) ?? '—'}</dd>
-                  <dt>{t(lang, 'Fin', 'End')}</dt><dd>{fmtDate(lease.fin_bail, lang) ?? '—'}</dd>
-                  {lease.statut && <><dt>{t(lang, 'Statut', 'Status')}</dt><dd>{lease.statut}</dd></>}
-                  {lease.langue_bail && <><dt>{t(lang, 'Langue', 'Language')}</dt><dd>{lease.langue_bail}</dd></>}
-                </dl>
-                <LeaseProgress lease={lease} lang={lang} />
-              </>
-            ) : (
-              <p className={styles.cardSub}>{t(lang, 'Aucun bail en cours pour ce logement.', 'No current lease for this unit.')}</p>
-            )}
-            <UnitPaint unit={data} lang={lang} />
-          </section>
-
           <section aria-labelledby="tenants-title">
             <h2 id="tenants-title" className={styles.panelTitle}>
               {t(lang, 'Locataires', 'Tenants')}
@@ -680,6 +662,24 @@ function UnitView({ lang }: { lang: Lang }) {
                 ))}
               </ul>
             )}
+          </section>
+
+          <section className={styles.panel} aria-labelledby="lease-title">
+            <h2 id="lease-title" className={styles.panelTitle}>{t(lang, 'Bail en cours', 'Current lease')}</h2>
+            {lease ? (
+              <>
+                <dl className={styles.facts}>
+                  <dt>{t(lang, 'Début', 'Start')}</dt><dd>{fmtDate(lease.debut_bail, lang) ?? '—'}</dd>
+                  <dt>{t(lang, 'Fin', 'End')}</dt><dd>{fmtDate(lease.fin_bail, lang) ?? '—'}</dd>
+                  {lease.statut && <><dt>{t(lang, 'Statut', 'Status')}</dt><dd>{lease.statut}</dd></>}
+                  {lease.langue_bail && <><dt>{t(lang, 'Langue', 'Language')}</dt><dd>{lease.langue_bail}</dd></>}
+                </dl>
+                <LeaseProgress lease={lease} lang={lang} />
+              </>
+            ) : (
+              <p className={styles.cardSub}>{t(lang, 'Aucun bail en cours pour ce logement.', 'No current lease for this unit.')}</p>
+            )}
+            <UnitPaint unit={data} lang={lang} />
           </section>
         </div>
       )}

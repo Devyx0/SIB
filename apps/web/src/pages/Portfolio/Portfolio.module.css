@@ -580,10 +580,11 @@ a.card:hover .arrow {
 
 /* ── Unit detail ────────────────────────────────────────────────────────── */
 
+/* Unit page: Tenants first, then the current lease — stacked, full width. */
 .unitLayout {
   display: grid;
-  grid-template-columns: minmax(240px, 320px) 1fr;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
   align-items: start;
 }
 
@@ -1210,7 +1211,7 @@ a.btn {
 
 @media (max-width: 1023px) {
   .page { padding: 20px 16px 28px; }
-  .unitLayout { grid-template-columns: 1fr; }
+
   .totals > div { padding: 12px 14px; }
   .title { font-size: 32px; }
   .totals dd { font-size: 20px; }
