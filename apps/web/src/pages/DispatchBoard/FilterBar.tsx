@@ -179,7 +179,7 @@ export default function FilterBar({
     return null;
   })();
 
-  // ── Phone: the filters fold away behind a « Filtres » bar ──────────────
+  // ── Phone/tablet: the filters fold away behind a « Filtres » bar ───────
   const OPEN_KEY = 'sib.board.filtersOpen';
   const [filtersOpen, setFiltersOpen] = useState<boolean>(() => {
     try { return localStorage.getItem(OPEN_KEY) === '1'; } catch { return false; }
@@ -243,7 +243,7 @@ export default function FilterBar({
           />
         </div>
 
-        {/* Phone only: fold the filters away once they are set. */}
+        {/* Phone/tablet only: fold the filters away once they are set. */}
         <button
           type="button"
           className={styles.mobileToggle}

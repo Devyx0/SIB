@@ -473,7 +473,7 @@ select.input,
   font-variant-numeric: tabular-nums;
 }
 
-/* Phone-only « Filtres » bar; hidden on wider screens. */
+/* Phone/tablet « Filtres » bar; hidden on desktop. */
 .mobileToggle {
   display: none;
 }
@@ -490,12 +490,6 @@ select.input,
 @media (max-width: 1023px) {
   .bar {
     margin: 16px 16px 0;
-  }
-}
-
-@media (max-width: 639px) {
-  .bar {
-    margin: 10px 10px 0;
   }
 
   .mobileToggle {
@@ -566,6 +560,12 @@ select.input,
   .mobileCollapsed .subRow {
     padding-top: 8px;
     padding-bottom: 8px;
+  }
+}
+
+@media (max-width: 639px) {
+  .bar {
+    margin: 10px 10px 0;
   }
 
   .row {
