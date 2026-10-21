@@ -1,14 +1,14 @@
 """Backfill of open Service Calls into accepted dispatch_task rows (Task 5)."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
 
 from backend.core.config import settings
 from backend.modules.tasks.backfill import backfill_open_requests
-from backend.modules.tasks.repository import list_tasks_for_request
+from backend.modules.tasks.repository import insert_task, list_tasks_for_request
 
 _TECH = 24
 
@@ -99,12 +99,47 @@ def test_open_visits_attached_closed_left_alone(db_conn):
     assert rows[closed_v] is None
 
 
-def test_idempotent_and_skips_closed_and_existing(db_conn):
+def test_second_run_is_noop_and_closed_requests_skipped(db_conn):
     rid = _mk_request(db_conn, "triaged")
     closed = _mk_request(db_conn, "closed")
-    first = backfill_open_requests(db_conn)
-    assert first >= 1
-    assert backfill_open_requests(db_conn) == 0
+    assert backfill_open_requests(db_conn) >= 1
+    assert backfill_open_requests(db_conn) == 0  # calls are 'open' now
     assert len(list_tasks_for_request(db_conn, rid)) == 1
     assert list_tasks_for_request(db_conn, closed) == []
     assert _req_status(db_conn, closed) == "closed"
+
+
+def _visit_task(db_conn, vid):
+    return db_conn.execute(
+        "SELECT task_id FROM request_visit WHERE visit_id = %s", [vid]
+    ).fetchone()["task_id"]
+
+
+def test_existing_proposal_still_gets_cutover_task_open_and_visits(db_conn):
+    rid = _mk_request(db_conn, "en_route", assignee=_TECH, start=date(2026, 11, 3))
+    proposal = insert_task(db_conn, request_id=rid, description="Proposition IA",
+                           source="ai_recommended")  # accepted_at IS NULL
+    vid = _mk_visit(db_conn, rid)
+    backfill_open_requests(db_conn)
+    tasks = list_tasks_for_request(db_conn, rid)
+    accepted = [t for t in tasks if t["accepted_at"] is not None]
+    assert len(tasks) == 2 and len(accepted) == 1
+    assert accepted[0]["task_id"] != proposal["task_id"]
+    assert accepted[0]["status"] == "en_route"
+    assert _req_status(db_conn, rid) == "open"
+    assert _visit_task(db_conn, vid) == accepted[0]["task_id"]
+
+
+def test_existing_accepted_task_reused_no_second_cutover_task(db_conn):
+    rid = _mk_request(db_conn, "scheduled", assignee=_TECH, start=date(2026, 11, 3))
+    first = insert_task(db_conn, request_id=rid, description="Manuel", status="scheduled",
+                        assigned_employee_id=_TECH, source="dispatcher",
+                        accepted_at=datetime.now(timezone.utc))
+    later = insert_task(db_conn, request_id=rid, description="Autre", status="queued",
+                        source="dispatcher", accepted_at=datetime.now(timezone.utc))
+    vid = _mk_visit(db_conn, rid)
+    assert backfill_open_requests(db_conn) >= 1
+    tasks = list_tasks_for_request(db_conn, rid)
+    assert {t["task_id"] for t in tasks} == {first["task_id"], later["task_id"]}
+    assert _req_status(db_conn, rid) == "open"
+    assert _visit_task(db_conn, vid) == first["task_id"]  # earliest accepted
