@@ -16,6 +16,11 @@ class ValidationError(Exception):
     pass
 
 
+# Exclusive / auto-routed categories — never merge into an open same-unit call
+# (an `addition` with one of these is rewritten to `single` by the service).
+EXCLUSIVE_ROUTING = frozenset({"A1", "A2", "A3", "A3b", "A4"})
+
+
 OUTPUT_SCHEMA = {
     "verdict": "single | duplicate | addition",
     "duplicate_of_request_id": "int | null",
@@ -95,6 +100,9 @@ _PEST_TEXT = re.compile(
     re.IGNORECASE,
 )
 _PLUMBING_TEXT = re.compile(r"plomberie|plombier|colonne d'eau|refoulement", re.IGNORECASE)
+
+
+_VENDOR_RULE = {"body_gym": "A2", "duclos": "A3", "eric": "A4"}  # exclusive vendor → its only routing rule
 
 
 def _vendor_kind(name: str) -> str | None:
@@ -290,6 +298,17 @@ def validate(
         return "rejected_routing_inconsistent", f"Éric is A4 only, got {routing}"
     if routing == "A1" and kind is not None:
         return "rejected_routing_inconsistent", f"A1 expects no subcontractor, got {sub!r}"
+    # Task-level vendors obey the same exclusive-vendor rules as the call-level one.
+    for i, t in enumerate(_recommended_tasks(parsed)):
+        t_sub = t.get("subcontractor_name")
+        t_kind = _vendor_kind(t_sub or "")
+        if t_kind is None:
+            continue
+        if routing == "A1" or (t_kind in _VENDOR_RULE and routing != _VENDOR_RULE[t_kind]):
+            return (
+                "rejected_routing_inconsistent",
+                f"recommended_tasks[{i}] vendor {t_sub!r} does not fit routing {routing}",
+            )
 
     if expected_congestion and parsed.get("congestion_level") != expected_congestion:
         return (
@@ -326,6 +345,12 @@ def validate(
             if not ok:
                 return "rejected_invalid_duplicate_ref", detail
     elif verdict == "addition":
+        # Exclusive routing → the service rewrites this to `single`, so it needs tasks too.
+        if routing in EXCLUSIVE_ROUTING and not _recommended_tasks(parsed):
+            return (
+                "rejected_missing_recommended_tasks",
+                "addition with exclusive routing becomes a single call and requires at least one recommended task",
+            )
         ref_id = parsed.get("addition_to_request_id")
         if not isinstance(ref_id, int):
             return "rejected_invalid_addition_ref", "addition_to_request_id missing or not an integer"

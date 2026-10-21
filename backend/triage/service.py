@@ -32,7 +32,7 @@ import anthropic
 from .context_builder import assemble
 
 logger = logging.getLogger("backend.triage")
-from .output_contract import ValidationError, parse_response, validate
+from .output_contract import EXCLUSIVE_ROUTING, ValidationError, parse_response, validate
 from .system_prompt import DOCUMENTS_HASH, build_system_prompt
 
 _MODEL = os.getenv("TRIAGE_MODEL", "claude-sonnet-4-6")
@@ -298,8 +298,7 @@ def _write_triage_provenance(cur, request_id: int, parsed: dict,
     )
 
 
-# Exclusive / auto-routed categories — never merge into an open same-unit call.
-_EXCLUSIVE_ROUTING = frozenset({"A1", "A2", "A3", "A3b", "A4"})
+_EXCLUSIVE_ROUTING = EXCLUSIVE_ROUTING  # defined with the contract so the gate and rewrite agree
 
 
 def _write_proposal_tasks(cur, request_id: int, tasks: list[dict]) -> None:

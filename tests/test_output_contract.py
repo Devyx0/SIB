@@ -118,7 +118,7 @@ def test_accepts_two_tasks():
 
 
 def test_task_full_shape_accepted():
-    chk({**_BASE, "recommended_tasks": [_task(
+    chk({**_BASE, "routing_rule": "A0", "recommended_tasks": [_task(
         suggested_trade="plomberie", urgency_tier="URGENT", vendor_id=None,
         subcontractor_name="Fortin", notes=None,
     )]}, "accepted")
@@ -130,9 +130,31 @@ def test_duplicate_needs_no_tasks():
 
 
 def test_addition_tasks_optional():
-    chk({**_BASE, "verdict": "addition", "addition_to_request_id": 99, "recommended_tasks": []}, "accepted")
-    chk({**_BASE, "verdict": "addition", "addition_to_request_id": 99,
-         "recommended_tasks": [_task()]}, "accepted")
+    add = {**_BASE, "verdict": "addition", "addition_to_request_id": 99, "routing_rule": "A0"}
+    chk({**add, "recommended_tasks": []}, "accepted")
+    chk({**add, "recommended_tasks": [_task()]}, "accepted")
+
+
+def test_exclusive_addition_requires_tasks():
+    """Exclusive routing rewrites addition → single downstream, so it needs tasks like single."""
+    for rule, sub in (("A1", None), ("A2", "Body Gym"), ("A3", "Duclos"), ("A3b", None), ("A4", "Éric")):
+        add = {**_BASE, "verdict": "addition", "addition_to_request_id": 99,
+               "routing_rule": rule, "subcontractor_name": sub, "problems": ["Autre problème"]}
+        chk({**add, "recommended_tasks": []}, "rejected_missing_recommended_tasks")
+        chk({**add, "recommended_tasks": [_task()]}, "accepted")
+    chk({**_BASE, "verdict": "addition", "addition_to_request_id": 99, "routing_rule": "A5",
+         "recommended_tasks": []}, "accepted")
+
+
+def test_task_vendor_must_match_routing():
+    chk({**_BASE, "recommended_tasks": [_task(subcontractor_name="Duclos")]}, "rejected_routing_inconsistent")
+    chk({**_BASE, "routing_rule": "A0", "recommended_tasks": [_task(subcontractor_name="Body Gym")]},
+        "rejected_routing_inconsistent")
+    chk({**_BASE, "routing_rule": "A0", "recommended_tasks": [_task(subcontractor_name="Éric")]},
+        "rejected_routing_inconsistent")
+    chk({**_BASE, "routing_rule": "A3", "subcontractor_name": "Duclos",
+         "recommended_tasks": [_task(subcontractor_name="Duclos")]}, "accepted")
+    chk({**_BASE, "routing_rule": "A0", "recommended_tasks": [_task(subcontractor_name="Fortin")]}, "accepted")
 
 
 def test_task_assignee_field_rejected():

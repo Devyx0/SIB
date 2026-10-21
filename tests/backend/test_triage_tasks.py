@@ -216,3 +216,27 @@ def test_prompt_documents_recommended_tasks():
 def test_max_tokens_leaves_room_for_tasks():
     import backend.triage.service as svc
     assert svc._MAX_TOKENS >= 2048
+
+
+def test_exclusive_addition_without_tasks_fails_validation(db_conn, mk_request):
+    """The addition→single rewrite must never reach the writer with zero tasks."""
+    peer = mk_request("open")
+    rid = mk_request()
+    parsed = _parsed(verdict="addition", addition_to_request_id=peer, routing_rule="A1",
+                     recommended_tasks=[])
+    result, _ = validate(parsed, None, rid)
+    assert result == "rejected_missing_recommended_tasks"
+
+
+def test_task_vendor_fields_land_on_columns(db_conn, mk_request):
+    vid = db_conn.execute("SELECT vendor_id FROM vendor_contact LIMIT 1").fetchone()
+    rid = mk_request()
+    tasks = [{"description": "Poser la porte", "subcontractor_name": "Duclos",
+              **({"vendor_id": vid["vendor_id"]} if vid else {})}]
+    with _cur(db_conn) as cur:
+        _write_result(cur, rid, _parsed(routing_rule="A3", subcontractor_name="Duclos",
+                                        recommended_tasks=tasks), "test-model")
+    row = _tasks(db_conn, rid)[0]
+    assert row["subcontractor_name"] == "Duclos"
+    if vid:
+        assert row["vendor_id"] == vid["vendor_id"]
