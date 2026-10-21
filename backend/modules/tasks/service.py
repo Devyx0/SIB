@@ -53,18 +53,50 @@ def _get_editable(conn, task_id: int) -> dict:
     return task
 
 
-def _apply(conn, task: dict, **fields: Any) -> TaskOut:
-    """Write assignee/due_at, then move status (validated) if they imply a change."""
+def _str(v: Any) -> str | None:
+    return v.isoformat() if isinstance(v, datetime) else (str(v) if v is not None else None)
+
+
+def _provenance(conn, task_id: int, column: str, user: CurrentUser, before: Any, after: Any) -> None:
+    request_repo.write_provenance(
+        conn, target_table="dispatch_task", target_pk=str(task_id), target_column=column,
+        employee_id=user.employee_id, previous_value=_str(before), new_value=_str(after),
+    )
+
+
+def _justify(conn, request_id: int, user: CurrentUser, justification, *,
+             decision_type: str, before: dict | None, after: dict) -> None:
+    request_repo.write_justification(
+        conn, request_id=request_id, employee_id=user.employee_id, decision_type=decision_type,
+        before_value=before, after_value=after,
+        text=justification.text, input_method=justification.input_method,
+    )
+
+
+def _apply(conn, task: dict, user: CurrentUser, justification, decision_type: str, **fields: Any) -> TaskOut:
+    """Write assignee/due_at, then move status (validated) if they imply a change.
+
+    Logs the justification and field provenance in the same transaction.
+    """
+    tid = task["task_id"]
     merged = {
         "assigned_employee_id": task["assigned_employee_id"], "due_at": task["due_at"],
         **fields,
     }
-    repo.update_task_fields(conn, task["task_id"], **fields)
+    repo.update_task_fields(conn, tid, **fields)
+    for col, new in fields.items():
+        _provenance(conn, tid, col, user, task[col], new)
     target = _derived_status(task["status"], merged["assigned_employee_id"], merged["due_at"])
     if target != task["status"]:
         transition_task(task["status"], target)
-        repo.update_task_status(conn, task["task_id"], target)
-    return TaskOut(**repo.get_task(conn, task["task_id"]))
+        repo.update_task_status(conn, tid, target)
+        _provenance(conn, tid, "status", user, task["status"], target)
+    _justify(
+        conn, task["request_id"], user, justification, decision_type=decision_type,
+        before={"task_id": tid, **{c: _str(task[c]) if c == "due_at" else task[c] for c in fields}},
+        after={"task_id": tid, **{c: _str(v) if c == "due_at" else v for c, v in fields.items()}},
+    )
+    return TaskOut(**repo.get_task(conn, tid))
 
 
 def list_tasks(
@@ -108,18 +140,30 @@ def create_task(conn, body: CreateTaskBody, user: CurrentUser) -> TaskOut:
         assigned_employee_id=body.assigned_employee_id, due_at=body.due_at,
         source="dispatcher", accepted_at=datetime.now(timezone.utc),
     )
+    tid = task["task_id"]
+    for col in ("assigned_employee_id", "due_at"):
+        if getattr(body, col) is not None:
+            _provenance(conn, tid, col, user, None, getattr(body, col))
+    _provenance(conn, tid, "status", user, None, status)
+    _justify(
+        conn, body.request_id, user, body.justification, decision_type="task_create",
+        before=None,
+        after={"task_id": tid, "description": body.description,
+               "assigned_employee_id": body.assigned_employee_id, "due_at": _str(body.due_at)},
+    )
     return TaskOut(**task)
 
 
 def assign_task(conn, task_id: int, body: AssignTaskBody, user: CurrentUser) -> TaskOut:
     task = _get_editable(conn, task_id)
     _check_assignee(conn, body.assigned_employee_id)
-    return _apply(conn, task, assigned_employee_id=body.assigned_employee_id)
+    return _apply(conn, task, user, body.justification, "task_assign",
+                  assigned_employee_id=body.assigned_employee_id)
 
 
 def schedule_task(conn, task_id: int, body: ScheduleTaskBody, user: CurrentUser) -> TaskOut:
     task = _get_editable(conn, task_id)
-    return _apply(conn, task, due_at=body.due_at)
+    return _apply(conn, task, user, body.justification, "task_schedule", due_at=body.due_at)
 
 
 def list_for_request(conn, request_id: int, user: CurrentUser) -> list[TaskOut]:

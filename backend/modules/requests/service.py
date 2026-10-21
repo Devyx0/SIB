@@ -9,8 +9,8 @@ from typing import Any
 from datetime import datetime, timezone
 
 from backend.core.exceptions import (
-    AssigneeEnRouteError, ConflictError, GoneError, InvalidTransition, NotFoundError,
-    PermissionDenied, RequestClosedError, RequestEnRouteError, StaleDataError,
+    ConflictError, GoneError, InvalidTransition, NotFoundError,
+    PermissionDenied, RequestClosedError, StaleDataError,
     ValidationFailed,
 )
 from backend.domain.status_machine import transition

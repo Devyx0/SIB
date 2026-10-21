@@ -7,7 +7,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from backend.modules.tasks.schemas import TaskOut
+from backend.modules.tasks.schemas import JustificationBody, TaskOut
 from backend.modules.weather.schemas import WeatherEvaluation
 
 SOURCE_CALENDAR_LABELS: dict[str, str] = {
@@ -61,11 +61,6 @@ StatusValue = Literal[
     "awaiting_redispatch", "triage_clarify", "triage_proposal", "triage_failed",
     "en_route", "arrived", "closed",
 ]
-
-
-class JustificationBody(BaseModel):
-    text: str = Field(..., min_length=10)
-    input_method: Literal["voice", "typed"]
 
 
 class AssignBody(BaseModel):

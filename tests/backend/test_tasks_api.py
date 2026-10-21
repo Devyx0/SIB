@@ -77,7 +77,7 @@ def call_with_proposal_and_accepted(db_conn):
 # ── POST /tasks ───────────────────────────────────────────────────────────────
 
 def test_create_task_on_open_call(ac, open_request_id):
-    r = ac(_coord()).post("/api/v1/tasks", json={"request_id": open_request_id, "description": "Plomberie"})
+    r = ac(_coord()).post("/api/v1/tasks", json={"request_id": open_request_id, "description": "Plomberie", "justification": _JUST})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["status"] == "queued"
@@ -88,7 +88,7 @@ def test_create_task_on_open_call(ac, open_request_id):
 
 def test_create_task_with_assignee_and_due_is_scheduled(ac, open_request_id):
     r = ac(_coord()).post("/api/v1/tasks", json={
-        "request_id": open_request_id, "description": "Plomberie",
+        "request_id": open_request_id, "description": "Plomberie", "justification": _JUST,
         "assigned_employee_id": _TECH, "due_at": _DUE_ISO,
     })
     assert r.status_code == 200, r.text
@@ -99,6 +99,7 @@ def test_create_task_with_assignee_and_due_is_scheduled(ac, open_request_id):
 def test_create_task_with_assignee_only_stays_queued(ac, open_request_id):
     r = ac(_coord()).post("/api/v1/tasks", json={
         "request_id": open_request_id, "description": "Plomberie", "assigned_employee_id": _TECH,
+        "justification": _JUST,
     })
     assert r.status_code == 200
     assert r.json()["status"] == "queued"
@@ -107,30 +108,31 @@ def test_create_task_with_assignee_only_stays_queued(ac, open_request_id):
 def test_create_task_invalid_assignee_422(ac, open_request_id):
     r = ac(_coord()).post("/api/v1/tasks", json={
         "request_id": open_request_id, "description": "x", "assigned_employee_id": _COORD,
+        "justification": _JUST,
     })
     assert r.status_code == 422
 
 
 def test_create_task_blank_description_422(ac, open_request_id):
-    r = ac(_coord()).post("/api/v1/tasks", json={"request_id": open_request_id, "description": "   "})
+    r = ac(_coord()).post("/api/v1/tasks", json={"request_id": open_request_id, "description": "   ", "justification": _JUST})
     assert r.status_code == 422
 
 
 def test_create_task_unknown_request_404(ac):
-    r = ac(_coord()).post("/api/v1/tasks", json={"request_id": 999999999, "description": "x"})
+    r = ac(_coord()).post("/api/v1/tasks", json={"request_id": 999999999, "description": "x", "justification": _JUST})
     assert r.status_code == 404
 
 
 def test_create_task_closed_call_409(ac, db_conn):
     rid = _mk_request(db_conn, "closed")
-    r = ac(_coord()).post("/api/v1/tasks", json={"request_id": rid, "description": "x"})
+    r = ac(_coord()).post("/api/v1/tasks", json={"request_id": rid, "description": "x", "justification": _JUST})
     assert r.status_code == 409
     assert r.json()["error"]["code"] == "REQUEST_CLOSED"
 
 
 def test_create_task_on_triaged_call_opens_it(ac, db_conn):
     rid = _mk_request(db_conn, "triaged")
-    r = ac(_coord()).post("/api/v1/tasks", json={"request_id": rid, "description": "x"})
+    r = ac(_coord()).post("/api/v1/tasks", json={"request_id": rid, "description": "x", "justification": _JUST})
     assert r.status_code == 200
     assert _req_status(db_conn, rid) == "open"
 
@@ -138,14 +140,14 @@ def test_create_task_on_triaged_call_opens_it(ac, db_conn):
 @pytest.mark.parametrize("status", ["intake_received", "triage_pending", "triage_proposal"])
 def test_create_task_before_triage_done_409(ac, db_conn, status):
     rid = _mk_request(db_conn, status)
-    r = ac(_coord()).post("/api/v1/tasks", json={"request_id": rid, "description": "x"})
+    r = ac(_coord()).post("/api/v1/tasks", json={"request_id": rid, "description": "x", "justification": _JUST})
     assert r.status_code == 409
     assert _req_status(db_conn, rid) == status
 
 
 def test_create_task_forbidden_for_technician(ac, open_request_id):
     r = ac(_user(_TECH, "technician")).post(
-        "/api/v1/tasks", json={"request_id": open_request_id, "description": "x"})
+        "/api/v1/tasks", json={"request_id": open_request_id, "description": "x", "justification": _JUST})
     assert r.status_code == 403
 
 
@@ -208,7 +210,7 @@ def test_list_tasks_technician_sees_only_own(ac, db_conn, open_request_id):
 
 def test_assign_with_due_at_schedules(ac, db_conn, open_request_id):
     t = _accepted(db_conn, open_request_id, due_at=_DUE)
-    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/assign", json={"assigned_employee_id": _TECH})
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/assign", json={"assigned_employee_id": _TECH, "justification": _JUST})
     assert r.status_code == 200, r.text
     assert r.json()["assigned_employee_id"] == _TECH
     assert r.json()["status"] == "scheduled"
@@ -216,7 +218,7 @@ def test_assign_with_due_at_schedules(ac, db_conn, open_request_id):
 
 def test_assign_without_due_at_stays_queued(ac, db_conn, open_request_id):
     t = _accepted(db_conn, open_request_id)
-    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/assign", json={"assigned_employee_id": _TECH})
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/assign", json={"assigned_employee_id": _TECH, "justification": _JUST})
     assert r.status_code == 200
     assert r.json()["status"] == "queued"
     assert get_task(db_conn, t["task_id"])["assigned_employee_id"] == _TECH
@@ -224,7 +226,7 @@ def test_assign_without_due_at_stays_queued(ac, db_conn, open_request_id):
 
 def test_unassign_scheduled_returns_to_queued(ac, db_conn, open_request_id):
     t = _accepted(db_conn, open_request_id, due_at=_DUE, assigned_employee_id=_TECH, status="scheduled")
-    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/assign", json={"assigned_employee_id": None})
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/assign", json={"assigned_employee_id": None, "justification": _JUST})
     assert r.status_code == 200
     assert r.json()["assigned_employee_id"] is None
     assert r.json()["status"] == "queued"
@@ -232,7 +234,7 @@ def test_unassign_scheduled_returns_to_queued(ac, db_conn, open_request_id):
 
 def test_reassign_scheduled_keeps_scheduled(ac, db_conn, open_request_id):
     t = _accepted(db_conn, open_request_id, due_at=_DUE, assigned_employee_id=_TECH, status="scheduled")
-    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/assign", json={"assigned_employee_id": _TECH2})
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/assign", json={"assigned_employee_id": _TECH2, "justification": _JUST})
     assert r.status_code == 200
     assert r.json()["status"] == "scheduled"
     assert r.json()["assigned_employee_id"] == _TECH2
@@ -240,7 +242,7 @@ def test_reassign_scheduled_keeps_scheduled(ac, db_conn, open_request_id):
 
 def test_assign_invalid_assignee_422(ac, db_conn, open_request_id):
     t = _accepted(db_conn, open_request_id)
-    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/assign", json={"assigned_employee_id": _COORD})
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/assign", json={"assigned_employee_id": _COORD, "justification": _JUST})
     assert r.status_code == 422
     assert get_task(db_conn, t["task_id"])["assigned_employee_id"] is None
 
@@ -248,7 +250,7 @@ def test_assign_invalid_assignee_422(ac, db_conn, open_request_id):
 @pytest.mark.parametrize("status", ["en_route", "arrived", "working", "done", "cancelled"])
 def test_assign_after_dispatch_or_terminal_409(ac, db_conn, open_request_id, status):
     t = _accepted(db_conn, open_request_id, assigned_employee_id=_TECH, due_at=_DUE, status=status)
-    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/assign", json={"assigned_employee_id": _TECH2})
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/assign", json={"assigned_employee_id": _TECH2, "justification": _JUST})
     assert r.status_code == 409
     assert get_task(db_conn, t["task_id"])["assigned_employee_id"] == _TECH
 
@@ -256,19 +258,19 @@ def test_assign_after_dispatch_or_terminal_409(ac, db_conn, open_request_id, sta
 def test_assign_proposal_404(ac, call_with_proposal_and_accepted):
     # Proposals are invisible until accepted — they are not assignable via /tasks.
     _, _, proposal_id = call_with_proposal_and_accepted
-    r = ac(_coord()).post(f"/api/v1/tasks/{proposal_id}/assign", json={"assigned_employee_id": _TECH})
+    r = ac(_coord()).post(f"/api/v1/tasks/{proposal_id}/assign", json={"assigned_employee_id": _TECH, "justification": _JUST})
     assert r.status_code == 404
 
 
 def test_assign_unknown_task_404(ac):
-    r = ac(_coord()).post("/api/v1/tasks/999999999/assign", json={"assigned_employee_id": _TECH})
+    r = ac(_coord()).post("/api/v1/tasks/999999999/assign", json={"assigned_employee_id": _TECH, "justification": _JUST})
     assert r.status_code == 404
 
 
 def test_assign_forbidden_for_contractor(ac, db_conn, open_request_id):
     t = _accepted(db_conn, open_request_id)
     r = ac(_user(_CONT, "contractor")).post(
-        f"/api/v1/tasks/{t['task_id']}/assign", json={"assigned_employee_id": _TECH})
+        f"/api/v1/tasks/{t['task_id']}/assign", json={"assigned_employee_id": _TECH, "justification": _JUST})
     assert r.status_code == 403
 
 
@@ -276,7 +278,7 @@ def test_assign_forbidden_for_contractor(ac, db_conn, open_request_id):
 
 def test_schedule_sets_due_at(ac, db_conn, open_request_id):
     t = _accepted(db_conn, open_request_id)
-    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/schedule", json={"due_at": _DUE_ISO})
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/schedule", json={"due_at": _DUE_ISO, "justification": _JUST})
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "queued"  # no assignee yet
     assert get_task(db_conn, t["task_id"])["due_at"] == _DUE
@@ -284,14 +286,14 @@ def test_schedule_sets_due_at(ac, db_conn, open_request_id):
 
 def test_schedule_with_assignee_schedules(ac, db_conn, open_request_id):
     t = _accepted(db_conn, open_request_id, assigned_employee_id=_TECH)
-    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/schedule", json={"due_at": _DUE_ISO})
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/schedule", json={"due_at": _DUE_ISO, "justification": _JUST})
     assert r.status_code == 200
     assert r.json()["status"] == "scheduled"
 
 
 def test_schedule_clear_due_at_returns_to_queued(ac, db_conn, open_request_id):
     t = _accepted(db_conn, open_request_id, assigned_employee_id=_TECH, due_at=_DUE, status="scheduled")
-    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/schedule", json={"due_at": None})
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/schedule", json={"due_at": None, "justification": _JUST})
     assert r.status_code == 200
     assert r.json()["due_at"] is None
     assert r.json()["status"] == "queued"
@@ -299,25 +301,25 @@ def test_schedule_clear_due_at_returns_to_queued(ac, db_conn, open_request_id):
 
 def test_schedule_naive_datetime_accepted(ac, db_conn, open_request_id):
     t = _accepted(db_conn, open_request_id)
-    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/schedule", json={"due_at": "2026-12-01T09:00:00"})
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/schedule", json={"due_at": "2026-12-01T09:00:00", "justification": _JUST})
     assert r.status_code == 200
     assert r.json()["due_at"] is not None
 
 
 def test_schedule_missing_due_at_422(ac, db_conn, open_request_id):
     t = _accepted(db_conn, open_request_id)
-    assert ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/schedule", json={}).status_code == 422
+    assert ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/schedule", json={"justification": _JUST}).status_code == 422
 
 
 @pytest.mark.parametrize("status", ["en_route", "done", "cancelled"])
 def test_schedule_after_dispatch_or_terminal_409(ac, db_conn, open_request_id, status):
     t = _accepted(db_conn, open_request_id, assigned_employee_id=_TECH, due_at=_DUE, status=status)
-    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/schedule", json={"due_at": _DUE_ISO})
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/schedule", json={"due_at": _DUE_ISO, "justification": _JUST})
     assert r.status_code == 409
 
 
 def test_schedule_unknown_task_404(ac):
-    r = ac(_coord()).post("/api/v1/tasks/999999999/schedule", json={"due_at": _DUE_ISO})
+    r = ac(_coord()).post("/api/v1/tasks/999999999/schedule", json={"due_at": _DUE_ISO, "justification": _JUST})
     assert r.status_code == 404
 
 
@@ -393,3 +395,99 @@ def test_request_save_dispatch_without_fieldwork_still_works(ac, open_request_id
     })
     assert r.status_code == 200, r.text
     assert r.json()["next_steps"] == "Commander la pièce"
+
+
+# ── justification + provenance on task decisions ──────────────────────────────
+
+def _just_rows(db_conn, rid):
+    return db_conn.execute(
+        "SELECT decision_type, employee_id, justification_text, input_method, before_value, after_value "
+        "FROM decision_justification_log WHERE request_id = %s ORDER BY id", [rid],
+    ).fetchall()
+
+
+def _prov(db_conn, task_id, column):
+    return db_conn.execute(
+        "SELECT source_type, employee_id, previous_value, ingested_value FROM data_provenance "
+        "WHERE target_table = 'dispatch_task' AND target_pk = %s AND target_column = %s ORDER BY provenance_id",
+        [str(task_id), column],
+    ).fetchall()
+
+
+def test_create_writes_justification_and_provenance(ac, db_conn, open_request_id):
+    r = ac(_coord()).post("/api/v1/tasks", json={
+        "request_id": open_request_id, "description": "Plomberie",
+        "assigned_employee_id": _TECH, "due_at": _DUE_ISO,
+        "justification": {"text": "Fuite active au sous-sol", "input_method": "voice"},
+    })
+    tid = r.json()["task_id"]
+    [row] = _just_rows(db_conn, open_request_id)
+    assert row["decision_type"] == "task_create"
+    assert row["employee_id"] == _COORD
+    assert row["justification_text"] == "Fuite active au sous-sol"
+    assert row["input_method"] == "voice"
+    assert row["after_value"]["task_id"] == tid
+    assert row["after_value"]["assigned_employee_id"] == _TECH
+    [st] = _prov(db_conn, tid, "status")
+    assert (st["source_type"], st["employee_id"], st["previous_value"], st["ingested_value"]) == (
+        "app", _COORD, None, "scheduled")
+    assert [p["ingested_value"] for p in _prov(db_conn, tid, "assigned_employee_id")] == [str(_TECH)]
+
+
+def test_assign_writes_justification_and_provenance(ac, db_conn, open_request_id):
+    t = _accepted(db_conn, open_request_id, due_at=_DUE)
+    ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/assign", json={
+        "assigned_employee_id": _TECH,
+        "justification": {"text": "Technicien le plus proche", "input_method": "typed"},
+    })
+    [row] = _just_rows(db_conn, open_request_id)
+    assert row["decision_type"] == "task_assign"
+    assert row["before_value"] == {"task_id": t["task_id"], "assigned_employee_id": None}
+    assert row["after_value"] == {"task_id": t["task_id"], "assigned_employee_id": _TECH}
+    [a] = _prov(db_conn, t["task_id"], "assigned_employee_id")
+    assert (a["employee_id"], a["previous_value"], a["ingested_value"]) == (_COORD, None, str(_TECH))
+    [st] = _prov(db_conn, t["task_id"], "status")
+    assert (st["previous_value"], st["ingested_value"]) == ("queued", "scheduled")
+
+
+def test_schedule_writes_justification_and_provenance(ac, db_conn, open_request_id):
+    t = _accepted(db_conn, open_request_id)
+    ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/schedule", json={
+        "due_at": _DUE_ISO, "justification": {"text": "Locataire disponible ce jour", "input_method": "typed"},
+    })
+    [row] = _just_rows(db_conn, open_request_id)
+    assert row["decision_type"] == "task_schedule"
+    assert row["before_value"]["due_at"] is None
+    assert row["after_value"]["due_at"] is not None
+    [d] = _prov(db_conn, t["task_id"], "due_at")
+    assert d["previous_value"] is None and d["ingested_value"] is not None
+
+
+@pytest.mark.parametrize("path,body", [
+    ("assign", {"assigned_employee_id": _TECH}),
+    ("schedule", {"due_at": _DUE_ISO}),
+])
+def test_assign_schedule_require_justification_no_change(ac, db_conn, open_request_id, path, body):
+    t = _accepted(db_conn, open_request_id)
+    c = ac(_coord())
+    assert c.post(f"/api/v1/tasks/{t['task_id']}/{path}", json=body).status_code == 422
+    short = {**body, "justification": {"text": "court", "input_method": "typed"}}
+    assert c.post(f"/api/v1/tasks/{t['task_id']}/{path}", json=short).status_code == 422
+    after = get_task(db_conn, t["task_id"])
+    assert after["assigned_employee_id"] is None and after["due_at"] is None
+    assert _just_rows(db_conn, open_request_id) == []
+
+
+def test_create_requires_justification(ac, db_conn, open_request_id):
+    r = ac(_coord()).post("/api/v1/tasks", json={"request_id": open_request_id, "description": "x"})
+    assert r.status_code == 422
+    assert db_conn.execute(
+        "SELECT count(*) AS n FROM dispatch_task WHERE request_id = %s", [open_request_id]).fetchone()["n"] == 0
+
+
+def test_rejected_assign_writes_no_log(ac, db_conn, open_request_id):
+    t = _accepted(db_conn, open_request_id, status="done")
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/assign",
+                          json={"assigned_employee_id": _TECH, "justification": _JUST})
+    assert r.status_code == 409
+    assert _just_rows(db_conn, open_request_id) == []

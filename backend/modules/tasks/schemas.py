@@ -22,6 +22,12 @@ def _localize(v: datetime | None) -> datetime | None:
     return v
 
 
+class JustificationBody(BaseModel):
+    """Required on every dispatcher decision (same shape the call-level actions used)."""
+    text: str = Field(..., min_length=10)
+    input_method: Literal["voice", "typed"]
+
+
 class TaskOut(BaseModel):
     task_id: int
     request_id: int
@@ -50,6 +56,7 @@ class CreateTaskBody(BaseModel):
     description: str = Field(min_length=1, max_length=2000)
     due_at: Optional[datetime] = None
     assigned_employee_id: Optional[int] = None
+    justification: JustificationBody
 
     @field_validator("description")
     @classmethod
@@ -68,11 +75,13 @@ class CreateTaskBody(BaseModel):
 class AssignTaskBody(BaseModel):
     # None unassigns (scheduled → queued).
     assigned_employee_id: Optional[int] = None
+    justification: JustificationBody
 
 
 class ScheduleTaskBody(BaseModel):
     # Required key; explicit null clears the date.
     due_at: Optional[datetime]
+    justification: JustificationBody
 
     @field_validator("due_at")
     @classmethod
