@@ -128,9 +128,6 @@ def create_task(conn, body: CreateTaskBody, user: CurrentUser) -> TaskOut:
         raise NotFoundError(f"Request {body.request_id} not found")
     if req["status"] == "closed":
         raise RequestClosedError()
-    if req["status"] == "triage_proposal":
-        # Draft tasks are accepted explicitly; a dispatcher task must not skip that.
-        raise InvalidTransition("Accept or reject the AI proposal before adding tasks")
     _check_assignee(conn, body.assigned_employee_id)
     if body.parent_task_id is not None:
         parent = repo.get_task(conn, body.parent_task_id)
@@ -140,7 +137,10 @@ def create_task(conn, body: CreateTaskBody, user: CurrentUser) -> TaskOut:
                 "La tâche parente doit être « expertise requise » ou « retour requis » sur cet appel"
             )
 
-    if req["status"] != "open":  # triaged / legacy fieldwork states → container is now open
+    # triage_proposal / triaged / legacy fieldwork states → container is now open
+    # (the new task is accepted, so a proposal call has its ≥1 accepted task).
+    # Pending AI proposals stay as proposals on the now-open call.
+    if req["status"] != "open":
         transition(req["status"], "open")  # raises InvalidTransition before triage is done
         request_repo.update_field(conn, body.request_id, "status", "open")
         request_repo.write_provenance(

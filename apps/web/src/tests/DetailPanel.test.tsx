@@ -216,15 +216,14 @@ describe('DetailPanel', () => {
     ],
   });
 
-  it('no new task while the AI proposal is pending; proposals are listed with accept/reject', () => {
+  it('proposals are listed with accept/reject and the add-task form stays enabled', () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
-    expect((screen.getByTestId('new-task-desc') as HTMLTextAreaElement).disabled).toBe(true);
+    expect((screen.getByTestId('new-task-desc') as HTMLTextAreaElement).disabled).toBe(false);
     expect((screen.getByTestId('proposal-desc-9') as HTMLTextAreaElement).value).toBe('Proposé par IA');
     expect(screen.getByTestId('proposal-accept-9')).toBeTruthy();
     expect(screen.getByTestId('proposal-reject-9')).toBeTruthy();
-    expect(screen.getByTestId('proposals-add-hint')).toBeTruthy();
     expect(screen.queryByTestId('task-assign-9')).toBeNull();
   });
 
@@ -282,16 +281,28 @@ describe('DetailPanel', () => {
     confirm.mockRestore();
   });
 
-  it('proposals on an open call: no clarify warning, add form stays enabled', async () => {
+  it('proposals on an open call: no clarify warning', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq('open', [task(7)]), isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
     expect((screen.getByTestId('new-task-desc') as HTMLTextAreaElement).disabled).toBe(false);
-    expect(screen.queryByTestId('proposals-add-hint')).toBeNull();
     await userEvent.click(screen.getByTestId('proposals-reject-all'));
     expect(confirm.mock.calls[0][0]).not.toMatch(/clarification/);
     confirm.mockRestore();
+  });
+
+  it('adds a dispatcher task during triage_proposal via POST /tasks', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    const create = vi.spyOn(client, 'createTask').mockResolvedValue(task(11) as never);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
+    fireEvent.change(screen.getByTestId('new-task-desc'), { target: { value: 'Inspection du toit' } });
+    await userEvent.click(screen.getByTestId('new-task-btn'));
+    await justifyWith('Le problème décrit exige une inspection');
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      request_id: 1, description: 'Inspection du toit', parent_task_id: null,
+    })));
   });
 
   it('shows the API error when accepting fails', async () => {

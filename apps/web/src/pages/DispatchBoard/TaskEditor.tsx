@@ -27,9 +27,9 @@ const EDITABLE = new Set(['queued', 'scheduled']);
 const IN_PROGRESS = new Set(['en_route', 'arrived', 'working']);
 // A follow-up child resolves these for auto-close (backend _FOLLOWED_UP).
 const NEEDS_FOLLOW_UP = new Set(['needs_expertise', 'return_visit']);
-// Task creation opens the call; it is refused before triage is done and on proposals.
+// Task creation opens the call (also from triage_proposal); refused before triage is done.
 const NO_NEW_TASK = new Set([
-  'intake_received', 'triage_pending', 'triage_clarify', 'triage_failed', 'triage_proposal', 'closed',
+  'intake_received', 'triage_pending', 'triage_clarify', 'triage_failed', 'closed',
 ]);
 
 type Draft = { assignee?: number | null; day?: string };
@@ -339,12 +339,6 @@ export default function TaskEditor({
           >
             {t(lang, 'Tout rejeter', 'Reject all')}
           </button>
-          {callStatus === 'triage_proposal' && (
-            <p className={styles.closedNotice} data-testid="proposals-add-hint">
-              {t(lang, 'Acceptez une proposition pour pouvoir ajouter vos propres tâches.',
-                'Accept a proposal to be able to add your own tasks.')}
-            </p>
-          )}
         </div>
       )}
 

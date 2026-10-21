@@ -188,12 +188,34 @@ def test_create_task_on_triaged_call_opens_it(ac, db_conn):
     assert _req_status(db_conn, rid) == "open"
 
 
-@pytest.mark.parametrize("status", ["intake_received", "triage_pending", "triage_proposal"])
+@pytest.mark.parametrize("status", ["intake_received", "triage_pending"])
 def test_create_task_before_triage_done_409(ac, db_conn, status):
     rid = _mk_request(db_conn, status)
     r = ac(_coord()).post("/api/v1/tasks", json={"request_id": rid, "description": "x", "justification": _JUST})
     assert r.status_code == 409
     assert _req_status(db_conn, rid) == status
+
+
+def test_create_task_during_triage_proposal_opens_call(ac, db_conn):
+    rid = _mk_request(db_conn, "triage_proposal")
+    r = ac(_coord()).post("/api/v1/tasks", json={
+        "request_id": rid, "description": "Tâche du répartiteur", "justification": _JUST})
+    assert r.status_code == 200, r.text
+    assert r.json()["accepted_at"] is not None
+    assert r.json()["source"] == "dispatcher"
+    assert _req_status(db_conn, rid) == "open"
+
+
+def test_create_task_during_triage_proposal_keeps_pending_proposals(ac, db_conn):
+    rid = _mk_request(db_conn, "triage_proposal")
+    proposal = insert_task(db_conn, request_id=rid, description="IA", source="ai_recommended",
+                           accepted_at=None)["task_id"]
+    assert ac(_coord()).post("/api/v1/tasks", json={
+        "request_id": rid, "description": "Maison", "justification": _JUST}).status_code == 200
+    assert _req_status(db_conn, rid) == "open"
+    assert get_task(db_conn, proposal)["accepted_at"] is None
+    # …and it can still be accepted afterwards.
+    assert ac(_coord()).post(f"/api/v1/tasks/{proposal}/accept").status_code == 200
 
 
 def test_create_task_forbidden_for_technician(ac, open_request_id):
