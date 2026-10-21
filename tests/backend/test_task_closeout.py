@@ -189,6 +189,23 @@ def test_partial_reschedule_spawns_follow_up(sole_arrived_task, db_conn):
     assert {"status", "assigned_employee_id", "due_at"} <= cols
 
 
+def test_completing_follow_up_closes_call(sole_arrived_task, db_conn):
+    """Parent → return_visit + follow-up; completing the follow-up closes the call."""
+    c, rid, tid, pids = sole_arrived_task
+    r = _closeout(c, tid, pids, outcome="partial_reschedule")
+    assert r.status_code == 200, r.text
+    follow_up_id = r.json()["follow_up_task"]["task_id"]
+    assert _req_status(db_conn, rid) == "open"
+
+    _arrive(c, follow_up_id)
+    r = _closeout(c, follow_up_id, [_photo(c, rid)], outcome="complete")
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "done"
+    assert r.json()["request_status"] == "closed"
+    assert _req_status(db_conn, rid) == "closed"
+    assert _task(db_conn, tid)["status"] == "return_visit"  # history kept
+
+
 def test_partial_reschedule_uses_chosen_date(sole_arrived_task):
     c, rid, tid, pids = sole_arrived_task
     chosen = today_local() + timedelta(days=3)

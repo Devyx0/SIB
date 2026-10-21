@@ -112,6 +112,54 @@ def test_blocking_status_prevents_close(db_conn, open_call_with_one_task, blocki
     assert _status(db_conn, rid) == "open"
 
 
+@pytest.mark.parametrize("parent_status", ["needs_expertise", "return_visit"])
+def test_followed_up_parent_resolved_when_child_done(db_conn, open_call_with_one_task, parent_status):
+    rid, a = open_call_with_one_task
+    update_task_status(db_conn, a, parent_status)
+    child = _accepted(db_conn, rid, "Suivi", parent_task_id=a, source="follow_up")
+    assert maybe_close_request(db_conn, rid) is False  # child still queued
+    update_task_status(db_conn, child, "done")
+    assert maybe_close_request(db_conn, rid) is True
+    assert _status(db_conn, rid) == "closed"
+
+
+def test_followed_up_parent_resolved_when_child_cancelled(db_conn, open_call_with_one_task):
+    rid, a = open_call_with_one_task
+    update_task_status(db_conn, a, "needs_expertise")
+    child = _accepted(db_conn, rid, "Remplacement", parent_task_id=a)
+    update_task_status(db_conn, child, "cancelled")
+    assert maybe_close_request(db_conn, rid) is True
+
+
+def test_follow_up_chain_closes_when_last_done(db_conn, open_call_with_one_task):
+    rid, a = open_call_with_one_task
+    update_task_status(db_conn, a, "return_visit")
+    b = _accepted(db_conn, rid, "Retour 1", parent_task_id=a, source="follow_up")
+    update_task_status(db_conn, b, "return_visit")
+    assert maybe_close_request(db_conn, rid) is False  # b has no child yet
+    c = _accepted(db_conn, rid, "Retour 2", parent_task_id=b, source="follow_up")
+    update_task_status(db_conn, c, "done")
+    assert maybe_close_request(db_conn, rid) is True
+
+
+def test_proposal_child_does_not_resolve_parent(db_conn, open_call_with_one_task):
+    rid, a = open_call_with_one_task
+    update_task_status(db_conn, a, "return_visit")
+    insert_task(db_conn, request_id=rid, description="Draft suivi", parent_task_id=a,
+                source="ai_recommended")
+    # Only a proposal points at the parent: still blocking (proposals block too).
+    assert maybe_close_request(db_conn, rid) is False
+
+
+def test_child_resolves_only_its_parent(db_conn, open_call_with_two_tasks):
+    rid, a, b = open_call_with_two_tasks
+    update_task_status(db_conn, a, "return_visit")
+    update_task_status(db_conn, b, "needs_expertise")
+    child = _accepted(db_conn, rid, "Suivi A", parent_task_id=a, source="follow_up")
+    update_task_status(db_conn, child, "done")
+    assert maybe_close_request(db_conn, rid) is False  # b never followed up
+
+
 def test_remaining_proposal_blocks_close(db_conn, open_call_with_one_task):
     rid, a = open_call_with_one_task
     insert_task(db_conn, request_id=rid, description="Proposition", source="ai_recommended")

@@ -27,6 +27,8 @@ _TASK_SELECT = """
 """
 
 _RESOLVED = ("done", "cancelled")
+# Resolved only once an accepted follow-up/replacement task points at them.
+_FOLLOWED_UP = ("needs_expertise", "return_visit")
 
 
 def insert_task(conn, **fields: Any) -> dict:
@@ -85,8 +87,10 @@ def maybe_close_request(conn, request_id: int) -> bool:
     """Close the call when all its work is resolved; return True if it was closed.
 
     Closes when there is ≥1 accepted task (accepted_at IS NOT NULL), every
-    accepted task is done/cancelled, and no proposal rows (accepted_at IS NULL)
-    remain. needs_expertise / return_visit block until followed up or cancelled.
+    accepted task is resolved, and no proposal rows (accepted_at IS NULL)
+    remain. Resolved = done/cancelled, or needs_expertise/return_visit with ≥1
+    accepted child (parent_task_id) — the child is then judged on its own, so
+    the lineage must end in done/cancelled. Without a child they block.
     Calls that cannot legally move to closed (triage states, already closed)
     are left untouched.
     """
@@ -105,14 +109,24 @@ def maybe_close_request(conn, request_id: int) -> bool:
     agg = conn.execute(
         """
         SELECT
-            count(*) FILTER (WHERE accepted_at IS NOT NULL)                       AS accepted,
-            count(*) FILTER (WHERE accepted_at IS NOT NULL
-                             AND status::text <> ALL(%(resolved)s))               AS unresolved,
-            count(*) FILTER (WHERE accepted_at IS NULL)                           AS proposals
-        FROM dispatch_task
-        WHERE request_id = %(request_id)s
+            count(*) FILTER (WHERE t.accepted_at IS NOT NULL)                     AS accepted,
+            count(*) FILTER (
+                WHERE t.accepted_at IS NOT NULL
+                  AND t.status::text <> ALL(%(resolved)s)
+                  AND NOT (
+                      t.status::text = ANY(%(followed_up)s)
+                      AND EXISTS (
+                          SELECT 1 FROM dispatch_task c
+                          WHERE c.parent_task_id = t.task_id AND c.accepted_at IS NOT NULL
+                      )
+                  )
+            )                                                                     AS unresolved,
+            count(*) FILTER (WHERE t.accepted_at IS NULL)                         AS proposals
+        FROM dispatch_task t
+        WHERE t.request_id = %(request_id)s
         """,
-        {"request_id": request_id, "resolved": list(_RESOLVED)},
+        {"request_id": request_id, "resolved": list(_RESOLVED),
+         "followed_up": list(_FOLLOWED_UP)},
     ).fetchone()
     if agg["accepted"] == 0 or agg["unresolved"] or agg["proposals"]:
         return False
