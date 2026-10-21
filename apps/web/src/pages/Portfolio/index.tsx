@@ -187,18 +187,17 @@ function SectorView({ lang }: { lang: Lang }) {
           plural(data.building_count, lang, BUILDING_FR, BUILDING_EN),
         ] : []}
         search={
-          <div className={styles.headerActions}>
+          <div className={styles.headerTools}>
             {data && data.projects.length > 6 && (
               <SearchBox value={q} onChange={setQ}
                          placeholder={t(lang, 'Rechercher un projet…', 'Search projects…')} />
             )}
-            <Link className={styles.btn} to={unitsPath({ secteur: sectorId })}>
-              {t(lang, 'Voir les logements', 'View units')}
-            </Link>
-            <Link className={styles.btn} to={unitsPath({ secteur: sectorId, occupation: 'vacant' })}>
-              {t(lang, 'Vacants', 'Vacant')}
-            </Link>
-            <AddButton label={t(lang, 'Projet', 'Project')} onClick={() => setDialog('new')} testId="add-project" />
+            <div className={styles.headerActions}>
+              <Link className={styles.btn} to={unitsPath({ secteur: sectorId })}>
+                {t(lang, 'Voir les logements', 'View units')}
+              </Link>
+              <AddButton label={t(lang, 'Projet', 'Project')} onClick={() => setDialog('new')} testId="add-project" />
+            </div>
           </div>
         }
       />
@@ -363,18 +362,20 @@ function BuildingView({ lang }: { lang: Lang }) {
           data.annee_construction ? t(lang, `Construit en ${data.annee_construction}`, `Built ${data.annee_construction}`) : null,
         ] : []}
         search={data && (
-          <div className={styles.headerActions}>
+          <div className={`${styles.headerTools} ${styles.headerToolsWide}`}>
             {data.units.length > 8 && (
               <SearchBox value={q} onChange={setQ}
                          placeholder={t(lang, 'Logement, locataire, grandeur…', 'Unit, tenant, size…')} />
             )}
-            <Link className={`${styles.btn} ${styles.btnIcon}`} to={portfolioPath.buildingInfo(buildingId)}
-                  data-testid="building-info-link" title={t(lang, 'Informations du bâtiment', 'Building information')}>
-              <EyeIcon /> <span className={styles.btnText}>{t(lang, 'Informations du bâtiment', 'Building information')}</span>
-            </Link>
-            <EditButton label={t(lang, 'Modifier le bâtiment', 'Edit building')} testId="edit-building"
-                        onClick={() => setDialog('building')} />
-            <AddButton label={t(lang, 'Logement', 'Unit')} onClick={() => setDialog('new')} testId="add-unit" />
+            <div className={styles.headerActions}>
+              <Link className={`${styles.btn} ${styles.btnIcon}`} to={portfolioPath.buildingInfo(buildingId)}
+                    data-testid="building-info-link" title={t(lang, 'Informations du bâtiment', 'Building information')}>
+                <EyeIcon /> <span className={styles.btnText}>{t(lang, 'Informations du bâtiment', 'Building information')}</span>
+              </Link>
+              <EditButton label={t(lang, 'Modifier le bâtiment', 'Edit building')} testId="edit-building"
+                          onClick={() => setDialog('building')} />
+              <AddButton label={t(lang, 'Logement', 'Unit')} onClick={() => setDialog('new')} testId="add-unit" />
+            </div>
           </div>
         )}
       />

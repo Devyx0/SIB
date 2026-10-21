@@ -102,6 +102,17 @@
   min-width: 260px;
 }
 
+/* Room for three buttons on one row (building page). */
+.headerToolsWide {
+  flex-basis: 580px;
+}
+
+/* A page search stacked above its buttons fills the column's width. */
+.headerTools > .search {
+  flex: none;
+  width: 100%;
+}
+
 /* The title side gives way first (the subtitle wraps), so the search stays
    beside it on laptop widths instead of dropping to the next line. */
 .header:has(.headerTools) > div:first-child {
@@ -1192,7 +1203,14 @@ a.card:hover .arrow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+}
+
+/* Search boxes and buttons in a header line up at one height. */
+.headerActions > *,
+.headerTools > .search {
+  min-height: 38px;
 }
 
 a.btn {
