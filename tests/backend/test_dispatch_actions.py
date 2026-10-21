@@ -74,20 +74,6 @@ def closed_request(db_conn):
 
 # ── assign ────────────────────────────────────────────────────────────────────
 
-def test_assign_success(ac, test_request):
-    c = ac(_user(_COORD, "coordinator"))
-    r = c.post(f"/api/v1/requests/{test_request}/assign", json={
-        "employee_id": _TECH,
-        "current_assigned_employee_id": None,
-        "current_start_date": _DATE_A,
-        "current_urgency_tier": None,
-        "justification": {"text": "Technician is closest to the building", "input_method": "typed"},
-    })
-    assert r.status_code == 200
-    assert r.json()["assigned_employee_id"] == _TECH
-    assert r.json()["status"] == "scheduled"
-
-
 def test_assign_without_justification_422_no_change(ac, db_conn, test_request):
     # Justification is required on every dispatcher decision — omitting it is
     # rejected before anything is written.
@@ -109,73 +95,6 @@ def test_assign_without_justification_422_no_change(ac, db_conn, test_request):
         [test_request],
     ).fetchone()["n"]
     assert n == 0
-
-
-def test_assign_stores_justification(ac, db_conn, test_request):
-    c = ac(_user(_COORD, "coordinator"))
-    c.post(f"/api/v1/requests/{test_request}/assign", json={
-        "employee_id": _TECH,
-        "current_assigned_employee_id": None,
-        "current_start_date": _DATE_A,
-        "current_urgency_tier": None,
-        "justification": {"text": "Available this afternoon for sector 1", "input_method": "typed"},
-    })
-    rows = db_conn.execute(
-        "SELECT decision_type, justification_text FROM decision_justification_log WHERE request_id = %s",
-        [test_request],
-    ).fetchall()
-    assert len(rows) == 1
-    assert rows[0]["decision_type"] == "assign"
-
-
-def test_assign_stores_provenance(ac, db_conn, test_request):
-    c = ac(_user(_COORD, "coordinator"))
-    r = c.post(f"/api/v1/requests/{test_request}/assign", json={
-        "employee_id": _TECH,
-        "current_assigned_employee_id": None,
-        "current_start_date": _DATE_A,
-        "current_urgency_tier": None,
-        "justification": {"text": "Nearest available technician now", "input_method": "typed"},
-    })
-    assert r.status_code == 200
-    assert r.json()["status"] == "scheduled"
-    cols = {
-        row["target_column"]: row
-        for row in db_conn.execute(
-            "SELECT source_type, employee_id, target_column FROM data_provenance WHERE target_pk = %s",
-            [str(test_request)],
-        ).fetchall()
-    }
-    assert set(cols) >= {"assigned_employee_id", "status"}
-    assert cols["assigned_employee_id"]["source_type"] == "app"
-    assert cols["assigned_employee_id"]["employee_id"] == _COORD
-    assert cols["status"]["employee_id"] == _COORD
-
-
-def test_assign_stale_409(ac, test_request):
-    c = ac(_user(_COORD, "coordinator"))
-    r = c.post(f"/api/v1/requests/{test_request}/assign", json={
-        "employee_id": _TECH,
-        "current_assigned_employee_id": 999,  # wrong — DB has NULL
-        "current_start_date": _DATE_A,
-        "current_urgency_tier": None,
-        "justification": {"text": "Technician available and confirmed", "input_method": "typed"},
-    })
-    assert r.status_code == 409
-    assert r.json()["error"]["code"] == "STALE_DATA"
-
-
-def test_assign_closed_409(ac, closed_request):
-    c = ac(_user(_COORD, "coordinator"))
-    r = c.post(f"/api/v1/requests/{closed_request}/assign", json={
-        "employee_id": _TECH,
-        "current_assigned_employee_id": None,
-        "current_start_date": _DATE_A,
-        "current_urgency_tier": None,
-        "justification": {"text": "Technician available and confirmed", "input_method": "typed"},
-    })
-    assert r.status_code == 409
-    assert r.json()["error"]["code"] == "REQUEST_CLOSED"
 
 
 def test_assign_technician_403(ac, test_request):
@@ -202,61 +121,7 @@ def test_assign_short_justification_422(ac, test_request):
     assert r.status_code == 422
 
 
-def test_assign_stale_no_justification_written(ac, db_conn, test_request):
-    c = ac(_user(_COORD, "coordinator"))
-    c.post(f"/api/v1/requests/{test_request}/assign", json={
-        "employee_id": _TECH,
-        "current_assigned_employee_id": 999,
-        "current_start_date": _DATE_A,
-        "current_urgency_tier": None,
-        "justification": {"text": "Technician available and confirmed", "input_method": "typed"},
-    })
-    count = db_conn.execute(
-        "SELECT count(*) AS n FROM decision_justification_log WHERE request_id = %s",
-        [test_request],
-    ).fetchone()["n"]
-    assert count == 0
-
-
 # ── reschedule ────────────────────────────────────────────────────────────────
-
-def test_reschedule_success(ac, test_request):
-    c = ac(_user(_COORD, "coordinator"))
-    r = c.post(f"/api/v1/requests/{test_request}/reschedule", json={
-        "start_date": _DATE_B,
-        "current_start_date": _DATE_A,
-        "current_assigned_employee_id": None,
-        "current_urgency_tier": None,
-        "justification": {"text": "Tenant requested a later date", "input_method": "typed"},
-    })
-    assert r.status_code == 200
-    assert r.json()["start_date"] == _DATE_B
-
-
-def test_reschedule_stale_409(ac, test_request):
-    c = ac(_user(_COORD, "coordinator"))
-    r = c.post(f"/api/v1/requests/{test_request}/reschedule", json={
-        "start_date": _DATE_B,
-        "current_start_date": "2020-01-01",  # wrong
-        "current_assigned_employee_id": None,
-        "current_urgency_tier": None,
-        "justification": {"text": "Tenant requested a later date", "input_method": "typed"},
-    })
-    assert r.status_code == 409
-    assert r.json()["error"]["code"] == "STALE_DATA"
-
-
-def test_reschedule_closed_409(ac, closed_request):
-    c = ac(_user(_COORD, "coordinator"))
-    r = c.post(f"/api/v1/requests/{closed_request}/reschedule", json={
-        "start_date": _DATE_B,
-        "current_start_date": _DATE_A,
-        "current_assigned_employee_id": None,
-        "current_urgency_tier": None,
-        "justification": {"text": "Tenant requested a later date", "input_method": "typed"},
-    })
-    assert r.status_code == 409
-
 
 def test_reschedule_technician_403(ac, test_request):
     c = ac(_user(_TECH, "technician"))
@@ -433,11 +298,8 @@ def test_add_log_writes_provenance(ac, db_conn, test_request):
 
 def test_justification_log_visible_to_coordinator(ac, test_request):
     c = ac(_user(_COORD, "coordinator"))
-    c.post(f"/api/v1/requests/{test_request}/assign", json={
-        "employee_id": _TECH,
-        "current_assigned_employee_id": None,
-        "current_start_date": _DATE_A,
-        "current_urgency_tier": None,
+    c.post(f"/api/v1/requests/{test_request}/next-steps", json={
+        "next_steps": "Commander la pièce", "current_next_steps": None,
         "justification": {"text": "First available qualified technician", "input_method": "typed"},
     })
     r = c.get(f"/api/v1/requests/{test_request}")
@@ -445,34 +307,10 @@ def test_justification_log_visible_to_coordinator(ac, test_request):
     assert len(r.json()["justification_log"]) == 1
 
 
-def test_history_names_who_decided_and_the_assignee(ac, db_conn, test_request):
-    c = ac(_user(_COORD, "coordinator"))
-    c.post(f"/api/v1/requests/{test_request}/assign", json={
-        "employee_id": _TECH,
-        "current_assigned_employee_id": None,
-        "current_start_date": _DATE_A,
-        "current_urgency_tier": None,
-        "justification": {"text": "First available qualified technician", "input_method": "typed"},
-    })
-    names = {r["employee_id"]: r["nom_employe"] for r in db_conn.execute(
-        "SELECT employee_id, nom_employe FROM employee WHERE employee_id = ANY(%s)", [[_COORD, _TECH]],
-    ).fetchall()}
-    body = c.get(f"/api/v1/requests/{test_request}").json()
-    [entry] = body["justification_log"]
-    assert entry["employee_name"] == names[_COORD]
-    assert entry["after_value"] == {"assigned_employee_id": _TECH, "assigned_employee_name": names[_TECH]}
-    # The assignment moved the request to « scheduled »; the timeline shows who did it.
-    [change] = body["status_history"]
-    assert (change["status_to"], change["employee_name"]) == ("scheduled", names[_COORD])
-
-
 def test_justification_log_empty_for_technician(ac, db_conn, test_request):
     coord_c = ac(_user(_COORD, "coordinator"))
-    coord_c.post(f"/api/v1/requests/{test_request}/assign", json={
-        "employee_id": _TECH,
-        "current_assigned_employee_id": None,
-        "current_start_date": _DATE_A,
-        "current_urgency_tier": None,
+    coord_c.post(f"/api/v1/requests/{test_request}/next-steps", json={
+        "next_steps": "Commander la pièce", "current_next_steps": None,
         "justification": {"text": "Technician closest to building today", "input_method": "typed"},
     })
     app = coord_c.app
@@ -510,25 +348,6 @@ def test_add_log_uses_today_local(ac, test_request, monkeypatch):
 
 
 # ── provenance for all 7 actions ──────────────────────────────────────────────
-
-def test_reschedule_stores_provenance(ac, db_conn, test_request):
-    c = ac(_user(_COORD, "coordinator"))
-    c.post(f"/api/v1/requests/{test_request}/reschedule", json={
-        "start_date": _DATE_B,
-        "current_start_date": _DATE_A,
-        "current_assigned_employee_id": None,
-        "current_urgency_tier": None,
-        "justification": {"text": "Tenant requested a later appointment", "input_method": "typed"},
-    })
-    row = db_conn.execute(
-        "SELECT source_type, employee_id, target_column FROM data_provenance "
-        "WHERE target_pk = %s AND target_column = 'start_date'",
-        [str(test_request)],
-    ).fetchone()
-    assert row is not None
-    assert row["source_type"] == "app"
-    assert row["employee_id"] == _COORD
-
 
 def test_set_urgency_stores_provenance(ac, db_conn, test_request):
     c = ac(_user(_COORD, "coordinator"))
@@ -585,99 +404,7 @@ def test_set_cost_stores_provenance(ac, db_conn, test_request):
 
 # ── concurrency: stale on any of the three justified fields ───────────────────
 
-def test_concurrency_stale_on_cross_field(ac, test_request):
-    """Assign succeeds; urgency with a stale current_assigned_employee_id must 409."""
-    c = ac(_user(_COORD, "coordinator"))
-    r = c.post(f"/api/v1/requests/{test_request}/assign", json={
-        "employee_id": _TECH,
-        "current_assigned_employee_id": None,
-        "current_start_date": _DATE_A,
-        "current_urgency_tier": None,
-        "justification": {"text": "Nearest technician confirmed available", "input_method": "typed"},
-    })
-    assert r.status_code == 200
-
-    # DB now has assigned_employee_id = _TECH; client still thinks it's None → stale
-    r2 = c.post(f"/api/v1/requests/{test_request}/urgency", json={
-        "urgency_tier": "URGENT",
-        "current_urgency_tier": None,
-        "current_assigned_employee_id": None,  # stale — DB now has _TECH
-        "current_start_date": _DATE_A,
-        "justification": {"text": "Water damage spreading rapidly", "input_method": "typed"},
-    })
-    assert r2.status_code == 409
-    assert r2.json()["error"]["code"] == "STALE_DATA"
-
-
 # ── same-transaction rollback ─────────────────────────────────────────────────
-
-def test_assign_rolls_back_on_failed_justification(monkeypatch):
-    """
-    UPDATE + write_justification + write_provenance are one transaction.
-    If write_justification raises after the UPDATE, the middleware must roll
-    back — assigned_employee_id unchanged, no justification row, no provenance row.
-
-    Uses a real pool connection (not the db_conn test fixture) so the
-    middleware's own rollback is the thing being tested — not fixture teardown.
-    """
-    import backend.modules.requests.repository as repo_module
-    from backend.core.db import get_pool
-    from backend.core.security import get_current_user
-    from backend.main import create_app
-
-    fresh_app = create_app()
-    # Inject coordinator but leave get_db_conn alone — middleware owns the connection.
-    fresh_app.dependency_overrides[get_current_user] = lambda: _user(_COORD, "coordinator")
-
-    # Insert a real committed request so the route can lock and update it.
-    with get_pool().connection() as setup:
-        row = setup.execute(
-            "INSERT INTO maintenance_request (status, building_id, sector_id, start_date) "
-            "VALUES ('triaged', %s, %s, %s) RETURNING request_id",
-            [_BLDG, _SECTOR, _DATE_A],
-        ).fetchone()
-        request_id = row["request_id"]
-        setup.commit()
-
-    # Patch write_justification to raise after update_field has already run.
-    monkeypatch.setattr(repo_module, "write_justification", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("injected failure")))
-
-    try:
-        with TestClient(fresh_app, raise_server_exceptions=False) as c:
-            r = c.post(f"/api/v1/requests/{request_id}/assign", json={
-                "employee_id": _TECH,
-                "current_assigned_employee_id": None,
-                "current_start_date": _DATE_A,
-                "current_urgency_tier": None,
-                "justification": {"text": "Rollback test — should not persist", "input_method": "typed"},
-            })
-
-        assert r.status_code == 500
-
-        with get_pool().connection() as verify:
-            mreq = verify.execute(
-                "SELECT assigned_employee_id FROM maintenance_request WHERE request_id = %s",
-                [request_id],
-            ).fetchone()
-            assert mreq["assigned_employee_id"] is None, "UPDATE must be rolled back when justification write fails"
-
-            jcount = verify.execute(
-                "SELECT count(*) AS n FROM decision_justification_log WHERE request_id = %s",
-                [request_id],
-            ).fetchone()["n"]
-            assert jcount == 0, "No justification row must survive a rollback"
-
-            pcount = verify.execute(
-                "SELECT count(*) AS n FROM data_provenance WHERE target_pk = %s AND source_type = 'app'",
-                [str(request_id)],
-            ).fetchone()["n"]
-            assert pcount == 0, "No provenance row must survive a rollback"
-
-    finally:
-        with get_pool().connection() as cleanup:
-            cleanup.execute("DELETE FROM maintenance_request WHERE request_id = %s", [request_id])
-            cleanup.commit()
-
 
 # ── Justification on the remaining dispatcher decisions ──────────────────────
 
@@ -744,17 +471,9 @@ def test_route_stores_justification(ac, db_conn, test_request):
     assert rows[0]["after_value"] == {"source_calendar": "st_maj"}
 
 
-# Valid body (minus justification) for each of the seven decision endpoints,
+# Valid body (minus justification) for each decision endpoint still on the call,
 # against the test_request fixture's initial state.
 _DECISIONS = {
-    "assign": ("assign", {
-        "employee_id": _TECH, "current_assigned_employee_id": None,
-        "current_start_date": _DATE_A, "current_urgency_tier": None,
-    }),
-    "reschedule": ("reschedule", {
-        "start_date": _DATE_B, "current_start_date": _DATE_A,
-        "current_assigned_employee_id": None, "current_urgency_tier": None,
-    }),
     "urgency": ("urgency", {
         "urgency_tier": "URGENT", "current_urgency_tier": None,
         "current_assigned_employee_id": None, "current_start_date": _DATE_A,
@@ -830,29 +549,6 @@ def _snapshot(**overrides):
     }
     snap.update(overrides)
     return snap
-
-
-def test_save_dispatch_applies_several_changes_with_one_justification(ac, db_conn, test_request):
-    c = ac(_user(_COORD, "coordinator"))
-    r = c.post(f"/api/v1/requests/{test_request}/dispatch", json={
-        "current": _snapshot(),
-        "changes": {
-            "assigned_employee_id": _TECH, "start_date": _DATE_B, "urgency_tier": "URGENT",
-            "next_steps": "Commander la pièce", "estimated_cost": 250,
-        },
-        "justification": {"text": "Dégât d'eau actif, technicien disponible", "input_method": "voice"},
-    })
-    assert r.status_code == 200, r.text
-    d = r.json()
-    assert d["assigned_employee_id"] == _TECH
-    assert d["start_date"] == _DATE_B
-    assert d["urgency_tier"] == "URGENT"
-    assert d["next_steps"] == "Commander la pièce"
-    assert float(d["estimated_cost"]) == 250
-    rows = _justification_rows(db_conn, test_request)
-    assert sorted(row["decision_type"] for row in rows) == ["assign", "cost", "next_steps", "reschedule", "urgency"]
-    assert {row["justification_text"] for row in rows} == {"Dégât d'eau actif, technicien disponible"}
-    assert {row["input_method"] for row in rows} == {"voice"}
 
 
 def test_save_dispatch_only_touches_fields_sent(ac, db_conn, test_request):

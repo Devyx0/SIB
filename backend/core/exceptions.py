@@ -51,6 +51,13 @@ class InvalidTransition(AppError):
     detail = "Invalid status transition"
 
 
+class GoneError(AppError):
+    # 410: the endpoint's behaviour was removed on purpose (hard cutover)
+    status_code = 410
+    code = "GONE"
+    detail = "This endpoint is no longer available"
+
+
 class StaleDataError(ConflictError):
     code = "STALE_DATA"
     detail = "Request was modified by another user"

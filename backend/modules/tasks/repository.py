@@ -126,3 +126,55 @@ def maybe_close_request(conn, request_id: int) -> bool:
         {"request_id": request_id},
     )
     return True
+
+
+_UPDATABLE_FIELDS: frozenset[str] = frozenset({"assigned_employee_id", "due_at"})
+
+
+def lock_accepted_task(conn, task_id: int) -> dict | None:
+    """SELECT … FOR UPDATE an accepted task (proposals are not addressable)."""
+    row = conn.execute(
+        f"{_TASK_SELECT} WHERE task_id = %(task_id)s AND accepted_at IS NOT NULL FOR UPDATE",
+        {"task_id": task_id},
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def update_task_fields(conn, task_id: int, **fields: Any) -> None:
+    """Set assignee and/or due_at (explicit None clears). Status is set separately."""
+    unknown = set(fields) - _UPDATABLE_FIELDS
+    if unknown or not fields:
+        raise ValueError(f"Bad dispatch_task update fields: {sorted(unknown)}")
+    sets = ", ".join(f"{c} = %({c})s" for c in fields)
+    conn.execute(
+        f"UPDATE dispatch_task SET {sets}, updated_at = now() WHERE task_id = %(task_id)s",
+        {**fields, "task_id": task_id},
+    )
+
+
+def list_accepted_tasks(
+    conn,
+    *,
+    start_date=None,
+    end_date=None,
+    statuses: list[str] | None = None,
+    assigned_employee_id: int | None = None,
+    timezone: str = "UTC",
+) -> list[dict]:
+    """Accepted tasks (accepted_at IS NOT NULL) only; date range applies to due_at's local day."""
+    where = ["accepted_at IS NOT NULL"]
+    params: dict[str, Any] = {}
+    if start_date is not None and end_date is not None:
+        where.append("(due_at AT TIME ZONE %(tz)s)::date BETWEEN %(start)s AND %(end)s")
+        params.update(tz=timezone, start=start_date, end=end_date)
+    if statuses:
+        where.append("status::text = ANY(%(statuses)s)")
+        params["statuses"] = list(statuses)
+    if assigned_employee_id is not None:
+        where.append("assigned_employee_id = %(assignee)s")
+        params["assignee"] = assigned_employee_id
+    rows = conn.execute(
+        f"{_TASK_SELECT} WHERE {' AND '.join(where)} ORDER BY due_at NULLS LAST, task_id",
+        params,
+    ).fetchall()
+    return [dict(r) for r in rows]

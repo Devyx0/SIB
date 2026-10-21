@@ -9,13 +9,14 @@ from typing import Any
 from datetime import datetime, timezone
 
 from backend.core.exceptions import (
-    AssigneeEnRouteError, ConflictError, InvalidTransition, NotFoundError,
+    AssigneeEnRouteError, ConflictError, GoneError, InvalidTransition, NotFoundError,
     PermissionDenied, RequestClosedError, RequestEnRouteError, StaleDataError,
     ValidationFailed,
 )
 from backend.domain.status_machine import transition
 from backend.core.security import CurrentUser
 from backend.core.utils import today_local
+from backend.modules.tasks import service as task_service
 from backend.modules.weather import repository as weather_repo
 
 from . import repository as repo
@@ -151,6 +152,7 @@ def get_request(conn, request_id: int, user: CurrentUser, *, bypass_scope: bool 
         raise NotFoundError(f"Request {request_id} not found")
     row["followup_log"] = repo.list_followup_entries(conn, request_id)
     row["visits"] = repo.list_visits(conn, request_id)
+    row["tasks"] = task_service.list_for_request(conn, request_id, user)
     row["intake_photo_ids"] = repo.list_intake_photo_ids(conn, request_id)
 
     is_restricted = not bool(user.roles & {"director", "coordinator"})
@@ -193,6 +195,7 @@ def _after_action(conn, request_id: int, user: CurrentUser) -> RequestDetail:
     row["followup_log"] = repo.list_followup_entries(conn, request_id)
     row["justification_log"] = repo.list_justification_entries(conn, request_id)
     row["visits"] = repo.list_visits(conn, request_id)
+    row["tasks"] = task_service.list_for_request(conn, request_id, user)
     row["intake_photo_ids"] = repo.list_intake_photo_ids(conn, request_id)
     row["weather_evaluation"] = weather_repo.get_latest_evaluation(conn, request_id)
     return RequestDetail(**row)
@@ -231,70 +234,17 @@ def _write_justification(conn, request_id: int, user: CurrentUser, body, *,
     )
 
 
+_USE_TASKS = "Assignee and due date now live on tasks — use POST /api/v1/tasks/{task_id}/%s"
+
+
 def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) -> RequestDetail:
-    row = _lock_or_404(conn, request_id)
-    _check_not_closed(row)
-    # Reassigning or unassigning while the technician is en route would orphan
-    # his open visit (he could no longer close it; nobody else could either).
-    if row["status"] in ("en_route", "arrived"):
-        raise RequestEnRouteError()
-    if (row["assigned_employee_id"] != body.current_assigned_employee_id
-            or row["start_date"] != body.current_start_date
-            or _norm_urgency(row["urgency_tier"]) != _norm_urgency(body.current_urgency_tier)):
-        raise StaleDataError()
-    if body.employee_id is not None and not repo.is_valid_assignee(conn, body.employee_id):
-        raise ValidationFailed("Employee must be an active technician or contractor")
-    if body.employee_id is not None and repo.employee_has_open_en_route(conn, body.employee_id):
-        raise AssigneeEnRouteError()
-
-    # Keep status in sync with assignment: assigned → scheduled, clear → triaged.
-    new_status: str | None = None
-    if body.employee_id is not None and row["status"] in ("triaged", "awaiting_redispatch"):
-        new_status = "scheduled"
-    elif body.employee_id is None and row["status"] == "scheduled":
-        new_status = "triaged"
-    if new_status is not None:
-        transition(row["status"], new_status)
-        repo.update_field(conn, request_id, "status", new_status)
-        repo.write_provenance(conn,
-            target_table="maintenance_request", target_pk=str(request_id),
-            target_column="status", employee_id=user.employee_id,
-            previous_value=row["status"], new_value=new_status,
-        )
-
-    repo.update_field(conn, request_id, "assigned_employee_id", body.employee_id)
-    _write_justification(conn, request_id, user, body, decision_type="assign",
-        before_value={"assigned_employee_id": row["assigned_employee_id"]},
-        after_value={"assigned_employee_id": body.employee_id},
-    )
-    repo.write_provenance(conn,
-        target_table="maintenance_request", target_pk=str(request_id),
-        target_column="assigned_employee_id", employee_id=user.employee_id,
-        previous_value=_to_str(row["assigned_employee_id"]),
-        new_value=_to_str(body.employee_id),
-    )
-    return _after_action(conn, request_id, user)
+    # Hard cutover: fieldwork (assignee) belongs to dispatch_task, not the call.
+    raise GoneError(_USE_TASKS % "assign")
 
 
 def action_reschedule(conn, request_id: int, body: RescheduleBody, user: CurrentUser) -> RequestDetail:
-    row = _lock_or_404(conn, request_id)
-    _check_not_closed(row)
-    if (row["start_date"] != body.current_start_date
-            or row["assigned_employee_id"] != body.current_assigned_employee_id
-            or _norm_urgency(row["urgency_tier"]) != _norm_urgency(body.current_urgency_tier)):
-        raise StaleDataError()
-
-    repo.update_field(conn, request_id, "start_date", body.start_date)
-    _write_justification(conn, request_id, user, body, decision_type="reschedule",
-        before_value={"start_date": _to_str(row["start_date"])},
-        after_value={"start_date": str(body.start_date)},
-    )
-    repo.write_provenance(conn,
-        target_table="maintenance_request", target_pk=str(request_id),
-        target_column="start_date", employee_id=user.employee_id,
-        previous_value=_to_str(row["start_date"]), new_value=str(body.start_date),
-    )
-    return _after_action(conn, request_id, user)
+    # Hard cutover: the due date belongs to dispatch_task, not the call.
+    raise GoneError(_USE_TASKS % "schedule")
 
 
 def action_set_urgency(conn, request_id: int, body: SetUrgencyBody, user: CurrentUser) -> RequestDetail:
@@ -385,6 +335,9 @@ def action_save_dispatch(conn, request_id: int, body: SaveDispatchBody, user: Cu
     changed = body.changes.model_fields_set
     if not changed:
         raise ValidationFailed("Aucune modification à enregistrer")
+    if changed & {"assigned_employee_id", "start_date"}:
+        # Checked before any write so the call is left untouched.
+        raise GoneError(_USE_TASKS % "assign or /schedule")
     ch = body.changes
     cur = body.current.model_dump()
     j = body.justification

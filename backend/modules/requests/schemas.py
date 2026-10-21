@@ -7,6 +7,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from backend.modules.tasks.schemas import TaskOut
 from backend.modules.weather.schemas import WeatherEvaluation
 
 SOURCE_CALENDAR_LABELS: dict[str, str] = {
@@ -296,6 +297,7 @@ class RequestDetail(ListRow):
     # Coordinator / director only, like justification_log.
     status_history: list[StatusChange] = Field(default_factory=list)
     visits: list[VisitEntry] = Field(default_factory=list)
+    tasks: list[TaskOut] = Field(default_factory=list)
     # Photos attached at intake (new call form).
     intake_photo_ids: list[int] = Field(default_factory=list)
     # PII — null for tech/contractor unless they are the case-assigned employee
