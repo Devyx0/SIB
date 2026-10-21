@@ -175,6 +175,11 @@ export function createTask(body: {
   return apiPost('/api/v1/tasks', body);
 }
 
+/** Coordinator follow-up on a finished / follow-up-required task. Defaults: parent's wording, today + 14 days. */
+export function followUpTask(taskId: number, body: { due_at?: string | null; description?: string } = {}): Promise<TaskOut> {
+  return apiPost(`/api/v1/tasks/${taskId}/follow-up`, body);
+}
+
 /** Accept an AI proposal; `description` re-words it. The first accept opens the call. */
 export function acceptTask(taskId: number, body: { description?: string } = {}): Promise<TaskOut> {
   return apiPost(`/api/v1/tasks/${taskId}/accept`, body);

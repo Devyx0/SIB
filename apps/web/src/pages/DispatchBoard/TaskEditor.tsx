@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  ApiError, acceptAllTasks, acceptTask, assignTask, createTask, rejectAllTasks, rejectTask, scheduleTask,
+  ApiError, acceptAllTasks, acceptTask, assignTask, createTask, followUpTask, rejectAllTasks, rejectTask,
+  scheduleTask,
 } from '../../api/client';
 import type { EmployeeLookup, TaskOut } from '../../api/schema.d.ts';
 import { useJustify, type JustifyRequest } from '../../components/Justification';
@@ -27,6 +28,8 @@ const EDITABLE = new Set(['queued', 'scheduled']);
 const IN_PROGRESS = new Set(['en_route', 'arrived', 'working']);
 // A follow-up child resolves these for auto-close (backend _FOLLOWED_UP).
 const NEEDS_FOLLOW_UP = new Set(['needs_expertise', 'return_visit']);
+// « Créer suivi » (POST /tasks/{id}/follow-up) is also open on done tasks (backend _FOLLOW_UP_PARENTS).
+const CAN_FOLLOW_UP = new Set(['needs_expertise', 'return_visit', 'done']);
 // Task creation opens the call (also from triage_proposal); refused before triage is done.
 const NO_NEW_TASK = new Set([
   'intake_received', 'triage_pending', 'triage_clarify', 'triage_failed', 'closed',
@@ -280,6 +283,18 @@ export default function TaskEditor({
                 data-testid={`task-redispatch-${task.task_id}`}
               >
                 {t(lang, 'Redispatcher', 'Redispatch')}
+              </button>
+            )}
+            {CAN_FOLLOW_UP.has(task.status) && !hasFollowUp(task.task_id) && canCreate && (
+              <button
+                type="button"
+                className={styles.applyBtn}
+                disabled={busy}
+                title={t(lang, 'Crée une tâche de suivi non assignée, dans 14 jours', 'Creates an unassigned follow-up task, due in 14 days')}
+                onClick={() => decideProposals(() => followUpTask(task.task_id))}
+                data-testid={`task-follow-up-${task.task_id}`}
+              >
+                {t(lang, 'Créer suivi', 'Create follow-up')}
               </button>
             )}
           </div>

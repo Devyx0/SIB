@@ -102,6 +102,27 @@ class AcceptTaskBody(BaseModel):
         return v
 
 
+class FollowUpBody(BaseModel):
+    """Coordinator follow-up: both optional (defaults: parent's wording, now + 14 days)."""
+    due_at: Optional[datetime] = None
+    description: Optional[str] = Field(default=None, max_length=2000)
+
+    @field_validator("description")
+    @classmethod
+    def _not_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            raise ValueError("description must not be blank")
+        return v
+
+    @field_validator("due_at")
+    @classmethod
+    def _local(cls, v: datetime | None) -> datetime | None:
+        return _localize(v)
+
+
 class RejectAllOut(BaseModel):
     request_id: int
     status: str      # the call after the rejection (triage_clarify when nothing was accepted)

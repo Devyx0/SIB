@@ -23,7 +23,7 @@ from backend.modules.requests import repository as request_repo
 from . import repository as repo
 from .schemas import (
     AcceptTaskBody, ArrivedBody, AssignTaskBody, CloseoutBody, CloseoutOut, CreateTaskBody, EnRouteBody,
-    ScheduleTaskBody, TaskListItem, TaskListResponse, TaskOut, RejectAllOut,
+    FollowUpBody, ScheduleTaskBody, TaskListItem, TaskListResponse, TaskOut, RejectAllOut,
 )
 
 _FOLLOW_UP_DAYS = 14
@@ -423,7 +423,11 @@ def closeout(conn, task_id: int, body: CloseoutBody, user: CurrentUser) -> Close
 
     follow_up = None
     if body.outcome == "partial_reschedule":
-        follow_up = _spawn_follow_up(conn, task, body.next_date or today + timedelta(days=_FOLLOW_UP_DAYS), user)
+        due = body.next_date or today + timedelta(days=_FOLLOW_UP_DAYS)
+        follow_up = _spawn_follow_up(
+            conn, task, datetime.combine(due, time.min, tzinfo=ZoneInfo(settings.TIMEZONE)), user,
+            assignee=user.employee_id, description=None,
+        )
 
     # Follow-up entry with the comment, technician initials (add-log pattern).
     emp_row = conn.execute(
@@ -472,24 +476,48 @@ def closeout(conn, task_id: int, body: CloseoutBody, user: CurrentUser) -> Close
     )
 
 
-def _spawn_follow_up(conn, parent: dict, due: date, user: CurrentUser) -> TaskOut:
-    """Return visit: same work, same technician, new date (local midnight)."""
-    due_at = datetime.combine(due, time.min, tzinfo=ZoneInfo(settings.TIMEZONE))
-    status = _derived_status("queued", user.employee_id, due_at)
-    transition_task("queued", status)
+def _spawn_follow_up(conn, parent: dict, due_at: datetime, user: CurrentUser, *,
+                     assignee: int | None, description: str | None = None) -> TaskOut:
+    """Insert an accepted `source=follow_up` child of `parent` (same work unless reworded)."""
+    status = _derived_status("queued", assignee, due_at)
+    if status != "queued":
+        transition_task("queued", status)
     row = repo.insert_task(
-        conn, request_id=parent["request_id"], description=parent["description"],
-        status=status, assigned_employee_id=user.employee_id, due_at=due_at,
+        conn, request_id=parent["request_id"], description=description or parent["description"],
+        status=status, assigned_employee_id=assignee, due_at=due_at,
         vendor_id=parent["vendor_id"], subcontractor_name=parent["subcontractor_name"],
         urgency_tier=parent["urgency_tier"], source="follow_up",
         accepted_at=datetime.now(timezone.utc), parent_task_id=parent["task_id"],
         sort_order=parent["sort_order"],
     )
     tid = row["task_id"]
-    _provenance(conn, tid, "assigned_employee_id", user, None, user.employee_id)
+    if assignee is not None:
+        _provenance(conn, tid, "assigned_employee_id", user, None, assignee)
     _provenance(conn, tid, "due_at", user, None, due_at)
     _provenance(conn, tid, "status", user, None, status)
     return TaskOut(**row)
+
+
+# A coordinator can open a follow-up once the visit is over. The task machine has
+# no legal move from these to return_visit (needs_expertise only → cancelled), so
+# the parent keeps its status; the child's existence is what resolves it.
+_FOLLOW_UP_PARENTS = frozenset({"needs_expertise", "return_visit", "done"})
+
+
+def create_follow_up(conn, task_id: int, body: FollowUpBody, user: CurrentUser) -> TaskOut:
+    """Coordinator-spawned follow-up: unassigned child, due_at defaults to now + 14 days."""
+    parent = repo.lock_accepted_task(conn, task_id)
+    if parent is None:
+        raise NotFoundError(f"Task {task_id} not found")
+    req = request_repo.lock_request(conn, parent["request_id"])
+    if req["status"] == "closed":
+        raise RequestClosedError()
+    if parent["status"] not in _FOLLOW_UP_PARENTS:
+        raise ConflictError(
+            f"Task is {parent['status']} — a follow-up needs a finished or follow-up-required task"
+        )
+    due_at = body.due_at or datetime.now(timezone.utc) + timedelta(days=_FOLLOW_UP_DAYS)
+    return _spawn_follow_up(conn, parent, due_at, user, assignee=None, description=body.description)
 
 
 def list_for_request(conn, request_id: int, user: CurrentUser) -> list[TaskOut]:

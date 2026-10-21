@@ -206,6 +206,29 @@ describe('DetailPanel', () => {
     expect(screen.queryByTestId('task-redispatch-5')).toBeNull();
   });
 
+  it('« Créer suivi » on a done task posts the follow-up without a justification prompt', async () => {
+    const req = { ...MOCK_REQUEST, status: 'open', tasks: [task(5, { status: 'done' }), task(7)] };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    const followUp = vi.spyOn(client, 'followUpTask').mockResolvedValue(task(8, { source: 'follow_up', parent_task_id: 5 }) as never);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />);
+    expect(screen.queryByTestId('task-follow-up-7')).toBeNull(); // queued: not offered
+    await userEvent.click(screen.getByTestId('task-follow-up-5'));
+    await waitFor(() => expect(followUp).toHaveBeenCalledWith(5));
+    expect(screen.queryByTestId('justification-dialog')).toBeNull();
+  });
+
+  it('no « Créer suivi » once the task already has a follow-up child', () => {
+    const req = { ...MOCK_REQUEST, status: 'open', tasks: [
+      task(5, { status: 'needs_expertise' }),
+      task(6, { status: 'queued', parent_task_id: 5, source: 'follow_up' }),
+    ] };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />);
+    expect(screen.queryByTestId('task-follow-up-5')).toBeNull();
+  });
+
   const COORD = { employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse;
   const proposalsReq = (status = 'triage_proposal', extra: Record<string, unknown>[] = []) => ({
     ...MOCK_REQUEST, status,
