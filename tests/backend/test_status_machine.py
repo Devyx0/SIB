@@ -53,12 +53,56 @@ def test_triage_exhausted():
     transition("triage_pending", "triage_failed")     # service.py:375
 
 
-def test_triage_proposal_is_unreachable():
-    """triage_proposal is blocked by rule 37 — nothing can transition INTO it."""
-    for src in ALL_STATUSES:
-        assert "triage_proposal" not in _TRANSITIONS.get(src, frozenset()), (
-            f"{src!r} → triage_proposal is present but rule 37 blocks it"
-        )
+def test_triage_proposal_only_reachable_from_triage_pending():
+    """Task-first-class revives triage_proposal (draft tasks, no assignee)."""
+    sources = {s for s in ALL_STATUSES if "triage_proposal" in _TRANSITIONS[s]}
+    assert sources == {"triage_pending"}
+
+
+def test_triage_proposal_to_open():
+    transition("triage_pending", "triage_proposal")
+    transition("triage_proposal", "open")
+
+
+def test_triage_proposal_reject_all_goes_to_clarify():
+    transition("triage_proposal", "triage_clarify")
+
+
+def test_open_to_closed():
+    transition("open", "closed")
+
+
+def test_open_cannot_bounce_back_to_proposal():
+    with pytest.raises(InvalidTransition):
+        transition("open", "triage_proposal")
+
+
+@pytest.mark.parametrize("src", [
+    "intake_received", "triage_pending", "triage_failed", "triage_clarify",
+    "triage_proposal", "triaged", "open",
+])
+@pytest.mark.parametrize("fieldwork", [
+    "scheduled", "en_route", "arrived", "awaiting_redispatch",
+])
+def test_no_fieldwork_targets_on_request(src: str, fieldwork: str):
+    with pytest.raises(InvalidTransition):
+        transition(src, fieldwork)
+
+
+def test_intake_received_cannot_go_en_route():
+    with pytest.raises(InvalidTransition):
+        transition("intake_received", "en_route")
+
+
+@pytest.mark.parametrize("src", ["triage_failed", "triage_clarify"])
+def test_other_triage_states_cannot_go_en_route(src: str):
+    with pytest.raises(InvalidTransition):
+        transition(src, "en_route")
+
+
+def test_fieldwork_statuses_are_never_targets():
+    for targets in _TRANSITIONS.values():
+        assert not targets & {"scheduled", "en_route", "arrived", "awaiting_redispatch"}
 
 
 def test_closed_is_terminal():
