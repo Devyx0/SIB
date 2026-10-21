@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRequest } from '../../hooks/useRequest';
-import { goEnRoute, ApiError, GENERIC_ERROR_FR } from '../../api/client';
+import { goEnRoute, markArrived, ApiError, GENERIC_ERROR_FR } from '../../api/client';
 import type { MeResponse, RequestDetail } from '../../api/schema.d.ts';
 import type { Lang } from '../../i18n';
 import { t, statusLabel } from '../../i18n';
@@ -45,16 +45,19 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
   const { data: req, isPending, isError } = useRequest(Number.isFinite(requestId) ? requestId : null);
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
-  const [enRouteError, setEnRouteError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const isAssignedToMe = me != null && req != null && req.assigned_employee_id === me.employee_id;
-  const canGoEnRoute = isAssignedToMe && req != null && req.status !== 'closed' && req.status !== 'en_route';
+  const inProgress = req?.status === 'en_route' || req?.status === 'arrived';
+  const canGoEnRoute = isAssignedToMe && req != null && req.status !== 'closed' && !inProgress;
+  const canMarkArrived = isAssignedToMe && req?.status === 'en_route';
+  const canCloseout = isAssignedToMe && req?.status === 'arrived';
   const noContact = req != null && !req.caller_phone && !req.caller_email;
 
   async function handleEnRoute() {
     if (!req) return;
     setBusy(true);
-    setEnRouteError(null);
+    setActionError(null);
     const pos = await getPosition();
     try {
       const updated = await goEnRoute(req.request_id, {
@@ -68,10 +71,30 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
     } catch (e) {
       if (e instanceof ApiError) {
         const d = e.details as { open_request_title?: string | null } | null;
-        setEnRouteError(d?.open_request_title ? `${e.message} (${d.open_request_title})` : e.message);
+        setActionError(d?.open_request_title ? `${e.message} (${d.open_request_title})` : e.message);
       } else {
-        setEnRouteError(GENERIC_ERROR_FR);
+        setActionError(GENERIC_ERROR_FR);
       }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleArrived() {
+    if (!req) return;
+    setBusy(true);
+    setActionError(null);
+    const pos = await getPosition();
+    try {
+      const updated = await markArrived(req.request_id, {
+        current_status: req.status,
+        lat: pos?.lat ?? null,
+        lng: pos?.lng ?? null,
+      });
+      qc.setQueryData(['request', req.request_id], updated);
+      qc.invalidateQueries({ queryKey: ['requests'] });
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : GENERIC_ERROR_FR);
     } finally {
       setBusy(false);
     }
@@ -109,6 +132,14 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
                 )}
               </div>
             )}
+            {req.status === 'arrived' && (
+              <div className={styles.openCallBannerCard} data-status="arrived">
+                {t(lang, 'Arrivé', 'Arrived')}
+                {elapsedLabel(req.arrived_at) && (
+                  <> {t(lang, 'depuis', 'for')} {elapsedLabel(req.arrived_at)}</>
+                )}
+              </div>
+            )}
             {req.status === 'en_route' && isAssignedToMe && noContact && (
               <p className={styles.warning} data-testid="no-contact-warning">
                 {t(lang, 'Aucun contact pour aviser le locataire', 'No contact to notify the tenant')}
@@ -126,7 +157,18 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
                 {busy ? t(lang, 'Envoi…', 'Sending…') : t(lang, 'En route', 'En route')}
               </button>
             )}
-            {req.status === 'en_route' && isAssignedToMe && (
+            {canMarkArrived && (
+              <button
+                type="button"
+                className={styles.enRouteBtn}
+                onClick={handleArrived}
+                disabled={busy}
+                data-testid="arrived-btn"
+              >
+                {busy ? t(lang, 'Envoi…', 'Sending…') : t(lang, 'Arrivé', 'Arrived')}
+              </button>
+            )}
+            {canCloseout && (
               <Link
                 to={`/tech/appels/${req.request_id}/cloture`}
                 className={`${styles.enRouteBtn} ${styles.btnLink}`}
@@ -135,7 +177,7 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
                 {t(lang, 'Clôturer', 'Close out')}
               </Link>
             )}
-            {enRouteError && <p className={styles.error}>{enRouteError}</p>}
+            {actionError && <p className={styles.error}>{actionError}</p>}
 
             <section className={styles.card}>
               <h2 className={styles.cardTitle}>{t(lang, 'Adresse', 'Address')}</h2>

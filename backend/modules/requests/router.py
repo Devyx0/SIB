@@ -20,6 +20,7 @@ from .schemas import (
     EmployeeLookup,
     CloseoutBody,
     DossierListResponse,
+    ArrivedBody,
     EnRouteBody,
     ListResponse,
     PhotoUploadResponse,
@@ -35,6 +36,7 @@ from .schemas import (
     SetUrgencyBody,
     SortKey,
     StatusValue,
+    TechnicianSuggestionsResponse,
     TriageTriggerBody,
     UnitByNumberLookup,
     UnitLookup,
@@ -199,6 +201,20 @@ def request_trigger_triage(
     return {"request_id": request_id, "status": "triage_pending"}
 
 
+@router.get(
+    "/{request_id}/technician-suggestions",
+    operation_id="request_technician_suggestions",
+    response_model=TechnicianSuggestionsResponse,
+)
+def request_technician_suggestions(
+    request_id: int,
+    lang: Literal["fr", "en"] = Query(default="fr"),
+    user: CurrentUser = _COORD_DIR,
+    conn=Depends(get_db_conn),
+) -> TechnicianSuggestionsResponse:
+    return service.get_technician_suggestions(conn, request_id, lang=lang)
+
+
 @router.post("/{request_id}/route", operation_id="request_route", response_model=RequestDetail)
 def request_route(
     request_id: int,
@@ -212,6 +228,11 @@ def request_route(
 @router.post("/{request_id}/en-route", operation_id="request_en_route", response_model=RequestDetail)
 def request_en_route(request_id: int, body: EnRouteBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
     return service.action_en_route(conn, request_id, body, user)
+
+
+@router.post("/{request_id}/arrived", operation_id="request_arrived", response_model=RequestDetail)
+def request_arrived(request_id: int, body: ArrivedBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_arrived(conn, request_id, body, user)
 
 
 @router.post("/{request_id}/photos", operation_id="request_upload_photo",

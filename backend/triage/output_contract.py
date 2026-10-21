@@ -21,7 +21,6 @@ OUTPUT_SCHEMA = {
     "title": "str",
     "problems": "list[str]",
     "entry_permission": "str | null",
-    "animals": "str | null",
     "urgency_tier": "AJD | ajd | null",
     "heating_failure": "bool | null",
     "complexity_tier": "C1|C2|C3|C4",
@@ -119,7 +118,7 @@ def _title_urgency(title: str | None) -> str | None:
 
 def _text_fields(parsed: dict) -> list[str]:
     out = []
-    for key in ("title", "entry_permission", "animals", "other_notes"):
+    for key in ("title", "entry_permission", "other_notes"):
         v = parsed.get(key)
         if isinstance(v, str):
             out.append(v)
@@ -418,7 +417,7 @@ if __name__ == "__main__":
     _BASE = {
         "verdict": "single", "duplicate_of_request_id": None, "addition_to_request_id": None,
         "title": "Robinet qui fuit", "problems": ["Fuite sous le lavabo"],
-        "entry_permission": None, "animals": None, "urgency_tier": None,
+        "entry_permission": None, "urgency_tier": None,
         "complexity_tier": "C1", "congestion_level": "N2",
         "time_estimate_bucket": "UNDER_30_MIN", "delegable_status": "YES",
         "report_status": "CAN_WAIT", "routing_rule": "A1", "subcontractor_name": None,

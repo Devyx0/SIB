@@ -60,16 +60,12 @@ def _format_context(ctx: dict) -> str:
 
     parts.append(f"## Demande #{req['request_id']} — {req.get('raw_title', '')}")
     parts.append(f"Date : {_d(req.get('start_date'))}")
-    if req.get("urgency_raw"):
-        parts.append(f"Urgence brute : {req['urgency_raw']}")
     if req.get("problem_summary"):
         parts.append(f"Résumé actuel : {req['problem_summary']}")
     if req.get("problems"):
         parts.append(f"Problèmes saisis :\n{req['problems']}")
     if req.get("entry_permission"):
         parts.append(f"Entrée : {req['entry_permission']}")
-    if req.get("animals"):
-        parts.append(f"Animaux : {req['animals']}")
     if req.get("subcontractor_name"):
         parts.append(f"Sous-traitant brut : {req['subcontractor_name']}")
     if req.get("ft_link"):
@@ -93,10 +89,6 @@ def _format_context(ctx: dict) -> str:
         parts.append(bail)
         if rr.get("langue_en"):
             parts.append("Langue du bail : anglais")
-        if unit.get("droit_animaux") is True:
-            parts.append("Animaux autorisés au bail : oui")
-        elif unit.get("droit_animaux") is False:
-            parts.append("Animaux autorisés au bail : non")
         if rr.get("vacant"):
             parts.append("LOGEMENT VACANT — accès libre")
         for o in unit.get("occupants", []):
@@ -108,8 +100,6 @@ def _format_context(ctx: dict) -> str:
             if o.get("capacite"):
                 line += f"  [{o['capacite']}]"
             parts.append(f"  - {line}")
-        if rr.get("pet_mismatch"):
-            parts.append("ÉCART ANIMAUX : déclaration Gravity non autorisée au bail.")
         if rr.get("caller_mismatch"):
             parts.append("RÉQUÉRANT ABSENT des titulaires du bail.")
         required = rr.get("required_notes") or []
@@ -256,7 +246,7 @@ def _format_context(ctx: dict) -> str:
 # ── DB write helpers ───────────────────────────────────────────────────────────
 
 _PROVENANCE_COLS = (
-    "problem_summary", "problems", "entry_permission", "animals",
+    "problem_summary", "problems", "entry_permission",
     "urgency_tier", "complexity_tier", "congestion_level",
     "time_estimate_bucket", "delegable_status", "report_status",
     "routing_rule", "other_notes",
@@ -272,7 +262,6 @@ def _write_triage_provenance(cur, request_id: int, parsed: dict,
         "problem_summary":    parsed.get("title"),
         "problems":           problems_text,
         "entry_permission":   parsed.get("entry_permission"),
-        "animals":            parsed.get("animals"),
         "urgency_tier":       parsed.get("urgency_tier"),
         "complexity_tier":    parsed.get("complexity_tier"),
         "congestion_level":   parsed.get("congestion_level"),
@@ -377,7 +366,6 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
             problem_summary         = %(title)s,
             problems                = %(problems)s,
             entry_permission        = %(entry_permission)s,
-            animals                 = %(animals)s,
             urgency_tier            = %(urgency_tier)s::urgency_tier,
             complexity_tier         = %(complexity_tier)s::complexity_tier,
             congestion_level        = %(congestion_level)s::congestion_level,
@@ -402,7 +390,6 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
             "title":              parsed.get("title"),
             "problems":           problems_text,
             "entry_permission":   parsed.get("entry_permission"),
-            "animals":            parsed.get("animals"),
             "urgency_tier":       parsed.get("urgency_tier"),
             "complexity_tier":    parsed.get("complexity_tier"),
             "congestion_level":   parsed.get("congestion_level"),
@@ -537,7 +524,8 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
         conn.rollback()
         return {"result": "skipped", "reason": "mechanically excluded title (SKILL §4.2)"}
 
-    if current_status in ("triaged", "en_route", "closed"):
+    if current_status in ("triaged", "scheduled", "awaiting_redispatch",
+                          "en_route", "arrived", "closed"):
         conn.rollback()
         return {"result": "skipped", "reason": f"already in terminal state ({current_status})"}
 

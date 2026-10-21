@@ -21,11 +21,11 @@ from backend.modules.weather import repository as weather_repo
 from . import repository as repo
 from . import storage
 from .schemas import (
-    AddLogBody, AssignBody, CloseoutBody, DossierListResponse, DossierRow,
+    AddLogBody, ArrivedBody, AssignBody, CloseoutBody, DossierListResponse, DossierRow,
     EnRouteBody, ListResponse, ListRow,
     PhotoUploadResponse, PhotoUrlResponse, RequestDetail, RescheduleBody,
     RouteBody, SaveDispatchBody, SetCostBody, SetFollowUpDateBody, SetNextStepsBody,
-    SetUrgencyBody,
+    SetUrgencyBody, TechnicianSuggestion, TechnicianSuggestionsResponse,
 )
 
 _PHOTO_MIMES = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
@@ -233,7 +233,7 @@ def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) ->
     _check_not_closed(row)
     # Reassigning or unassigning while the technician is en route would orphan
     # his open visit (he could no longer close it; nobody else could either).
-    if row["status"] == "en_route":
+    if row["status"] in ("en_route", "arrived"):
         raise RequestEnRouteError()
     if (row["assigned_employee_id"] != body.current_assigned_employee_id
             or row["start_date"] != body.current_start_date
@@ -243,6 +243,21 @@ def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) ->
         raise ValidationFailed("Employee must be an active technician or contractor")
     if body.employee_id is not None and repo.employee_has_open_en_route(conn, body.employee_id):
         raise AssigneeEnRouteError()
+
+    # Keep status in sync with assignment: assigned → scheduled, clear → triaged.
+    new_status: str | None = None
+    if body.employee_id is not None and row["status"] in ("triaged", "awaiting_redispatch"):
+        new_status = "scheduled"
+    elif body.employee_id is None and row["status"] == "scheduled":
+        new_status = "triaged"
+    if new_status is not None:
+        transition(row["status"], new_status)
+        repo.update_field(conn, request_id, "status", new_status)
+        repo.write_provenance(conn,
+            target_table="maintenance_request", target_pk=str(request_id),
+            target_column="status", employee_id=user.employee_id,
+            previous_value=row["status"], new_value=new_status,
+        )
 
     repo.update_field(conn, request_id, "assigned_employee_id", body.employee_id)
     _write_justification(conn, request_id, user, body, decision_type="assign",
@@ -372,10 +387,12 @@ def action_save_dispatch(conn, request_id: int, body: SaveDispatchBody, user: Cu
     j = body.justification
     detail: RequestDetail | None = None
 
-    def sync(d: RequestDetail) -> None:
+    def sync(d: RequestDetail, *keys: str) -> None:
+        # Only refresh fields this step changed — keep the screen snapshot for
+        # later stale checks (otherwise a mid-save refresh hides conflicts).
         nonlocal detail
         detail = d
-        for k in cur:
+        for k in keys:
             cur[k] = getattr(d, k)
 
     if "assigned_employee_id" in changed:
@@ -383,30 +400,32 @@ def action_save_dispatch(conn, request_id: int, body: SaveDispatchBody, user: Cu
             employee_id=ch.assigned_employee_id,
             current_assigned_employee_id=cur["assigned_employee_id"],
             current_start_date=cur["start_date"], current_urgency_tier=cur["urgency_tier"],
-            justification=j), user))
+            justification=j), user), "assigned_employee_id")
     if "start_date" in changed:
         if ch.start_date is None:
             raise ValidationFailed("Date de répartition requise")
         sync(action_reschedule(conn, request_id, RescheduleBody(
             start_date=ch.start_date, current_start_date=cur["start_date"],
             current_assigned_employee_id=cur["assigned_employee_id"],
-            current_urgency_tier=cur["urgency_tier"], justification=j), user))
+            current_urgency_tier=cur["urgency_tier"], justification=j), user), "start_date")
     if "urgency_tier" in changed:
         sync(action_set_urgency(conn, request_id, SetUrgencyBody(
             urgency_tier=ch.urgency_tier, current_urgency_tier=cur["urgency_tier"],
             current_assigned_employee_id=cur["assigned_employee_id"],
-            current_start_date=cur["start_date"], justification=j), user))
+            current_start_date=cur["start_date"], justification=j), user), "urgency_tier")
     if "next_follow_up_date" in changed:
         sync(action_set_follow_up_date(conn, request_id, SetFollowUpDateBody(
             next_follow_up_date=ch.next_follow_up_date,
-            current_next_follow_up_date=cur["next_follow_up_date"], justification=j), user))
+            current_next_follow_up_date=cur["next_follow_up_date"], justification=j), user),
+            "next_follow_up_date")
     if "next_steps" in changed:
         sync(action_set_next_steps(conn, request_id, SetNextStepsBody(
-            next_steps=ch.next_steps, current_next_steps=cur["next_steps"], justification=j), user))
+            next_steps=ch.next_steps, current_next_steps=cur["next_steps"], justification=j), user),
+            "next_steps")
     if "estimated_cost" in changed:
         sync(action_set_cost(conn, request_id, SetCostBody(
             estimated_cost=ch.estimated_cost, current_estimated_cost=cur["estimated_cost"],
-            justification=j), user))
+            justification=j), user), "estimated_cost")
     assert detail is not None
     return detail
 
@@ -502,6 +521,38 @@ def action_en_route(conn, request_id: int, body: EnRouteBody, user: CurrentUser)
     return get_request(conn, request_id, user)
 
 
+def action_arrived(conn, request_id: int, body: ArrivedBody, user: CurrentUser) -> RequestDetail:
+    """Technician arrived on site. Status → arrived; stamps visit.arrived_at for travel KPI."""
+    row = _lock_or_404(conn, request_id)
+    if row["assigned_employee_id"] != user.employee_id:
+        raise PermissionDenied("Seul l'employé assigné peut marquer l'arrivée")
+    _check_not_closed(row)
+    if row["status"] != body.current_status:
+        raise StaleDataError()
+    if row["status"] != "en_route":
+        raise ConflictError("L'appel n'est pas en route")
+    visit = repo.get_open_visit(conn, user.employee_id)
+    if visit is None or visit["request_id"] != request_id:
+        raise ConflictError("Aucune visite en cours pour cet appel")
+
+    transition(row["status"], "arrived")
+    now = datetime.now(timezone.utc)
+    repo.mark_visit_arrived(conn, visit_id=visit["visit_id"], lat=body.lat, lng=body.lng)
+    repo.update_field(conn, request_id, "status", "arrived")
+    repo.update_field(conn, request_id, "arrived_at", now)
+    repo.write_provenance(conn,
+        target_table="maintenance_request", target_pk=str(request_id),
+        target_column="status", employee_id=user.employee_id,
+        previous_value="en_route", new_value="arrived",
+    )
+    repo.write_provenance(conn,
+        target_table="maintenance_request", target_pk=str(request_id),
+        target_column="arrived_at", employee_id=user.employee_id,
+        previous_value=_to_str(row.get("arrived_at")), new_value=now.isoformat(),
+    )
+    return get_request(conn, request_id, user)
+
+
 def action_upload_photo(conn, request_id: int, content: bytes, mime: str, user: CurrentUser) -> PhotoUploadResponse:
     """Closeout photo: raw image body, mime in Content-Type. File first, then
     row — an attachment row must never exist without its stored object; if the
@@ -553,8 +604,8 @@ def action_closeout(conn, request_id: int, body: CloseoutBody, user: CurrentUser
     _check_not_closed(row)
     if row["status"] != body.current_status:
         raise StaleDataError()
-    if row["status"] != "en_route":
-        raise ConflictError("L'appel n'est pas en route")
+    if row["status"] != "arrived":
+        raise ConflictError("Marquez l'arrivée avant de clôturer")
     visit = repo.get_open_visit(conn, user.employee_id)
     if visit is None or visit["request_id"] != request_id:
         raise ConflictError("Aucune visite en cours pour cet appel")
@@ -574,7 +625,12 @@ def action_closeout(conn, request_id: int, body: CloseoutBody, user: CurrentUser
     if repo.count_usable_photos(conn, request_id, user.employee_id, ids) != len(ids):
         raise ValidationFailed("Photo invalide, d'un autre appel ou déjà utilisée")
 
-    target = "closed" if body.outcome == "complete" else "triaged"
+    if body.outcome == "complete":
+        target = "closed"
+    elif body.outcome in ("partial_expertise", "failed"):
+        target = "awaiting_redispatch"
+    else:
+        target = "scheduled"  # partial_reschedule — stays his, new date
     transition(row["status"], target)
 
     now = datetime.now(timezone.utc)
@@ -599,7 +655,7 @@ def action_closeout(conn, request_id: int, body: CloseoutBody, user: CurrentUser
         # He picks the new date himself; the call stays his.
         _set("start_date", body.next_date, row["start_date"])
     if body.outcome in ("partial_expertise", "failed"):
-        # Back to the coordinator queue: unassigned = triaged + no employee.
+        # Back to the coordinator « À redispatcher » queue.
         _set("assigned_employee_id", None, row["assigned_employee_id"])
         _set("closeout_urgent", body.urgent, row["closeout_urgent"])
         repo.write_justification(conn,
@@ -607,7 +663,7 @@ def action_closeout(conn, request_id: int, body: CloseoutBody, user: CurrentUser
             decision_type="closeout",
             before_value={"assigned_employee_id": row["assigned_employee_id"],
                           "status": "en_route"},
-            after_value={"assigned_employee_id": None, "status": "triaged",
+            after_value={"assigned_employee_id": None, "status": "awaiting_redispatch",
                          "closeout_outcome": body.outcome, "urgent": body.urgent},
             text=body.comment, input_method=body.input_method,
         )
@@ -665,7 +721,8 @@ def action_trigger_triage(conn, request_id: int) -> None:
     status = row["status"]
     if status == "closed":
         raise RequestClosedError()
-    if status in ("triaged", "triage_proposal", "en_route"):
+    if status in ("triaged", "scheduled", "awaiting_redispatch", "triage_proposal",
+                  "en_route", "arrived"):
         raise InvalidTransition(f"Cannot trigger triage: current status is '{status}'")
     if status == "triage_clarify":
         raise ConflictError("Triage bloqué — résoudre l'ambiguïté d'adresse d'abord")
@@ -677,6 +734,59 @@ def action_trigger_triage(conn, request_id: int) -> None:
                 raise ConflictError(
                     f"Triage déjà en cours (démarré il y a {age_min:.0f} min) — réessayez dans quelques minutes"
                 )
+
+
+def _suggestion_why(c: dict, lang: str) -> str:
+    fr = lang != "en"
+    parts: list[str] = []
+    hist = int(c.get("history_count") or 0)
+    if c.get("is_a5"):
+        parts.append("Dédié à cet immeuble" if fr else "Dedicated to this building")
+    if hist > 0:
+        parts.append(
+            f"Déjà intervenu {hist}× ici (12 mois)" if fr
+            else f"Worked here {hist}× (12 months)"
+        )
+    if not parts:
+        parts.append("Secteur correspondant" if fr else "Matches sector")
+    if c.get("is_en_route"):
+        parts.append("En route actuellement" if fr else "Currently en route")
+    return " · ".join(parts)
+
+
+def get_technician_suggestions(
+    conn, request_id: int, lang: str = "fr",
+) -> TechnicianSuggestionsResponse:
+    """DB-ranked top-3 suggestions; never invents out-of-sector people."""
+    loc = repo.get_request_location(conn, request_id)
+    if loc is None:
+        raise NotFoundError(f"Request {request_id} not found")
+    candidates = repo.list_technician_suggestion_candidates(
+        conn, building_id=loc.get("building_id"), sector_id=loc.get("sector_id"),
+    )
+    # Rank: history desc, prefer not en_route, prefer A5, then name.
+    candidates.sort(
+        key=lambda c: (
+            -int(c.get("history_count") or 0),
+            bool(c.get("is_en_route")),
+            -int(bool(c.get("is_a5"))),
+            (c.get("name") or "").lower(),
+        )
+    )
+    top = candidates[:3]
+    return TechnicianSuggestionsResponse(
+        request_id=request_id,
+        suggestions=[
+            TechnicianSuggestion(
+                employee_id=int(c["employee_id"]),
+                initials=c.get("initials"),
+                name=c.get("name") or "",
+                why=_suggestion_why(c, lang),
+                is_en_route=bool(c.get("is_en_route")),
+            )
+            for c in top
+        ],
+    )
 
 
 def action_route(conn, request_id: int, body: RouteBody, user: CurrentUser) -> RequestDetail:

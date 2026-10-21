@@ -4,10 +4,13 @@ export type StatusValue =
   | 'intake_received'
   | 'triage_pending'
   | 'triaged'
+  | 'scheduled'
+  | 'awaiting_redispatch'
   | 'triage_clarify'
   | 'triage_proposal'
   | 'triage_failed'
   | 'en_route'
+  | 'arrived'
   | 'closed';
 
 export type SortKey =
@@ -64,6 +67,7 @@ export interface ListRow {
   unit_label: string | null;
   unique_unit_number: string | null;
   en_route_at: string | null;
+  arrived_at: string | null;
   closeout_outcome: string | null;
   closeout_urgent: boolean | null;
   duplicate_of_request_id: number | null;
@@ -75,8 +79,13 @@ export interface VisitEntry {
   employee_id: number;
   employee_name: string | null;
   en_route_at: string;
+  arrived_at: string | null;
   closeout_at: string | null;
-  /** Whole minutes en route → closeout; set on close for tech KPIs. */
+  /** Whole minutes en_route → arrived; null if no arrived stamp. */
+  travel_minutes: number | null;
+  /** Whole minutes arrived → closeout; null if no arrived stamp. */
+  on_site_minutes: number | null;
+  /** Whole minutes en route → closeout (total). */
   duration_minutes: number | null;
   outcome: string | null;
   closeout_comment: string | null;

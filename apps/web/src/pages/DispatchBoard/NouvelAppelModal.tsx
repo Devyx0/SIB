@@ -8,6 +8,7 @@ import type { SectorLookup } from '../../api/schema.d.ts';
 import { t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import { shrinkImage } from '../../lib/shrinkImage';
+import { taxonomyElementOptions } from '../../lib/taxonomyElements';
 import styles from './NouvelAppelModal.module.css';
 import Select from '../../components/Select';
 
@@ -797,8 +798,18 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
             <div className={styles.row}>
               <div className={styles.field}>
                 <label htmlFor="element" className={styles.label}>{t(lang, 'Élément', 'Element')}</label>
-                <input id="element" className={styles.input} value={element}
-                  onChange={(e) => setElement(e.target.value)} data-testid="element" />
+                <Select
+                  id="element"
+                  className={styles.select}
+                  value={element}
+                  onChange={(e) => setElement(e.target.value)}
+                  data-testid="element"
+                >
+                  <option value="">{t(lang, 'Choisir…', 'Choose…')}</option>
+                  {taxonomyElementOptions(lang).map(({ value, label }) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </Select>
               </div>
               <div className={styles.field}>
                 <label htmlFor="symptome" className={styles.label}>{t(lang, 'Symptôme', 'Symptom')}</label>

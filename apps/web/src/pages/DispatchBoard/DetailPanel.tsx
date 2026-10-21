@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRequest } from '../../hooks/useRequest';
 import {
-  ApiError, fetchEmployees,
+  ApiError, fetchEmployees, fetchTechnicianSuggestions,
   dispatchAddLog, dispatchSave,
   triggerTriage,
 } from '../../api/client';
@@ -66,6 +66,13 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
     queryFn: fetchEmployees,
     staleTime: 5 * 60 * 1000,
     enabled: isEditor,
+  });
+
+  const { data: techSuggestions } = useQuery({
+    queryKey: ['technician-suggestions', requestId, lang],
+    queryFn: () => fetchTechnicianSuggestions(requestId, lang === 'en' ? 'en' : 'fr'),
+    enabled: isEditor && (data?.status === 'triaged' || data?.status === 'awaiting_redispatch'),
+    staleTime: 60 * 1000,
   });
 
   const assignableEmployees = (employees ?? []).filter(
@@ -590,6 +597,39 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                     )}
 
                     <div className={styles.actionsGrid}>
+                      {/* Post-triage suggestions — pre-fill assign only */}
+                      {(data.status === 'triaged' || data.status === 'awaiting_redispatch')
+                        && (techSuggestions?.suggestions?.length ?? 0) > 0 && (
+                        <div className={styles.suggestBlock} data-testid="tech-suggestions">
+                          <label className={styles.editLabel}>
+                            {t(lang, 'Suggestion technicien', 'Technician suggestion')}
+                          </label>
+                          <ul className={styles.suggestList}>
+                            {techSuggestions!.suggestions.map((s) => (
+                              <li key={s.employee_id}>
+                                <button
+                                  type="button"
+                                  className={styles.suggestBtn}
+                                  disabled={isClosed || isEnRoute}
+                                  data-testid={`tech-suggest-${s.employee_id}`}
+                                  onClick={() => setAssignEmpId(s.employee_id)}
+                                >
+                                  <span className={styles.suggestName}>
+                                    {s.initials ? `${s.initials} — ` : ''}{s.name}
+                                    {s.is_en_route && (
+                                      <span className={styles.suggestEnRoute} data-testid="suggest-en-route">
+                                        {t(lang, 'En route', 'En route')}
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className={styles.suggestWhy}>{s.why}</span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
                       {/* Assign — locked while the technician is en route */}
                       <div className={`${styles.editField} ${changedKeys.has('assigned_employee_id') ? styles.editFieldChanged : ''}`}>
                         <label className={styles.editLabel}>{t(lang, 'Assigné à', 'Assigned to')}</label>

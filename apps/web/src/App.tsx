@@ -14,6 +14,7 @@ import TechCallView from './pages/TechPortal/CallView';
 import CloseoutForm from './pages/TechPortal/CloseoutForm';
 import Login from './pages/Login';
 import SurveyPage from './pages/Survey';
+import PublicDemande from './pages/PublicDemande';
 import { JustificationProvider } from './components/Justification';
 import { fetchMe } from './api/client';
 import type { MeResponse } from './api/schema.d.ts';
@@ -24,6 +25,7 @@ export default function App() {
   // undefined = loading; null = no session; Session = authenticated
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [me, setMe] = useState<MeResponse | null>(null);
+  const toggleLang = () => setLang((l) => (l === 'fr' ? 'en' : 'fr'));
 
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -65,6 +67,10 @@ export default function App() {
       <Routes>
         <Route path="/sondage/:token" element={<SurveyPage lang={lang} />} />
         <Route
+          path="/public/demande"
+          element={<PublicDemande lang={lang} onToggleLang={toggleLang} />}
+        />
+        <Route
           path="/login"
           element={session ? <Navigate to={techOnly ? '/tech' : '/board'} replace /> : <Login />}
         />
@@ -75,15 +81,15 @@ export default function App() {
               <Navigate to="/login" replace />
             ) : techOnly ? (
               <Routes>
-                <Route path="tech" element={<TechList lang={lang} me={me} onSignOut={handleSignOut} onToggleLang={() => setLang((l) => (l === 'fr' ? 'en' : 'fr'))} />} />
-                <Route path="tech/appels/:id" element={<TechCallView lang={lang} me={me} onSignOut={handleSignOut} onToggleLang={() => setLang((l) => (l === 'fr' ? 'en' : 'fr'))} />} />
-                <Route path="tech/appels/:id/cloture" element={<CloseoutForm lang={lang} me={me} onSignOut={handleSignOut} onToggleLang={() => setLang((l) => (l === 'fr' ? 'en' : 'fr'))} />} />
+                <Route path="tech" element={<TechList lang={lang} me={me} onSignOut={handleSignOut} onToggleLang={toggleLang} />} />
+                <Route path="tech/appels/:id" element={<TechCallView lang={lang} me={me} onSignOut={handleSignOut} onToggleLang={toggleLang} />} />
+                <Route path="tech/appels/:id/cloture" element={<CloseoutForm lang={lang} me={me} onSignOut={handleSignOut} onToggleLang={toggleLang} />} />
                 <Route path="*" element={<Navigate to="/tech" replace />} />
               </Routes>
             ) : (
               <AppShell
                 lang={lang}
-                onToggleLang={() => setLang((l) => (l === 'fr' ? 'en' : 'fr'))}
+                onToggleLang={toggleLang}
                 me={me}
                 onSignOut={handleSignOut}
               >

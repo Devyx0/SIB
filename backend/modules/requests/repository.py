@@ -21,6 +21,7 @@ _UPDATABLE_FIELDS: dict[str, str] = {
     "estimated_cost":        "estimated_cost = %(v)s",
     "status":                "status = %(v)s::request_status",
     "en_route_at":           "en_route_at = %(v)s",
+    "arrived_at":            "arrived_at = %(v)s",
     "closed_at":             "closed_at = %(v)s",
     "closeout_outcome":      "closeout_outcome = %(v)s::closeout_outcome",
     "closeout_urgent":       "closeout_urgent = %(v)s",
@@ -57,6 +58,7 @@ _LIST_SELECT = """
         COALESCE(mr.unit_label, u.numero_appartement) AS unit_label,
         u.unique_unit_number,
         mr.en_route_at,
+        mr.arrived_at,
         mr.closeout_outcome::text        AS closeout_outcome,
         mr.closeout_urgent,
         mr.duplicate_of_request_id,
@@ -128,7 +130,7 @@ def list_requests(
         # so any date range is ignored here.
         conditions.append(
             "mr.source_calendar IS NULL"
-            " AND mr.status::text NOT IN ('closed', 'en_route')"
+            " AND mr.status::text NOT IN ('closed', 'en_route', 'arrived')"
             " AND (mr.submission_date >= NOW() - INTERVAL '90 days' OR mr.submission_date IS NULL)"
         )
     elif start_date is not None:
@@ -155,12 +157,8 @@ def list_requests(
         conditions.append("mr.source_calendar = %(source_calendar)s")
         params["source_calendar"] = source_calendar
     if redispatch:
-        # « À redispatcher »: returned by closeout outcomes 3/4, awaiting the
-        # coordinator — triaged, unassigned, last outcome expertise/failed.
-        conditions.append(
-            "mr.status::text = 'triaged' AND mr.assigned_employee_id IS NULL"
-            " AND mr.closeout_outcome::text IN ('partial_expertise', 'failed')"
-        )
+        # « À redispatcher »: closeout outcomes 3/4 → awaiting_redispatch.
+        conditions.append("mr.status::text = 'awaiting_redispatch'")
     if has_subcontractor is True:
         conditions.append(
             "mr.subcontractor_name IS NOT NULL AND btrim(mr.subcontractor_name) <> ''"
@@ -377,6 +375,7 @@ def get_request(
             mr.ft_link,
             mr.ft_name,
             mr.en_route_at,
+            mr.arrived_at,
             mr.closeout_outcome::text        AS closeout_outcome,
             mr.closeout_urgent
         FROM maintenance_request mr
@@ -415,7 +414,7 @@ def lock_request(conn, request_id: int) -> dict | None:
         SELECT request_id, status::text, assigned_employee_id, start_date,
                urgency_tier::text AS urgency_tier, next_follow_up_date,
                next_steps, estimated_cost, source_calendar, en_route_at,
-               closed_at, closeout_outcome::text AS closeout_outcome,
+               arrived_at, closed_at, closeout_outcome::text AS closeout_outcome,
                closeout_urgent, work_performed, raw_title
         FROM maintenance_request
         WHERE request_id = %(request_id)s
@@ -441,10 +440,12 @@ def is_valid_assignee(conn, employee_id: int) -> bool:
 
 
 def employee_has_open_en_route(conn, employee_id: int) -> bool:
+    """True if tech has an open visit (en_route or arrived)."""
     row = conn.execute(
         """
         SELECT 1 FROM maintenance_request
-        WHERE assigned_employee_id = %(emp_id)s AND status = 'en_route'
+        WHERE assigned_employee_id = %(emp_id)s
+          AND status::text IN ('en_route', 'arrived')
         LIMIT 1
         """,
         {"emp_id": employee_id},
@@ -552,8 +553,8 @@ def next_attachment_id(conn) -> int:
 
 
 def insert_photo(
-    conn, *, attachment_id: int, request_id: int, employee_id: int, storage_path: str,
-    photo_context: str = "closeout",
+    conn, *, attachment_id: int, request_id: int, employee_id: int | None,
+    storage_path: str, photo_context: str = "closeout",
 ) -> None:
     """Insert the attachment row for an already-uploaded file. The explicit id
     comes from next_attachment_id (same sequence — no drift)."""
@@ -601,6 +602,19 @@ def count_usable_photos(conn, request_id: int, employee_id: int, attachment_ids:
     ).fetchone()["n"]
 
 
+def mark_visit_arrived(
+    conn, *, visit_id: int, lat: float | None, lng: float | None,
+) -> None:
+    conn.execute(
+        """
+        UPDATE request_visit
+        SET arrived_at = NOW(), arrived_lat = %(lat)s, arrived_lng = %(lng)s
+        WHERE visit_id = %(visit_id)s AND arrived_at IS NULL
+        """,
+        {"visit_id": visit_id, "lat": lat, "lng": lng},
+    )
+
+
 def close_visit(
     conn, *, visit_id: int, outcome: str, comment: str,
     lat: float | None, lng: float | None,
@@ -609,6 +623,12 @@ def close_visit(
         """
         UPDATE request_visit
         SET closeout_at = NOW(),
+            travel_minutes = CASE WHEN arrived_at IS NULL THEN NULL ELSE GREATEST(
+                0, ROUND(EXTRACT(EPOCH FROM (arrived_at - en_route_at)) / 60.0)::integer
+            ) END,
+            on_site_minutes = CASE WHEN arrived_at IS NULL THEN NULL ELSE GREATEST(
+                0, ROUND(EXTRACT(EPOCH FROM (NOW() - arrived_at)) / 60.0)::integer
+            ) END,
             duration_minutes = GREATEST(
                 0,
                 ROUND(EXTRACT(EPOCH FROM (NOW() - en_route_at)) / 60.0)::integer
@@ -647,7 +667,8 @@ def list_visits(conn, request_id: int) -> list[dict]:
     rows = conn.execute(
         """
         SELECT v.visit_id, v.employee_id, e.nom_employe AS employee_name,
-               v.en_route_at, v.closeout_at, v.duration_minutes,
+               v.en_route_at, v.arrived_at, v.closeout_at,
+               v.travel_minutes, v.on_site_minutes, v.duration_minutes,
                v.outcome::text AS outcome,
                v.closeout_comment,
                COALESCE(array_agg(a.attachment_id) FILTER (WHERE a.attachment_id IS NOT NULL),
@@ -915,7 +936,7 @@ def list_employees(conn, role: str | None) -> list[dict]:
             EXISTS (
                 SELECT 1 FROM maintenance_request mr
                 WHERE mr.assigned_employee_id = e.employee_id
-                  AND mr.status = 'en_route'
+                  AND mr.status::text IN ('en_route', 'arrived')
             ) AS is_en_route
     """
     if role is not None:
@@ -971,7 +992,7 @@ def list_routed_unscheduled(
     """
     conditions: list[str] = [
         "mr.start_date IS NULL",
-        "mr.status::text NOT IN ('closed', 'en_route')",
+        "mr.status::text NOT IN ('closed', 'en_route', 'arrived')",
     ]
     params: dict[str, Any] = {**scope_params}
     if building_id is not None:
@@ -1036,3 +1057,67 @@ def route_request(
         target_column="source_calendar", employee_id=employee_id,
         previous_value=old_source_calendar, new_value=source_calendar,
     )
+
+
+def get_request_location(conn, request_id: int) -> dict | None:
+    row = conn.execute(
+        """
+        SELECT request_id, building_id, sector_id
+        FROM maintenance_request WHERE request_id = %(rid)s
+        """,
+        {"rid": request_id},
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_technician_suggestion_candidates(
+    conn, *, building_id: int | None, sector_id: int | None,
+) -> list[dict]:
+    """Active tech/contractor in sector or A5 for this building, with history + en_route."""
+    if building_id is None and sector_id is None:
+        return []
+    rows = conn.execute(
+        """
+        SELECT
+            e.employee_id,
+            e.initials,
+            e.nom_employe AS name,
+            EXISTS (
+                SELECT 1 FROM employee_building_assignment eba
+                WHERE eba.employee_id = e.employee_id
+                  AND %(building_id)s IS NOT NULL
+                  AND eba.building_id = %(building_id)s
+            ) AS is_a5,
+            EXISTS (
+                SELECT 1 FROM maintenance_request mr_er
+                WHERE mr_er.assigned_employee_id = e.employee_id
+                  AND mr_er.status::text IN ('en_route', 'arrived')
+            ) AS is_en_route,
+            COALESCE((
+                SELECT count(*)::int
+                FROM maintenance_request mr_h
+                WHERE mr_h.assigned_employee_id = e.employee_id
+                  AND %(building_id)s IS NOT NULL
+                  AND mr_h.building_id = %(building_id)s
+                  AND mr_h.status = 'closed'
+                  AND mr_h.start_date >= (CURRENT_DATE - INTERVAL '12 months')
+            ), 0) AS history_count
+        FROM employee e
+        JOIN employee_role er ON er.employee_id = e.employee_id
+        WHERE e.is_active = true
+          AND er.role IN ('technician', 'contractor')
+          AND (
+            (%(sector_id)s IS NOT NULL AND e.sector_id = %(sector_id)s)
+            OR (
+              %(building_id)s IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM employee_building_assignment eba
+                WHERE eba.employee_id = e.employee_id
+                  AND eba.building_id = %(building_id)s
+              )
+            )
+          )
+        """,
+        {"building_id": building_id, "sector_id": sector_id},
+    ).fetchall()
+    return [dict(r) for r in rows]

@@ -44,6 +44,7 @@ export const DEMO_ROW: ListRow = {
   unit_label: '204',
   unique_unit_number: '1580-204 Perigord',
   en_route_at: null,
+  arrived_at: null,
   closeout_outcome: null,
   closeout_urgent: false,
   duplicate_of_request_id: null,

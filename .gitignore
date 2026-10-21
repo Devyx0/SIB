@@ -16,6 +16,7 @@ wheels/
 !.env.example
 credentials.json
 token.json
+token_sheets.json
 
 # ── Client source data (xlsx, csv, docx originals) ───────
 work/

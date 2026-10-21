@@ -55,9 +55,9 @@ SortKey = Literal[
 ]
 
 StatusValue = Literal[
-    "intake_received", "triage_pending", "triaged",
-    "triage_clarify", "triage_proposal", "triage_failed",
-    "en_route", "closed",
+    "intake_received", "triage_pending", "triaged", "scheduled",
+    "awaiting_redispatch", "triage_clarify", "triage_proposal", "triage_failed",
+    "en_route", "arrived", "closed",
 ]
 
 
@@ -90,6 +90,12 @@ class EnRouteBody(BaseModel):
     lng: Optional[float] = None
 
 
+class ArrivedBody(BaseModel):
+    current_status: str
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
 class CloseoutBody(BaseModel):
     outcome: Literal["complete", "partial_reschedule", "partial_expertise", "failed"]
     comment: str = Field(..., min_length=10)
@@ -97,7 +103,7 @@ class CloseoutBody(BaseModel):
     attachment_ids: list[int] = Field(..., min_length=1)
     next_date: Optional[date] = None   # outcome 2 only
     urgent: bool = False               # outcomes 3/4 only
-    current_status: str                # stale check — must match, and be en_route
+    current_status: str                # stale check — must match, and be arrived
     lat: Optional[float] = None
     lng: Optional[float] = None
 
@@ -107,7 +113,10 @@ class VisitEntry(BaseModel):
     employee_id: int
     employee_name: Optional[str] = None
     en_route_at: datetime
+    arrived_at: Optional[datetime] = None
     closeout_at: Optional[datetime] = None
+    travel_minutes: Optional[int] = None
+    on_site_minutes: Optional[int] = None
     duration_minutes: Optional[int] = None
     outcome: Optional[str] = None
     closeout_comment: Optional[str] = None
@@ -242,6 +251,7 @@ class ListRow(BaseModel):
     unit_label: Optional[str] = None
     unique_unit_number: Optional[str] = None
     en_route_at: Optional[datetime] = None
+    arrived_at: Optional[datetime] = None
     closeout_outcome: Optional[str] = None
     closeout_urgent: Optional[bool] = None
     duplicate_of_request_id: Optional[int] = None
@@ -367,3 +377,16 @@ class UnitByNumberLookup(BaseModel):
     building_adresse: Optional[str] = None
     pets_allowed: bool = False
     tenants: list[LeaseTenantOut] = Field(default_factory=list)
+
+
+class TechnicianSuggestion(BaseModel):
+    employee_id: int
+    initials: Optional[str] = None
+    name: str
+    why: str
+    is_en_route: bool = False
+
+
+class TechnicianSuggestionsResponse(BaseModel):
+    request_id: int
+    suggestions: list[TechnicianSuggestion]

@@ -55,7 +55,7 @@ def test_dashboard_200_coordinator_shape(ac, db_conn, building, monkeypatch):
     db_conn.execute(
         "INSERT INTO maintenance_request (status, building_id, sector_id, assigned_employee_id, "
         "raw_title, start_date, urgency_tier) "
-        "VALUES ('triaged', %(b)s, %(s)s, %(e)s, 'Dash today', %(d)s, 'AJD')",
+        "VALUES ('scheduled', %(b)s, %(s)s, %(e)s, 'Dash today', %(d)s, 'AJD')",
         {"b": building["building_id"], "s": building["sector_id"], "e": _TECH, "d": today},
     )
     r = ac(_user(_COORD, "coordinator")).get("/api/v1/analytics/dashboard")
@@ -63,7 +63,7 @@ def test_dashboard_200_coordinator_shape(ac, db_conn, building, monkeypatch):
     body = r.json()
     assert body["as_of_date"] == today.isoformat()
     assert "today_by_status" in body
-    assert any(x["status"] == "triaged" and x["count"] >= 1 for x in body["today_by_status"])
+    assert any(x["status"] == "scheduled" and x["count"] >= 1 for x in body["today_by_status"])
     assert body["after_hours"] is None
     assert body["satisfaction"] is None
     assert body["weather"] is None  # flag forced off

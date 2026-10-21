@@ -86,9 +86,27 @@ class Settings(BaseSettings):
     # Empty = no cross-origin (local Vite proxies same-origin, so leave blank locally).
     CORS_ORIGINS: str = ""
 
+    # Cloudflare Turnstile (public tenant intake). Empty secret → siteverify fails closed.
+    TURNSTILE_SECRET: str = ""
+    # Comma-separated hostnames allowed in siteverify (deploy-specific).
+    # Local: localhost,127.0.0.1 — prod: FE host only (never localhost in prod).
+    TURNSTILE_HOSTNAMES: str = "localhost,127.0.0.1"
+
+    # Space-separated hosts allowed to iframe the public intake page (FE sets CSP).
+    PUBLIC_INTAKE_FRAME_ANCESTORS: str = ""
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def turnstile_hostnames(self) -> set[str]:
+        return {h.strip() for h in self.TURNSTILE_HOSTNAMES.split(",") if h.strip()}
+
+    @property
+    def session_signing_key(self) -> str:
+        """HMAC/JWT key for public-intake session tokens."""
+        return self.SECRET_KEY or self.SUPABASE_JWT_SECRET
 
 
 settings = Settings()

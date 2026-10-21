@@ -4,8 +4,9 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
   // Proxy Supabase paths to whichever project VITE_SUPABASE_URL names
   // (local `supabase start` by default, or a hosted project).
-  const supabaseUrl =
-    loadEnv(mode, process.cwd(), '').VITE_SUPABASE_URL || 'http://127.0.0.1:54321';
+  const env = loadEnv(mode, process.cwd(), '');
+  const supabaseUrl = env.VITE_SUPABASE_URL || 'http://127.0.0.1:54321';
+  const frameAncestors = (env.VITE_PUBLIC_INTAKE_FRAME_ANCESTORS || '').trim();
   return {
     plugins: [react()],
     server: {
@@ -21,6 +22,16 @@ export default defineConfig(({ mode }) => {
         '/storage': { target: supabaseUrl, changeOrigin: true },
         '/rest': { target: supabaseUrl, changeOrigin: true },
         '/realtime': { target: supabaseUrl, changeOrigin: true, ws: true },
+      },
+      configureServer(server) {
+        if (!frameAncestors) return;
+        server.middlewares.use((_req, res, next) => {
+          res.setHeader(
+            'Content-Security-Policy',
+            `frame-ancestors 'self' ${frameAncestors}`,
+          );
+          next();
+        });
       },
     },
     test: {

@@ -70,8 +70,8 @@ export default function TechList({ lang, me, onSignOut, onToggleLang }: Props) {
   const all = data
     ? [...data.items, ...data.unscheduled_items].filter((r) => r.status !== 'closed')
     : [];
-  const enRoute = all.filter((r) => r.status === 'en_route');
-  const rest = all.filter((r) => r.status !== 'en_route');
+  const enRoute = all.filter((r) => r.status === 'en_route' || r.status === 'arrived');
+  const rest = all.filter((r) => r.status !== 'en_route' && r.status !== 'arrived');
   const overdue = rest.filter((r) => r.start_date != null && r.start_date < today);
   const dueToday = rest.filter((r) => r.start_date === today);
   const upcoming = rest.filter((r) => r.start_date != null && r.start_date > today);
@@ -88,9 +88,13 @@ export default function TechList({ lang, me, onSignOut, onToggleLang }: Props) {
           <section className={styles.openCall}>
             <div className={styles.openCallBanner}>
               {t(lang, 'Appel en cours — à clôturer avant le prochain', 'Open call — close it before the next one')}
-              {elapsedLabel(enRoute[0].en_route_at) && (
-                <> · {t(lang, 'En route depuis', 'En route for')} {elapsedLabel(enRoute[0].en_route_at)}</>
-              )}
+              {enRoute[0].status === 'arrived'
+                ? (elapsedLabel(enRoute[0].arrived_at) && (
+                    <> · {t(lang, 'Arrivé depuis', 'Arrived for')} {elapsedLabel(enRoute[0].arrived_at)}</>
+                  ))
+                : (elapsedLabel(enRoute[0].en_route_at) && (
+                    <> · {t(lang, 'En route depuis', 'En route for')} {elapsedLabel(enRoute[0].en_route_at)}</>
+                  ))}
             </div>
             {enRoute.map((r) => <CallRow key={r.request_id} row={r} lang={lang} />)}
           </section>

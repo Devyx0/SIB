@@ -71,13 +71,16 @@ def _en_route_call(ac, db_conn, building_id, tech_id):
     rid = db_conn.execute(
         "INSERT INTO maintenance_request "
         "(status, building_id, assigned_employee_id, raw_title) "
-        "VALUES ('triaged', %s, %s, 'Fuite survey') RETURNING request_id",
+        "VALUES ('scheduled', %s, %s, 'Fuite survey') RETURNING request_id",
         [building_id, tech_id],
     ).fetchone()["request_id"]
     tech = ac(_user(tech_id, "technician"))
     assert tech.post(f"/api/v1/requests/{rid}/en-route", json={
-        "current_status": "triaged", "current_start_date": None,
+        "current_status": "scheduled", "current_start_date": None,
         "lat": None, "lng": None,
+    }).status_code == 200
+    assert tech.post(f"/api/v1/requests/{rid}/arrived", json={
+        "current_status": "en_route", "lat": None, "lng": None,
     }).status_code == 200
     return tech, rid
 
@@ -90,7 +93,7 @@ def test_complete_creates_survey_and_alert(ac, app, db_conn):
     r = tech.post(f"/api/v1/requests/{rid}/closeout", json={
         "outcome": "complete", "comment": _COMMENT, "input_method": "typed",
         "attachment_ids": [pid], "next_date": None, "urgent": False,
-        "current_status": "en_route", "lat": None, "lng": None,
+        "current_status": "arrived", "lat": None, "lng": None,
     })
     assert r.status_code == 200, r.text
 
@@ -138,7 +141,7 @@ def test_expertise_and_followup_alerts(ac, db_conn):
     assert tech.post(f"/api/v1/requests/{rid}/closeout", json={
         "outcome": "partial_expertise", "comment": _COMMENT, "input_method": "typed",
         "attachment_ids": [pid], "next_date": None, "urgent": True,
-        "current_status": "en_route", "lat": None, "lng": None,
+        "current_status": "arrived", "lat": None, "lng": None,
     }).status_code == 200
 
     # No survey on expertise

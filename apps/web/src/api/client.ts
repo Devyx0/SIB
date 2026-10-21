@@ -159,6 +159,10 @@ export function goEnRoute(id: number, body: { current_status: string; current_st
   return apiPost(`/api/v1/requests/${id}/en-route`, body);
 }
 
+export function markArrived(id: number, body: { current_status: string; lat: number | null; lng: number | null }): Promise<RequestDetail> {
+  return apiPost(`/api/v1/requests/${id}/arrived`, body);
+}
+
 // Raw image body — the mime travels in Content-Type (no multipart).
 export async function uploadPhoto(id: number, file: File): Promise<{ attachment_id: number }> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -248,6 +252,21 @@ export function dispatchAddLog(id: number, body: { entry_text: string }): Promis
   return apiPost(`/api/v1/requests/${id}/log`, body);
 }
 
+export interface TechnicianSuggestion {
+  employee_id: number;
+  initials: string | null;
+  name: string;
+  why: string;
+  is_en_route: boolean;
+}
+
+export function fetchTechnicianSuggestions(
+  id: number,
+  lang: 'fr' | 'en' = 'fr',
+): Promise<{ request_id: number; suggestions: TechnicianSuggestion[] }> {
+  return apiFetch(`/api/v1/requests/${id}/technician-suggestions?lang=${lang}`);
+}
+
 export function triggerTriage(
   id: number,
   opts?: { lang?: 'fr' | 'en' },
@@ -304,7 +323,6 @@ export interface IntakeBody {
   symptome: string;
   composante: string;
   emplacement: string;
-  intake_urgent?: boolean;
   secondary_name?: string;
   secondary_email?: string;
   attention?: string;
@@ -318,6 +336,50 @@ export interface IntakeResponse {
   building_id: number | null;
   unit_id: number | null;
   match_status: string;
+}
+
+export interface PublicIntakeLookupBody {
+  phone?: string;
+  email?: string;
+  turnstile_token: string;
+}
+
+export interface PublicIntakeLookupResponse {
+  session_token: string;
+  caller_name: string;
+  phone: string | null;
+  email: string | null;
+  address_label: string;
+  unit_label: string | null;
+  pets_allowed: boolean;
+}
+
+export interface PublicIntakeSubmitBody {
+  session_token: string;
+  turnstile_token: string;
+  access: AccessChoice;
+  access_details?: string;
+  animals?: AnimalsChoice;
+  animal_details?: string;
+  problem: string;
+  category?: string;
+  element: string;
+  symptome: string;
+  composante: string;
+  emplacement: string;
+  secondary_name?: string;
+  secondary_email?: string;
+  attention?: string;
+  ui_lang?: 'fr' | 'en';
+  photos?: { mime: 'image/jpeg' | 'image/png' | 'image/webp'; data_base64: string }[];
+}
+
+export function publicIntakeLookup(body: PublicIntakeLookupBody): Promise<PublicIntakeLookupResponse> {
+  return apiPost('/api/v1/public/intake/lookup', body);
+}
+
+export function publicIntakeSubmit(body: PublicIntakeSubmitBody): Promise<{ request_id: number }> {
+  return apiPost('/api/v1/public/intake/submit', body);
 }
 
 export interface LeaseTenant {

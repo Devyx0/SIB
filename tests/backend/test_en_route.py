@@ -14,8 +14,9 @@ _OTHER_TECH = 14    # technician, never assigned here
 _COORD = 4
 
 # triage_pending excluded: background triage would overwrite the status → 409.
+# triaged excluded: unassigned-only; assigned calls are scheduled.
 _OPEN_STATUSES = [
-    "intake_received", "triaged",
+    "intake_received", "scheduled",
     "triage_clarify", "triage_proposal", "triage_failed",
 ]
 
@@ -46,7 +47,7 @@ def building(db_conn):
     ).fetchone()
 
 
-def _mk_request(db_conn, building_id, *, status="triaged", emp=_TECH,
+def _mk_request(db_conn, building_id, *, status="scheduled", emp=_TECH,
                 phone=None, email=None, unit_label=None, title="Test en route"):
     return db_conn.execute(
         """
@@ -62,7 +63,7 @@ def _mk_request(db_conn, building_id, *, status="triaged", emp=_TECH,
     ).fetchone()["request_id"]
 
 
-def _post(client, request_id, *, current_status="triaged", lat=None, lng=None):
+def _post(client, request_id, *, current_status="scheduled", lat=None, lng=None):
     return client.post(
         f"/api/v1/requests/{request_id}/en-route",
         json={"current_status": current_status, "current_start_date": None,
@@ -176,7 +177,7 @@ def test_en_route_writes_provenance_per_column(ac, db_conn, building):
         "AND source_type = 'app'", [str(rid)],
     ).fetchall()
     cols = {x["target_column"]: x for x in rows}
-    assert cols["status"]["previous_value"] == "triaged"
+    assert cols["status"]["previous_value"] == "scheduled"
     assert cols["status"]["ingested_value"] == "en_route"
     assert cols["en_route_at"]["previous_value"] is None
     assert cols["en_route_at"]["ingested_value"] is not None
@@ -208,7 +209,7 @@ def test_en_route_triage_pending_is_409(ac, db_conn, building):
 
 
 def test_en_route_stale_status_is_409(ac, db_conn, building):
-    rid = _mk_request(db_conn, building["building_id"], status="triaged")
+    rid = _mk_request(db_conn, building["building_id"], status="scheduled")
     r = _post(ac(_user(_TECH, "technician")), rid, current_status="intake_received")
     assert r.status_code == 409
     assert r.json()["error"]["code"] == "STALE_DATA"

@@ -55,7 +55,7 @@ def building(db_conn):
     ).fetchone()
 
 
-def _mk_request(db_conn, building_id, *, status="triaged", emp=_TECH):
+def _mk_request(db_conn, building_id, *, status="scheduled", emp=_TECH):
     return db_conn.execute(
         "INSERT INTO maintenance_request (status, building_id, assigned_employee_id, raw_title) "
         "VALUES (%(s)s, %(b)s, %(e)s, 'Appel closeout') RETURNING request_id",
@@ -66,7 +66,16 @@ def _mk_request(db_conn, building_id, *, status="triaged", emp=_TECH):
 def _en_route(client, rid):
     r = client.post(
         f"/api/v1/requests/{rid}/en-route",
-        json={"current_status": "triaged", "current_start_date": None, "lat": None, "lng": None},
+        json={"current_status": "scheduled", "current_start_date": None, "lat": None, "lng": None},
+    )
+    assert r.status_code == 200, r.text
+    return r
+
+
+def _arrive(client, rid):
+    r = client.post(
+        f"/api/v1/requests/{rid}/arrived",
+        json={"current_status": "en_route", "lat": None, "lng": None},
     )
     assert r.status_code == 200, r.text
     return r
@@ -80,7 +89,7 @@ def _upload(client, rid, *, mime="image/jpeg", content=b"x" * 128):
 
 
 def _closeout(client, rid, attachment_ids, *, outcome="complete", comment=_COMMENT,
-              next_date=None, urgent=False, current_status="en_route"):
+              next_date=None, urgent=False, current_status="arrived"):
     return client.post(
         f"/api/v1/requests/{rid}/closeout",
         json={"outcome": outcome, "comment": comment, "input_method": "typed",
@@ -93,10 +102,11 @@ def _closeout(client, rid, attachment_ids, *, outcome="complete", comment=_COMME
 
 @pytest.fixture
 def open_call(ac, db_conn, building):
-    """Request en route by tech 24 with one uploaded photo. Returns (client, rid, [photo_id])."""
+    """Request arrived on site by tech 24 with one uploaded photo."""
     c = ac(_user(_TECH, "technician"))
     rid = _mk_request(db_conn, building["building_id"])
     _en_route(c, rid)
+    _arrive(c, rid)
     pid = _upload(c, rid).json()["attachment_id"]
     return c, rid, [pid]
 
@@ -168,6 +178,9 @@ def test_outcome_complete(open_call, db_conn):
     assert v["closeout_comment"] == _COMMENT
     assert v["duration_minutes"] is not None
     assert v["duration_minutes"] >= 0
+    assert v["arrived_at"] is not None
+    assert v["travel_minutes"] is not None and v["travel_minutes"] >= 0
+    assert v["on_site_minutes"] is not None and v["on_site_minutes"] >= 0
     # photo consumed
     used = db_conn.execute(
         "SELECT visit_id FROM maintenance_attachment WHERE attachment_id = %s", [pids[0]]
@@ -195,7 +208,7 @@ def test_outcome_partial_reschedule(open_call, db_conn):
         "SELECT status::text AS status, start_date, assigned_employee_id, "
         "closeout_outcome::text AS closeout_outcome FROM maintenance_request "
         "WHERE request_id = %s", [rid]).fetchone()
-    assert row["status"] == "triaged"
+    assert row["status"] == "scheduled"
     assert row["start_date"] == new_date       # he picks the date himself
     assert row["assigned_employee_id"] == _TECH  # the call stays his
     assert row["closeout_outcome"] == "partial_reschedule"
@@ -210,7 +223,7 @@ def test_outcomes_expertise_return_to_queue(open_call, db_conn, outcome):
         "SELECT status::text AS status, assigned_employee_id, closeout_urgent, "
         "closeout_outcome::text AS closeout_outcome FROM maintenance_request "
         "WHERE request_id = %s", [rid]).fetchone()
-    assert row["status"] == "triaged"
+    assert row["status"] == "awaiting_redispatch"
     assert row["assigned_employee_id"] is None   # back to the coordinator queue
     assert row["closeout_urgent"] is True
     assert row["closeout_outcome"] == outcome
@@ -295,9 +308,9 @@ def test_closeout_short_comment_422(open_call):
 # ── State conflicts ────────────────────────────────────────────────────────────
 
 def test_closeout_no_open_visit_409(ac, db_conn, building):
-    # en_route status but no visit row (e.g. visit closed by an admin action).
+    # arrived status but no visit row (e.g. visit closed by an admin action).
     c = ac(_user(_TECH, "technician"))
-    rid = _mk_request(db_conn, building["building_id"], status="en_route")
+    rid = _mk_request(db_conn, building["building_id"], status="arrived")
     pid = _upload(c, rid).json()["attachment_id"]
     r = _closeout(c, rid, [pid])
     assert r.status_code == 409
@@ -353,10 +366,10 @@ def test_list_redispatch_membership(ac, db_conn, building):
     b = building["building_id"]
     returned = db_conn.execute(
         "INSERT INTO maintenance_request (status, building_id, closeout_outcome, closeout_urgent) "
-        "VALUES ('triaged', %s, 'partial_expertise', true) RETURNING request_id", [b]).fetchone()["request_id"]
+        "VALUES ('awaiting_redispatch', %s, 'partial_expertise', true) RETURNING request_id", [b]).fetchone()["request_id"]
     returned_failed = db_conn.execute(
         "INSERT INTO maintenance_request (status, building_id, closeout_outcome) "
-        "VALUES ('triaged', %s, 'failed') RETURNING request_id", [b]).fetchone()["request_id"]
+        "VALUES ('awaiting_redispatch', %s, 'failed') RETURNING request_id", [b]).fetchone()["request_id"]
     still_assigned = db_conn.execute(
         "INSERT INTO maintenance_request (status, building_id, assigned_employee_id, closeout_outcome) "
         "VALUES ('triaged', %s, %s, 'partial_expertise') RETURNING request_id", [b, _TECH]).fetchone()["request_id"]

@@ -8,7 +8,7 @@ from backend.triage.output_contract import validate
 _BASE = {
     "verdict": "single", "duplicate_of_request_id": None, "addition_to_request_id": None,
     "title": "Robinet qui fuit", "problems": ["Fuite sous le lavabo"],
-    "entry_permission": None, "animals": None, "urgency_tier": None,
+    "entry_permission": None, "urgency_tier": None,
     "complexity_tier": "C1", "congestion_level": "N2",
     "time_estimate_bucket": "UNDER_30_MIN", "delegable_status": "YES",
     "report_status": "CAN_WAIT", "routing_rule": "A1", "subcontractor_name": None,

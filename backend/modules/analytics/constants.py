@@ -20,11 +20,8 @@ BUCKET_MIDPOINT_MINUTES: dict[str, int] = {
 # Same predicates as requests/repository list_requests (keep in sync).
 A_ROUTER_SQL = (
     "mr.source_calendar IS NULL"
-    " AND mr.status::text NOT IN ('closed', 'en_route')"
+    " AND mr.status::text NOT IN ('closed', 'en_route', 'arrived')"
     " AND (mr.submission_date >= NOW() - INTERVAL '90 days' OR mr.submission_date IS NULL)"
 )
 
-A_REDISPATCHER_SQL = (
-    "mr.status::text = 'triaged' AND mr.assigned_employee_id IS NULL"
-    " AND mr.closeout_outcome::text IN ('partial_expertise', 'failed')"
-)
+A_REDISPATCHER_SQL = "mr.status::text = 'awaiting_redispatch'"

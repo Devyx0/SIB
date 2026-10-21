@@ -1,7 +1,6 @@
 import { useRef, KeyboardEvent } from 'react';
 import type { ListRow } from '../../api/schema.d.ts';
-import { statusLabel, t, timeEstimateLabel } from '../../i18n';
-import type { Lang } from '../../i18n';
+import { statusLabel, t, timeEstimateLabel, type Lang } from '../../i18n';
 import styles from './RequestTable.module.css';
 
 interface Props {
@@ -56,7 +55,7 @@ function UrgencyTag({ tier }: { tier: string | null }) {
 }
 
 function StatusTag({ status, lang = 'fr' }: { status: string; lang?: Lang }) {
-  // en_route is highlighted — the calendar's "X" prefix equivalent.
+  // en_route highlighted (calendar "X"); awaiting_redispatch = expertise queue.
   return <span className={styles.tagStatus} data-status={status}>{statusLabel(lang, status)}</span>;
 }
 

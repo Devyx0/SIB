@@ -35,6 +35,7 @@ function makeRow(overrides: Partial<ListRow> = {}): ListRow {
     unit_label: null,
     unique_unit_number: null,
     en_route_at: null,
+    arrived_at: null,
     closeout_outcome: null,
     closeout_urgent: null,
     duplicate_of_request_id: null,
@@ -154,5 +155,20 @@ describe('closeout urgent badge (stop 3)', () => {
   it('no badge when closeout_urgent is null', () => {
     render(<RequestTable {...defaultProps} rows={[makeRow()]} total={1} />);
     expect(screen.queryByTestId('closeout-urgent-badge')).toBeNull();
+  });
+});
+
+describe('awaiting_redispatch status pill', () => {
+  it('labels awaiting_redispatch as À redispatcher', () => {
+    render(
+      <RequestTable {...defaultProps} rows={[makeRow({
+        status: 'awaiting_redispatch',
+        assigned_employee_id: null,
+        assigned_employee_name: null,
+        closeout_outcome: 'partial_expertise',
+      })]} total={1} />,
+    );
+    const tag = screen.getByText('À redispatcher');
+    expect(tag.getAttribute('data-status')).toBe('awaiting_redispatch');
   });
 });

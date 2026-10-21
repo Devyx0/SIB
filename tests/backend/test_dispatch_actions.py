@@ -85,6 +85,7 @@ def test_assign_success(ac, test_request):
     })
     assert r.status_code == 200
     assert r.json()["assigned_employee_id"] == _TECH
+    assert r.json()["status"] == "scheduled"
 
 
 def test_assign_without_justification_422_no_change(ac, db_conn, test_request):
@@ -129,21 +130,26 @@ def test_assign_stores_justification(ac, db_conn, test_request):
 
 def test_assign_stores_provenance(ac, db_conn, test_request):
     c = ac(_user(_COORD, "coordinator"))
-    c.post(f"/api/v1/requests/{test_request}/assign", json={
+    r = c.post(f"/api/v1/requests/{test_request}/assign", json={
         "employee_id": _TECH,
         "current_assigned_employee_id": None,
         "current_start_date": _DATE_A,
         "current_urgency_tier": None,
         "justification": {"text": "Nearest available technician now", "input_method": "typed"},
     })
-    row = db_conn.execute(
-        "SELECT source_type, employee_id, target_column FROM data_provenance WHERE target_pk = %s",
-        [str(test_request)],
-    ).fetchone()
-    assert row is not None
-    assert row["source_type"] == "app"
-    assert row["employee_id"] == _COORD
-    assert row["target_column"] == "assigned_employee_id"
+    assert r.status_code == 200
+    assert r.json()["status"] == "scheduled"
+    cols = {
+        row["target_column"]: row
+        for row in db_conn.execute(
+            "SELECT source_type, employee_id, target_column FROM data_provenance WHERE target_pk = %s",
+            [str(test_request)],
+        ).fetchall()
+    }
+    assert set(cols) >= {"assigned_employee_id", "status"}
+    assert cols["assigned_employee_id"]["source_type"] == "app"
+    assert cols["assigned_employee_id"]["employee_id"] == _COORD
+    assert cols["status"]["employee_id"] == _COORD
 
 
 def test_assign_stale_409(ac, test_request):

@@ -53,6 +53,7 @@ function row(id: number, status: string, extra: Record<string, unknown> = {}) {
     building_address: '123 rue Test',
     unit_label: null,
     en_route_at: null,
+    arrived_at: null,
     ...extra,
   };
 }

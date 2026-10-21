@@ -86,13 +86,16 @@ def test_coordinator_can_create(ac, db_conn):
     assert body["match_status"] == "exact"
     assert body["building_id"] == loc["building_id"]
     assert body["unit_id"] == loc["unit_id"]
+    assert body["asnu"] and body["asnu"].startswith("ASNUF")
+    assert body["asnu"][5:].isdigit()
     row = db_conn.execute(
-        "SELECT sector_id, status, source_calendar FROM maintenance_request WHERE request_id = %s",
+        "SELECT sector_id, status, source_calendar, asnu FROM maintenance_request WHERE request_id = %s",
         [body["request_id"]],
     ).fetchone()
     assert row["sector_id"] == loc["sector_id"]
     # 1580 Perigord is Sainte-Foy → Main calendar (not Majordome / Lévis)
     assert row["source_calendar"] == "main"
+    assert row["asnu"] == body["asnu"]
 
 
 def test_director_can_create(ac, db_conn):
@@ -195,7 +198,7 @@ def test_manual_create_uses_today_as_start_date(ac, db_conn, monkeypatch):
     assert row["source_calendar"] in ("main", "st_maj")
 
 
-def test_animals_bundled_in_problems(ac, db_conn):
+def test_animals_persisted_not_in_problems(ac, db_conn):
     loc = _perigord(db_conn)
     _ensure_coord_sector(db_conn, loc["sector_id"])
     body = _valid_body(db_conn, animals="oui", animal_details="Un chien de berger")
@@ -206,7 +209,8 @@ def test_animals_bundled_in_problems(ac, db_conn):
         "SELECT problems, animals FROM maintenance_request WHERE request_id = %s", [rid]
     ).fetchone()
     assert row["animals"] == "Oui"
-    assert "Un chien de berger" in row["problems"]
+    assert "chien" not in (row["problems"] or "").lower()
+    assert "Animaux" not in (row["problems"] or "")
 
 
 def test_missing_phone_422(ac, db_conn):
@@ -244,16 +248,16 @@ def test_category_and_secondary_persisted(ac, db_conn):
     assert "418-555-0002" in row["problems"]
 
 
-def test_taxonomy_axes_and_intake_urgent_persisted(ac, db_conn):
+def test_taxonomy_axes_persisted(ac, db_conn):
     loc = _perigord(db_conn)
     _ensure_coord_sector(db_conn, loc["sector_id"])
-    body = _valid_body(db_conn, intake_urgent=True)
+    body = _valid_body(db_conn)
     r = ac(_user(_COORD, "coordinator")).post("/api/v1/intake", json=body)
     assert r.status_code == 201
     rid = r.json()["request_id"]
     row = db_conn.execute(
         """
-        SELECT element, symptome, composante, emplacement, intake_urgent
+        SELECT element, symptome, composante, emplacement
         FROM maintenance_request WHERE request_id = %s
         """,
         [rid],
@@ -262,7 +266,6 @@ def test_taxonomy_axes_and_intake_urgent_persisted(ac, db_conn):
     assert row["symptome"] == "Fuite"
     assert row["composante"] == "Robinet"
     assert row["emplacement"] == "Cuisine"
-    assert row["intake_urgent"] is True
 
 
 def test_missing_taxonomy_axis_422(ac, db_conn):

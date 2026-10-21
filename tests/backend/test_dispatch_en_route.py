@@ -53,12 +53,12 @@ def en_route_call(ac, db_conn, building):
     """Request taken en route by tech 24 — open visit. Returns (coord_client, rid)."""
     rid = db_conn.execute(
         "INSERT INTO maintenance_request (status, building_id, assigned_employee_id, raw_title) "
-        "VALUES ('triaged', %s, %s, 'Appel en cours') RETURNING request_id",
+        "VALUES ('scheduled', %s, %s, 'Appel en cours') RETURNING request_id",
         [building["building_id"], _TECH],
     ).fetchone()["request_id"]
     tech = ac(_user(_TECH, "technician"))
     r = tech.post(f"/api/v1/requests/{rid}/en-route",
-                  json={"current_status": "triaged", "current_start_date": None,
+                  json={"current_status": "scheduled", "current_start_date": None,
                         "lat": None, "lng": None})
     assert r.status_code == 200
     return ac(_user(_COORD, "coordinator")), rid
@@ -215,7 +215,7 @@ def test_assign_other_call_to_en_route_tech_is_409(ac, db_conn):
 
     busy_rid = db_conn.execute(
         "INSERT INTO maintenance_request (status, building_id, assigned_employee_id, raw_title) "
-        "VALUES ('triaged', %s, %s, 'Appel busy') RETURNING request_id",
+        "VALUES ('scheduled', %s, %s, 'Appel busy') RETURNING request_id",
         [building_id, tech_id],
     ).fetchone()["request_id"]
     other_rid = db_conn.execute(
@@ -226,7 +226,7 @@ def test_assign_other_call_to_en_route_tech_is_409(ac, db_conn):
 
     tech = ac(_user(tech_id, "technician"))
     assert tech.post(f"/api/v1/requests/{busy_rid}/en-route", json={
-        "current_status": "triaged", "current_start_date": None,
+        "current_status": "scheduled", "current_start_date": None,
         "lat": None, "lng": None,
     }).status_code == 200
 
@@ -261,14 +261,17 @@ def test_assign_other_call_to_en_route_tech_is_409(ac, db_conn):
 def test_reassign_works_after_closeout(en_route_call, ac, db_conn):
     coord, rid = en_route_call
     tech = ac(_user(_TECH, "technician"))
+    assert tech.post(f"/api/v1/requests/{rid}/arrived", json={
+        "current_status": "en_route", "lat": None, "lng": None,
+    }).status_code == 200
     pid = tech.post(f"/api/v1/requests/{rid}/photos", content=b"x" * 64,
                     headers={"Content-Type": "image/jpeg"}).json()["attachment_id"]
-    # Outcome 2 keeps the call his and returns status to triaged.
+    # Outcome 2 keeps the call his → scheduled.
     r = tech.post(f"/api/v1/requests/{rid}/closeout", json={
         "outcome": "partial_reschedule", "comment": "Je reviens demain finir le travail.",
         "input_method": "typed", "attachment_ids": [pid],
         "next_date": str(today_local()), "urgent": False,
-        "current_status": "en_route", "lat": None, "lng": None,
+        "current_status": "arrived", "lat": None, "lng": None,
     })
     assert r.status_code == 200, r.text
 

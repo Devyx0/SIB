@@ -124,8 +124,11 @@ export function VisitsSection({ requestId, visits, lang }:
           <span className={styles.followupMeta}>
             {v.employee_name ?? `#${v.employee_id}`}
             {' · '}{t(lang, 'En route', 'En route')} {formatTime(v.en_route_at, lang)}
+            {v.arrived_at && <>{' · '}{t(lang, 'Arrivé', 'Arrived')} {formatTime(v.arrived_at, lang)}</>}
             {v.closeout_at && <>{' · '}{t(lang, 'Clôturé', 'Closed')} {formatTime(v.closeout_at, lang)}</>}
-            {durationLabel(v.en_route_at, v.closeout_at, v.duration_minutes) && (
+            {v.travel_minutes != null && <>{' · '}{t(lang, 'Trajet', 'Travel')} {v.travel_minutes} min</>}
+            {v.on_site_minutes != null && <>{' · '}{t(lang, 'Sur place', 'On site')} {v.on_site_minutes} min</>}
+            {v.travel_minutes == null && durationLabel(v.en_route_at, v.closeout_at, v.duration_minutes) && (
               <>{' · '}{durationLabel(v.en_route_at, v.closeout_at, v.duration_minutes)}</>
             )}
           </span>
