@@ -1,11 +1,14 @@
 """GET /api/v1/requests/{id}/technician-suggestions — DB guardrails."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.core.db import get_db_conn
 from backend.core.security import CurrentUser, get_current_user
+from backend.modules.tasks.repository import insert_task
 
 _COORD = 4
 
@@ -142,13 +145,20 @@ def test_suggestions_en_route_flagged_not_excluded(ac, db_conn, sector_building)
             """,
             [bid, sid, eid],
         )
-    db_conn.execute(
+    # En route = an open visit on one of his tasks.
+    busy_rid = db_conn.execute(
         """
-        INSERT INTO maintenance_request
-          (status, building_id, sector_id, assigned_employee_id, raw_title)
-        VALUES ('en_route', %s, %s, %s, 'Busy elsewhere')
+        INSERT INTO maintenance_request (status, building_id, sector_id, raw_title)
+        VALUES ('open', %s, %s, 'Busy elsewhere') RETURNING request_id
         """,
-        [bid, sid, busy],
+        [bid, sid],
+    ).fetchone()["request_id"]
+    busy_tid = insert_task(db_conn, request_id=busy_rid, description="Busy", status="en_route",
+                           assigned_employee_id=busy,
+                           accepted_at=datetime.now(timezone.utc))["task_id"]
+    db_conn.execute(
+        "INSERT INTO request_visit (request_id, task_id, employee_id) VALUES (%s, %s, %s)",
+        [busy_rid, busy_tid, busy],
     )
     rid = db_conn.execute(
         """

@@ -13,14 +13,15 @@ from backend.core.security import CurrentUser
 
 from . import service
 from .schemas import (
-    AssignTaskBody, CreateTaskBody, ScheduleTaskBody, TaskListResponse, TaskOut,
-    TaskStatusValue,
+    ArrivedBody, AssignTaskBody, CloseoutBody, CloseoutOut, CreateTaskBody, EnRouteBody,
+    ScheduleTaskBody, TaskListResponse, TaskOut, TaskStatusValue,
 )
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 _ALL_ROLES = require_role("technician", "coordinator", "director", "contractor")
 _COORD_DIR = require_role("coordinator", "director")
+_TECH_CONTRACTOR = require_role("technician", "contractor")
 
 
 class TaskListParams:
@@ -71,3 +72,18 @@ def task_assign(task_id: int, body: AssignTaskBody, user: CurrentUser = _COORD_D
 @router.post("/{task_id}/schedule", operation_id="task_schedule", response_model=TaskOut)
 def task_schedule(task_id: int, body: ScheduleTaskBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> TaskOut:
     return service.schedule_task(conn, task_id, body, user)
+
+
+@router.post("/{task_id}/en-route", operation_id="task_en_route", response_model=TaskOut)
+def task_en_route(task_id: int, body: EnRouteBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> TaskOut:
+    return service.en_route(conn, task_id, body, user)
+
+
+@router.post("/{task_id}/arrived", operation_id="task_arrived", response_model=TaskOut)
+def task_arrived(task_id: int, body: ArrivedBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> TaskOut:
+    return service.arrived(conn, task_id, body, user)
+
+
+@router.post("/{task_id}/closeout", operation_id="task_closeout", response_model=CloseoutOut)
+def task_closeout(task_id: int, body: CloseoutBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> CloseoutOut:
+    return service.closeout(conn, task_id, body, user)

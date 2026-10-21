@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import os
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -19,6 +20,7 @@ from backend.core.config import settings
 from backend.core.db import get_db_conn
 from backend.core.security import CurrentUser, get_current_user
 from backend.modules.requests import storage
+from backend.modules.tasks.repository import insert_task
 
 _TECH = 24
 
@@ -47,11 +49,15 @@ def building(db_conn):
 
 @pytest.fixture
 def rid(db_conn, building):
-    return db_conn.execute(
-        "INSERT INTO maintenance_request (status, building_id, assigned_employee_id, raw_title) "
-        "VALUES ('triaged', %(b)s, %(e)s, '[TEST] storage http') RETURNING request_id",
-        {"b": building["building_id"], "e": _TECH},
+    rid = db_conn.execute(
+        "INSERT INTO maintenance_request (status, building_id, raw_title) "
+        "VALUES ('open', %(b)s, '[TEST] storage http') RETURNING request_id",
+        {"b": building["building_id"]},
     ).fetchone()["request_id"]
+    # Closeout photos are for the call's task assignees.
+    insert_task(db_conn, request_id=rid, description="Photos", status="queued",
+                assigned_employee_id=_TECH, accepted_at=datetime.now(timezone.utc))
+    return rid
 
 
 @pytest.fixture

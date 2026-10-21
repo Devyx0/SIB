@@ -10,6 +10,7 @@ from backend.core.db import get_db_conn
 from backend.core.security import CurrentUser, get_current_user
 from backend.core.utils import today_local
 from backend.modules.analytics.constants import UNTRIAGED_STATUSES
+from backend.modules.tasks.repository import insert_task
 
 _TECH = 24
 _COORD = 4
@@ -19,6 +20,13 @@ _CONTRACTOR = 20
 
 def _user(employee_id: int, *roles: str) -> CurrentUser:
     return CurrentUser(employee_id=employee_id, roles=frozenset(roles))
+
+
+def _task_for(db_conn, request_id: int) -> int:
+    """Visits hang off a task (request_visit.task_id is required on new rows)."""
+    return insert_task(db_conn, request_id=request_id, description="Visite",
+                       status="done", assigned_employee_id=_TECH,
+                       source="dispatcher", accepted_at=datetime.now(timezone.utc))["task_id"]
 
 
 @pytest.fixture
@@ -141,11 +149,11 @@ def test_load_today_en_route_and_minutes_scoped_to_start_date(ac, db_conn, build
     ).fetchone()["request_id"]
     now = datetime.now(timezone.utc)
     db_conn.execute(
-        "INSERT INTO request_visit (request_id, employee_id, en_route_at, closeout_at, "
+        "INSERT INTO request_visit (request_id, task_id, employee_id, en_route_at, closeout_at, "
         "duration_minutes, outcome) "
-        "VALUES (%(r)s, %(e)s, %(era)s, %(ca)s, 45, 'complete')",
+        "VALUES (%(r)s, %(t)s, %(e)s, %(era)s, %(ca)s, 45, 'complete')",
         {
-            "r": rid, "e": _TECH,
+            "r": rid, "t": _task_for(db_conn, rid), "e": _TECH,
             "era": now - timedelta(hours=2),
             "ca": now - timedelta(hours=1, minutes=15),
         },
@@ -158,9 +166,9 @@ def test_load_today_en_route_and_minutes_scoped_to_start_date(ac, db_conn, build
         {"b": building["building_id"], "s": building["sector_id"], "e": _TECH, "d": today},
     ).fetchone()["request_id"]
     db_conn.execute(
-        "INSERT INTO request_visit (request_id, employee_id, en_route_at) "
-        "VALUES (%(r)s, %(e)s, %(era)s)",
-        {"r": open_rid, "e": _TECH, "era": now - timedelta(minutes=12)},
+        "INSERT INTO request_visit (request_id, task_id, employee_id, en_route_at) "
+        "VALUES (%(r)s, %(t)s, %(e)s, %(era)s)",
+        {"r": open_rid, "t": _task_for(db_conn, open_rid), "e": _TECH, "era": now - timedelta(minutes=12)},
     )
 
     r = ac(_user(_COORD, "coordinator")).get("/api/v1/analytics/dashboard")

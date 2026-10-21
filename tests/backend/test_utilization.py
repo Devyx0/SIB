@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from backend.core.db import get_db_conn
 from backend.core.security import CurrentUser, get_current_user
 from backend.core.utils import today_local
+from backend.modules.tasks.repository import insert_task
 
 _TECH = 24
 _COORD = 4
@@ -17,6 +18,13 @@ _CONTRACTOR = 20
 
 def _user(employee_id: int, *roles: str) -> CurrentUser:
     return CurrentUser(employee_id=employee_id, roles=frozenset(roles))
+
+
+def _task_for(db_conn, request_id: int) -> int:
+    """Visits hang off a task (request_visit.task_id is required on new rows)."""
+    return insert_task(db_conn, request_id=request_id, description="Visite",
+                       status="done", assigned_employee_id=_TECH,
+                       source="dispatcher", accepted_at=datetime.now(timezone.utc))["task_id"]
 
 
 @pytest.fixture
@@ -128,9 +136,9 @@ def test_visit_minutes_and_outcome_mix(ac, db_conn, building):
     en = datetime.now(timezone.utc) - timedelta(hours=2)
     clo = datetime.now(timezone.utc) - timedelta(hours=1)
     db_conn.execute(
-        "INSERT INTO request_visit (request_id, employee_id, en_route_at, closeout_at, outcome) "
-        "VALUES (%(r)s, %(e)s, %(era)s, %(ca)s, 'complete')",
-        {"r": rid, "e": _TECH, "era": en, "ca": clo},
+        "INSERT INTO request_visit (request_id, task_id, employee_id, en_route_at, closeout_at, outcome) "
+        "VALUES (%(r)s, %(t)s, %(e)s, %(era)s, %(ca)s, 'complete')",
+        {"r": rid, "t": _task_for(db_conn, rid), "e": _TECH, "era": en, "ca": clo},
     )
     r = ac(_user(_COORD, "coordinator")).get(f"/api/v1/analytics/utilization?{_range_q()}")
     row = next(x for x in r.json()["rows"] if x["employee_id"] == _TECH)

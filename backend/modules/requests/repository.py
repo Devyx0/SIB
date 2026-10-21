@@ -351,12 +351,11 @@ def is_valid_assignee(conn, employee_id: int) -> bool:
 
 
 def employee_has_open_en_route(conn, employee_id: int) -> bool:
-    """True if tech has an open visit (en_route or arrived)."""
+    """True if the employee has an open visit (en route or on site, not closed out)."""
     row = conn.execute(
         """
-        SELECT 1 FROM maintenance_request
-        WHERE assigned_employee_id = %(emp_id)s
-          AND status::text IN ('en_route', 'arrived')
+        SELECT 1 FROM request_visit
+        WHERE employee_id = %(emp_id)s AND closeout_at IS NULL
         LIMIT 1
         """,
         {"emp_id": employee_id},
@@ -413,7 +412,7 @@ def get_open_visit(conn, employee_id: int) -> dict | None:
     """The employee's open visit (closeout_at IS NULL) with its call title, if any."""
     row = conn.execute(
         """
-        SELECT v.visit_id, v.request_id, v.en_route_at, mr.raw_title
+        SELECT v.visit_id, v.request_id, v.task_id, v.en_route_at, mr.raw_title
         FROM request_visit v
         JOIN maintenance_request mr ON mr.request_id = v.request_id
         WHERE v.employee_id = %(employee_id)s AND v.closeout_at IS NULL
@@ -424,16 +423,17 @@ def get_open_visit(conn, employee_id: int) -> dict | None:
 
 
 def insert_visit(
-    conn, *, request_id: int, employee_id: int,
+    conn, *, request_id: int, task_id: int, employee_id: int,
     lat: float | None, lng: float | None,
 ) -> int:
     row = conn.execute(
         """
-        INSERT INTO request_visit (request_id, employee_id, en_route_lat, en_route_lng)
-        VALUES (%(request_id)s, %(employee_id)s, %(lat)s, %(lng)s)
+        INSERT INTO request_visit (request_id, task_id, employee_id, en_route_lat, en_route_lng)
+        VALUES (%(request_id)s, %(task_id)s, %(employee_id)s, %(lat)s, %(lng)s)
         RETURNING visit_id
         """,
-        {"request_id": request_id, "employee_id": employee_id, "lat": lat, "lng": lng},
+        {"request_id": request_id, "task_id": task_id, "employee_id": employee_id,
+         "lat": lat, "lng": lng},
     ).fetchone()
     return row["visit_id"]
 
@@ -486,10 +486,8 @@ def insert_photo(
 def get_photo(conn, request_id: int, attachment_id: int) -> dict | None:
     row = conn.execute(
         """
-        SELECT a.attachment_id, a.storage_path, a.uploaded_by_employee_id,
-               a.visit_id, mr.assigned_employee_id
+        SELECT a.attachment_id, a.storage_path, a.uploaded_by_employee_id, a.visit_id
         FROM maintenance_attachment a
-        JOIN maintenance_request mr ON mr.request_id = a.request_id
         WHERE a.attachment_id = %(aid)s AND a.request_id = %(rid)s
         """,
         {"aid": attachment_id, "rid": request_id},
@@ -860,9 +858,8 @@ def list_buildings(conn, sector_id: int | None) -> list[dict]:
 def list_employees(conn, role: str | None) -> list[dict]:
     en_route_flag = """
             EXISTS (
-                SELECT 1 FROM maintenance_request mr
-                WHERE mr.assigned_employee_id = e.employee_id
-                  AND mr.status::text IN ('en_route', 'arrived')
+                SELECT 1 FROM request_visit v
+                WHERE v.employee_id = e.employee_id AND v.closeout_at IS NULL
             ) AS is_en_route
     """
     if role is not None:
@@ -1015,9 +1012,8 @@ def list_technician_suggestion_candidates(
                   AND eba.building_id = %(building_id)s
             ) AS is_a5,
             EXISTS (
-                SELECT 1 FROM maintenance_request mr_er
-                WHERE mr_er.assigned_employee_id = e.employee_id
-                  AND mr_er.status::text IN ('en_route', 'arrived')
+                SELECT 1 FROM request_visit v_er
+                WHERE v_er.employee_id = e.employee_id AND v_er.closeout_at IS NULL
             ) AS is_en_route,
             COALESCE((
                 SELECT count(*)::int

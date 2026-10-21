@@ -140,6 +140,20 @@ def lock_accepted_task(conn, task_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+def is_assignee_on_request(conn, request_id: int, employee_id: int) -> bool:
+    """True if the employee is assigned to any accepted task of the call."""
+    row = conn.execute(
+        """
+        SELECT 1 FROM dispatch_task
+        WHERE request_id = %(request_id)s AND assigned_employee_id = %(emp)s
+          AND accepted_at IS NOT NULL
+        LIMIT 1
+        """,
+        {"request_id": request_id, "emp": employee_id},
+    ).fetchone()
+    return row is not None
+
+
 def update_task_fields(conn, task_id: int, **fields: Any) -> None:
     """Set assignee and/or due_at (explicit None clears). Status is set separately."""
     unknown = set(fields) - _UPDATABLE_FIELDS

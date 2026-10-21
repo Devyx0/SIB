@@ -79,32 +79,6 @@ class RescheduleBody(BaseModel):
     justification: JustificationBody
 
 
-class EnRouteBody(BaseModel):
-    current_status: str
-    current_start_date: Optional[date] = None
-    # Location point only if the browser granted it — null otherwise.
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-
-
-class ArrivedBody(BaseModel):
-    current_status: str
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-
-
-class CloseoutBody(BaseModel):
-    outcome: Literal["complete", "partial_reschedule", "partial_expertise", "failed"]
-    comment: str = Field(..., min_length=10)
-    input_method: Literal["voice", "typed"] = "typed"
-    attachment_ids: list[int] = Field(..., min_length=1)
-    next_date: Optional[date] = None   # outcome 2 only
-    urgent: bool = False               # outcomes 3/4 only
-    current_status: str                # stale check — must match, and be arrived
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-
-
 class VisitEntry(BaseModel):
     visit_id: int
     employee_id: int

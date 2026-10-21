@@ -87,3 +87,33 @@ class ScheduleTaskBody(BaseModel):
     @classmethod
     def _local(cls, v: datetime | None) -> datetime | None:
         return _localize(v)
+
+
+class EnRouteBody(BaseModel):
+    current_status: Optional[TaskStatusValue] = None  # stale check when sent
+    # Location point only if the browser granted it — null otherwise.
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+class ArrivedBody(BaseModel):
+    current_status: Optional[TaskStatusValue] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+class CloseoutBody(BaseModel):
+    outcome: Literal["complete", "partial_reschedule", "partial_expertise", "failed"]
+    comment: str = Field(..., min_length=10)
+    input_method: Literal["voice", "typed"] = "typed"
+    attachment_ids: list[int] = Field(..., min_length=1)
+    next_date: Optional[date] = None   # partial_reschedule only; default today + 14 days
+    urgent: bool = False               # partial_expertise / failed only
+    current_status: Optional[TaskStatusValue] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+class CloseoutOut(TaskOut):
+    follow_up_task: Optional[TaskOut] = None   # spawned by partial_reschedule
+    request_status: str                        # the call, after the auto-close check

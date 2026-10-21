@@ -18,9 +18,6 @@ from .schemas import (
     AssignBody,
     BuildingLookup,
     EmployeeLookup,
-    CloseoutBody,
-    ArrivedBody,
-    EnRouteBody,
     ListResponse,
     PhotoUploadResponse,
     PhotoUrlResponse,
@@ -228,13 +225,14 @@ def request_route(
 
 
 @router.post("/{request_id}/en-route", operation_id="request_en_route", response_model=RequestDetail)
-def request_en_route(request_id: int, body: EnRouteBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
-    return service.action_en_route(conn, request_id, body, user)
+def request_en_route(request_id: int, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
+    # No body: always 410, whatever a legacy client sends.
+    return service.action_en_route(conn, request_id, user)
 
 
 @router.post("/{request_id}/arrived", operation_id="request_arrived", response_model=RequestDetail)
-def request_arrived(request_id: int, body: ArrivedBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
-    return service.action_arrived(conn, request_id, body, user)
+def request_arrived(request_id: int, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_arrived(conn, request_id, user)
 
 
 @router.post("/{request_id}/photos", operation_id="request_upload_photo",
@@ -251,8 +249,8 @@ def request_upload_photo(
 
 
 @router.post("/{request_id}/closeout", operation_id="request_closeout", response_model=RequestDetail)
-def request_closeout(request_id: int, body: CloseoutBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
-    return service.action_closeout(conn, request_id, body, user)
+def request_closeout(request_id: int, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_closeout(conn, request_id, user)
 
 
 @router.get("/{request_id}/photos/{attachment_id}", operation_id="request_photo_url", response_model=PhotoUrlResponse)

@@ -13,17 +13,16 @@ from backend.core.exceptions import (
     PermissionDenied, RequestClosedError, StaleDataError,
     ValidationFailed,
 )
-from backend.domain.status_machine import transition
 from backend.core.security import CurrentUser
 from backend.core.utils import today_local
+from backend.modules.tasks import repository as task_repo
 from backend.modules.tasks import service as task_service
 from backend.modules.weather import repository as weather_repo
 
 from . import repository as repo
 from . import storage
 from .schemas import (
-    AddLogBody, ArrivedBody, AssignBody, CloseoutBody,
-    EnRouteBody, ListResponse, ListRow,
+    AddLogBody, AssignBody, ListResponse, ListRow,
     PhotoUploadResponse, PhotoUrlResponse, RequestDetail, RescheduleBody,
     RouteBody, SaveDispatchBody, SetCostBody, SetFollowUpDateBody, SetNextStepsBody,
     SetUrgencyBody, TechnicianSuggestion, TechnicianSuggestionsResponse,
@@ -143,10 +142,8 @@ def list_requests(conn, params, user: CurrentUser) -> ListResponse:
     )
 
 
-def get_request(conn, request_id: int, user: CurrentUser, *, bypass_scope: bool = False) -> RequestDetail:
-    # bypass_scope: closeout outcomes 3/4 clear the assignment, which can push
-    # the request out of the caller's scope — the response must still be built.
-    scope_sql, scope_params = ("", {}) if bypass_scope else _scope(user)
+def get_request(conn, request_id: int, user: CurrentUser) -> RequestDetail:
+    scope_sql, scope_params = _scope(user)
     row = repo.get_request(conn, request_id, scope_sql=scope_sql, scope_params=scope_params)
     if row is None:
         raise NotFoundError(f"Request {request_id} not found")
@@ -235,6 +232,7 @@ def _write_justification(conn, request_id: int, user: CurrentUser, body, *,
 
 
 _USE_TASKS = "Assignee and due date now live on tasks — use POST /api/v1/tasks/{task_id}/%s"
+_USE_TASK_FIELDWORK = "Visits now live on tasks — use POST /api/v1/tasks/{task_id}/%s"
 
 
 def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) -> RequestDetail:
@@ -408,105 +406,13 @@ def action_set_cost(conn, request_id: int, body: SetCostBody, user: CurrentUser)
     return _after_action(conn, request_id, user)
 
 
-def action_en_route(conn, request_id: int, body: EnRouteBody, user: CurrentUser) -> RequestDetail:
-    """Technician/contractor departs for the call. Status → en_route, visit row,
-    two outbox rows (sms + email, never sent in V1), provenance per column."""
-    row = _lock_or_404(conn, request_id)
-    if row["assigned_employee_id"] != user.employee_id:
-        raise PermissionDenied("Seul l'employé assigné peut se mettre en route")
-    _check_not_closed(row)
-    if row["status"] != body.current_status or row["start_date"] != body.current_start_date:
-        raise StaleDataError()
-    # Background triage writes status unconditionally when it finishes
-    # (triage/service.py:221) — going en route now would be overwritten.
-    if row["status"] == "triage_pending":
-        raise ConflictError("Triage en cours — réessayez dans un instant")
-
-    open_visit = repo.get_open_visit(conn, user.employee_id)
-    if open_visit is not None:
-        raise ConflictError(
-            f"Appel {open_visit['request_id']} déjà en route — clôturez-le d'abord",
-            details={
-                "open_request_id": open_visit["request_id"],
-                "open_request_title": open_visit["raw_title"],
-            },
-        )
-
-    transition(row["status"], "en_route")  # 409 if the machine forbids it
-
-    now = datetime.now(timezone.utc)
-    # Insert the visit first: the partial unique index is the authoritative
-    # one-open-call guard if two devices race past the SELECT above.
-    visit_id = repo.insert_visit(
-        conn, request_id=request_id, employee_id=user.employee_id,
-        lat=body.lat, lng=body.lng,
-    )
-    repo.update_field(conn, request_id, "status", "en_route")
-    repo.update_field(conn, request_id, "en_route_at", now)
-    repo.write_provenance(conn,
-        target_table="maintenance_request", target_pk=str(request_id),
-        target_column="status", employee_id=user.employee_id,
-        previous_value=row["status"], new_value="en_route",
-    )
-    repo.write_provenance(conn,
-        target_table="maintenance_request", target_pk=str(request_id),
-        target_column="en_route_at", employee_id=user.employee_id,
-        previous_value=_to_str(row["en_route_at"]), new_value=now.isoformat(),
-    )
-
-    # Tenant notification — template start is the client's (reference §5);
-    # outbox only, status 'not_sent': no sender code exists in V1.
-    ctx = repo.get_message_context(conn, request_id)
-    address = ctx["adresse"] or ""
-    if ctx["unit_label"]:
-        address = f"{address}, app. {ctx['unit_label']}" if address else f"app. {ctx['unit_label']}"
-    msg = (
-        f"Bonjour, Ce message est destiné aux occupants, aux locataires du {address or 'logement'}. "
-        "Votre technicien S.I. Bélanger est en route."
-    )
-    for channel, recipient, subject in (
-        ("sms", ctx["caller_phone"], None),
-        ("email", ctx["caller_email"], "Technicien en route — S.I. Bélanger"),
-    ):
-        repo.insert_outbox(conn,
-            request_id=request_id, visit_id=visit_id, channel=channel,
-            recipient=recipient, subject=subject, body=msg,
-            employee_id=user.employee_id,
-        )
-
-    return get_request(conn, request_id, user)
+def action_en_route(conn, request_id: int, user: CurrentUser) -> RequestDetail:
+    # Hard cutover: fieldwork (visits) belongs to dispatch_task, not the call.
+    raise GoneError(_USE_TASK_FIELDWORK % "en-route")
 
 
-def action_arrived(conn, request_id: int, body: ArrivedBody, user: CurrentUser) -> RequestDetail:
-    """Technician arrived on site. Status → arrived; stamps visit.arrived_at for travel KPI."""
-    row = _lock_or_404(conn, request_id)
-    if row["assigned_employee_id"] != user.employee_id:
-        raise PermissionDenied("Seul l'employé assigné peut marquer l'arrivée")
-    _check_not_closed(row)
-    if row["status"] != body.current_status:
-        raise StaleDataError()
-    if row["status"] != "en_route":
-        raise ConflictError("L'appel n'est pas en route")
-    visit = repo.get_open_visit(conn, user.employee_id)
-    if visit is None or visit["request_id"] != request_id:
-        raise ConflictError("Aucune visite en cours pour cet appel")
-
-    transition(row["status"], "arrived")
-    now = datetime.now(timezone.utc)
-    repo.mark_visit_arrived(conn, visit_id=visit["visit_id"], lat=body.lat, lng=body.lng)
-    repo.update_field(conn, request_id, "status", "arrived")
-    repo.update_field(conn, request_id, "arrived_at", now)
-    repo.write_provenance(conn,
-        target_table="maintenance_request", target_pk=str(request_id),
-        target_column="status", employee_id=user.employee_id,
-        previous_value="en_route", new_value="arrived",
-    )
-    repo.write_provenance(conn,
-        target_table="maintenance_request", target_pk=str(request_id),
-        target_column="arrived_at", employee_id=user.employee_id,
-        previous_value=_to_str(row.get("arrived_at")), new_value=now.isoformat(),
-    )
-    return get_request(conn, request_id, user)
+def action_arrived(conn, request_id: int, user: CurrentUser) -> RequestDetail:
+    raise GoneError(_USE_TASK_FIELDWORK % "arrived")
 
 
 def action_upload_photo(conn, request_id: int, content: bytes, mime: str, user: CurrentUser) -> PhotoUploadResponse:
@@ -514,7 +420,7 @@ def action_upload_photo(conn, request_id: int, content: bytes, mime: str, user: 
     row — an attachment row must never exist without its stored object; if the
     insert fails the uploaded file is deleted (best effort)."""
     row = _lock_or_404(conn, request_id)
-    if row["assigned_employee_id"] != user.employee_id:
+    if not task_repo.is_assignee_on_request(conn, request_id, user.employee_id):
         raise PermissionDenied("Seul l'employé assigné peut ajouter des photos")
     _check_not_closed(row)
     ext = _PHOTO_MIMES.get(mime.split(";")[0].strip().lower())
@@ -545,124 +451,14 @@ def get_photo_url(conn, request_id: int, attachment_id: int, user: CurrentUser) 
     if photo is None or not photo["storage_path"]:
         raise NotFoundError("Photo introuvable")
     if not (user.roles & {"coordinator", "director"}) \
-            and photo["assigned_employee_id"] != user.employee_id:
+            and photo["uploaded_by_employee_id"] != user.employee_id \
+            and not task_repo.is_assignee_on_request(conn, request_id, user.employee_id):
         raise PermissionDenied()
     return PhotoUrlResponse(url=storage.create_signed_url(photo["storage_path"]))
 
 
-def action_closeout(conn, request_id: int, body: CloseoutBody, user: CurrentUser) -> RequestDetail:
-    """The four outcomes from François's notes (reference §6.1). Closes the
-    visit, writes the follow-up entry, provenance per column; outcomes 3/4
-    return the call to the coordinator queue with a justification row."""
-    row = _lock_or_404(conn, request_id)
-    if row["assigned_employee_id"] != user.employee_id:
-        raise PermissionDenied("Seul l'employé assigné peut clôturer")
-    _check_not_closed(row)
-    if row["status"] != body.current_status:
-        raise StaleDataError()
-    if row["status"] != "arrived":
-        raise ConflictError("Marquez l'arrivée avant de clôturer")
-    visit = repo.get_open_visit(conn, user.employee_id)
-    if visit is None or visit["request_id"] != request_id:
-        raise ConflictError("Aucune visite en cours pour cet appel")
-
-    today = today_local()
-    if body.outcome == "partial_reschedule":
-        if body.next_date is None:
-            raise ValidationFailed("Date de retour requise pour « je dois revenir »")
-        if body.next_date < today:
-            raise ValidationFailed("La date de retour ne peut pas être dans le passé")
-    elif body.next_date is not None:
-        raise ValidationFailed("Une date de retour n'est permise que pour « je dois revenir »")
-    if body.urgent and body.outcome not in ("partial_expertise", "failed"):
-        raise ValidationFailed("« Urgent » n'est permis que pour les expertises")
-
-    ids = list(dict.fromkeys(body.attachment_ids))
-    if repo.count_usable_photos(conn, request_id, user.employee_id, ids) != len(ids):
-        raise ValidationFailed("Photo invalide, d'un autre appel ou déjà utilisée")
-
-    if body.outcome == "complete":
-        target = "closed"
-    elif body.outcome in ("partial_expertise", "failed"):
-        target = "awaiting_redispatch"
-    else:
-        target = "scheduled"  # partial_reschedule — stays his, new date
-    transition(row["status"], target)
-
-    now = datetime.now(timezone.utc)
-    repo.close_visit(conn, visit_id=visit["visit_id"], outcome=body.outcome,
-                     comment=body.comment, lat=body.lat, lng=body.lng)
-    repo.mark_photos_used(conn, visit["visit_id"], ids)
-
-    def _set(column: str, value: Any, previous: Any) -> None:
-        repo.update_field(conn, request_id, column, value)
-        repo.write_provenance(conn,
-            target_table="maintenance_request", target_pk=str(request_id),
-            target_column=column, employee_id=user.employee_id,
-            previous_value=_to_str(previous), new_value=_to_str(value),
-        )
-
-    _set("status", target, row["status"])
-    _set("closeout_outcome", body.outcome, row["closeout_outcome"])
-    _set("work_performed", body.comment, row["work_performed"])
-    if body.outcome == "complete":
-        _set("closed_at", now.isoformat(), row["closed_at"])
-    if body.outcome == "partial_reschedule":
-        # He picks the new date himself; the call stays his.
-        _set("start_date", body.next_date, row["start_date"])
-    if body.outcome in ("partial_expertise", "failed"):
-        # Back to the coordinator « À redispatcher » queue.
-        _set("assigned_employee_id", None, row["assigned_employee_id"])
-        _set("closeout_urgent", body.urgent, row["closeout_urgent"])
-        repo.write_justification(conn,
-            request_id=request_id, employee_id=user.employee_id,
-            decision_type="closeout",
-            before_value={"assigned_employee_id": row["assigned_employee_id"],
-                          "status": "en_route"},
-            after_value={"assigned_employee_id": None, "status": "awaiting_redispatch",
-                         "closeout_outcome": body.outcome, "urgent": body.urgent},
-            text=body.comment, input_method=body.input_method,
-        )
-
-    # Follow-up entry with the comment, technician initials (add-log pattern).
-    emp_row = conn.execute(
-        "SELECT nom_employe FROM employee WHERE employee_id = %(emp_id)s",
-        {"emp_id": user.employee_id},
-    ).fetchone()
-    tech_name = emp_row["nom_employe"] if emp_row else "?"
-    initials = "".join(w[0].upper() for w in tech_name.split() if w)[:4]
-    followup_id = repo.add_log_entry(conn, request_id, body.comment, initials, today)
-    repo.write_provenance(conn,
-        target_table="maintenance_followup_entry", target_pk=str(followup_id),
-        target_column="entry_text", employee_id=user.employee_id,
-        previous_value=None, new_value=body.comment,
-    )
-
-    title = (row.get("raw_title") or f"#{request_id}").strip()
-    from backend.modules.alerts import service as alerts
-    from backend.modules.survey import repository as survey_repo
-
-    if body.outcome == "complete":
-        survey_repo.create_survey(
-            conn, request_id=request_id, visit_id=visit["visit_id"],
-            employee_id=user.employee_id,
-        )
-        alerts.notify(
-            conn, request_id=request_id, kind="call_completed",
-            summary=f"Appel terminé — {tech_name}: {title}",
-        )
-    elif body.outcome in ("partial_expertise", "failed"):
-        alerts.notify(
-            conn, request_id=request_id, kind="expertise_needed",
-            summary=f"Expertise requise — {tech_name}: {title}",
-        )
-    elif body.outcome == "partial_reschedule":
-        alerts.notify(
-            conn, request_id=request_id, kind="followup_added",
-            summary=f"Retour prévu — {tech_name}: {title}",
-        )
-
-    return get_request(conn, request_id, user, bypass_scope=True)
+def action_closeout(conn, request_id: int, user: CurrentUser) -> RequestDetail:
+    raise GoneError(_USE_TASK_FIELDWORK % "closeout")
 
 
 def action_trigger_triage(conn, request_id: int) -> None:
