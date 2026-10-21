@@ -1,12 +1,10 @@
-// Read-only dossier view: call summary, visits (times in America/Toronto,
-// photos via signed URLs), follow-up log, decision history. No write actions.
+// Read-only dossier view: call summary and its history timeline (visits,
+// follow-up notes, decisions, status changes). No write actions.
 import { Link, useParams } from 'react-router-dom';
 import { useRequest } from '../../hooks/useRequest';
 import { closeoutOutcomeLabel, statusLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
-import {
-  DecisionHistorySection, FollowupLogSection, VisitsSection,
-} from '../../components/RequestSections';
+import HistoryTimeline from '../../components/HistoryTimeline';
 import styles from './Dossiers.module.css';
 
 export default function DossierDetail({ lang = 'fr' }: { lang?: Lang }) {
@@ -50,9 +48,14 @@ export default function DossierDetail({ lang = 'fr' }: { lang?: Lang }) {
       </dl>
 
       <div className={styles.sections}>
-        <VisitsSection requestId={data.request_id} visits={data.visits ?? []} lang={lang} />
-        <FollowupLogSection entries={data.followup_log} lang={lang} />
-        <DecisionHistorySection entries={data.justification_log} lang={lang} />
+        <HistoryTimeline
+          requestId={data.request_id}
+          visits={data.visits ?? []}
+          followups={data.followup_log}
+          decisions={data.justification_log}
+          statusChanges={data.status_history ?? []}
+          lang={lang}
+        />
       </div>
     </div>
   );

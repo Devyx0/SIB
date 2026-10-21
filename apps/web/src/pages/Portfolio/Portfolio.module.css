@@ -255,6 +255,95 @@ a.card:hover .arrow {
   border-color: var(--color-divider);
 }
 
+/* A card whose title is the link: the link's ::after covers the card, and
+   the view / edit tools sit above it in the corner. */
+.itemCard:hover {
+  border-color: var(--navy-300);
+  box-shadow: var(--sh-raised);
+}
+
+.itemCard .cardTitle { padding-right: 64px; }
+
+.cardLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.cardLink::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.cardLink:focus-visible { outline: none; }
+.cardLink:focus-visible::after { box-shadow: var(--ring); }
+
+.cardTools {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  display: flex;
+  gap: 2px;
+}
+
+.toolBtn {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--color-neutral-500);
+  cursor: pointer;
+}
+
+.toolBtn:hover {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--navy-800);
+}
+
+.toolBtn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.rowActions {
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.btnPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-color: var(--navy-800);
+  background: var(--navy-800);
+  color: #fff;
+}
+
+.btnPrimary:hover { background: var(--navy-700); border-color: var(--navy-700); }
+
+.btnIcon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 /* ── Sectors overview ───────────────────────────────────────────────────── */
 
 .totals {
@@ -929,6 +1018,172 @@ a.card:hover .arrow {
   gap: 12px;
 }
 
+.unitPaint {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-divider);
+}
+
+.panelLink {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--navy-700);
+  text-decoration: none;
+}
+
+.panelLink:hover { text-decoration: underline; }
+
+/* ── Unit list filters ──────────────────────────────────────────────────── */
+
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-card);
+}
+
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+}
+
+.filterField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.filterField .search { flex: none; width: 260px; }
+
+.filterLabel {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+.select {
+  min-width: 160px;
+  min-height: 38px;
+  font-size: 14px;
+}
+
+.selectActive {
+  border-color: var(--navy-700);
+  background: var(--navy-50);
+}
+
+.chipGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filterChip {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-neutral-800);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.filterChip:hover { border-color: var(--color-neutral-400); }
+
+.filterChip:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.filterChipActive,
+.filterChipActive:hover {
+  background: var(--navy-800);
+  border-color: var(--navy-800);
+  color: #fff;
+}
+
+.filterCount {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-neutral-700);
+  font-variant-numeric: tabular-nums;
+}
+
+.linkBtn {
+  all: unset;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--navy-700);
+  cursor: pointer;
+}
+
+.linkBtn:hover { text-decoration: underline; }
+.linkBtn:focus-visible { box-shadow: var(--ring); border-radius: var(--r-sm); }
+
+.refreshing { opacity: 0.6; transition: opacity var(--dur) var(--ease-out); }
+
+.cellSub {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--color-neutral-600);
+}
+
+.table a {
+  color: var(--navy-700);
+  text-decoration: none;
+}
+
+.table a:hover { text-decoration: underline; }
+
+/* A link to the filtered unit list (« 5 vacants »), inside a card or totals. */
+.vacantLink {
+  position: relative;
+  z-index: 1;
+  color: var(--navy-700);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.vacantLink:hover { text-decoration: underline; }
+
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.unitTools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
 @media (max-width: 1023px) {
   .page { padding: 20px 16px 28px; }
   .unitLayout { grid-template-columns: 1fr; }
@@ -942,6 +1197,8 @@ a.card:hover .arrow {
   .title { font-size: 28px; }
   .subtitle { font-size: 15px; }
   .search { flex: 1 1 100%; }
+  .filterField, .filterField .search, .select { width: 100%; min-width: 0; }
+  .filterCount { margin-left: 0; }
   .sides { grid-template-columns: 1fr; }
   .grid { grid-template-columns: 1fr; }
   .totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -956,4 +1213,5 @@ a.card:hover .arrow {
   .dialog { max-height: calc(100vh - 24px); }
   /* Same street on most rows — drop it so the tenant column fits. */
   .hideNarrow { display: none; }
+  .btnText { display: none; }
 }

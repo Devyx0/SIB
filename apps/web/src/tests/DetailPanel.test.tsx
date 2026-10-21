@@ -424,7 +424,7 @@ describe('visits section (stop 3)', () => {
       <DetailPanel requestId={1} onClose={vi.fn()} lang="fr"
         me={{ employee_id: 4, roles: ['coordinator'] } as any} />
     );
-    expect(screen.getByTestId('visits-section')).toBeTruthy();
+    expect(screen.getByTestId('history-timeline')).toBeTruthy();
     expect(screen.getByText(/Call partiellement fait, besoin d'une expertise/)).toBeTruthy();
     expect(screen.getByText(/1 h 30/)).toBeTruthy();
     expect(screen.getByText(/Fuite réparée en partie/)).toBeTruthy();

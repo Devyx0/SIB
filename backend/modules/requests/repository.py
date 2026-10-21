@@ -7,6 +7,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from backend.core.provenance import write_provenance  # noqa: F401  (re-exported for callers)
+
 from .schemas import SORT_SQL, SOURCE_CALENDAR_LABELS
 
 _SENTINEL_EMAIL = 'info@sibelanger.com'
@@ -704,38 +706,53 @@ def get_message_context(conn, request_id: int) -> dict:
     return _normalise_contacts(dict(row))
 
 
-def write_provenance(
-    conn, *, target_table: str, target_pk: str, target_column: str,
-    employee_id: int, previous_value: str | None, new_value: str | None,
-) -> None:
-    conn.execute(
-        """
-        INSERT INTO data_provenance
-            (target_table, target_pk, target_column, source_type, employee_id,
-             previous_value, raw_value, ingested_value, ingested_at)
-        VALUES (%(target_table)s, %(target_pk)s, %(target_column)s, 'app', %(employee_id)s,
-                %(previous_value)s, %(new_value)s, %(new_value)s, NOW())
-        """,
-        {
-            "target_table": target_table, "target_pk": target_pk,
-            "target_column": target_column, "employee_id": employee_id,
-            "previous_value": previous_value, "new_value": new_value,
-        },
-    )
-
-
 def list_justification_entries(conn, request_id: int) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT id, decision_type, before_value, after_value, justification_text,
-               input_method, created_at::text AS created_at, employee_id
-        FROM decision_justification_log
-        WHERE request_id = %(request_id)s
-        ORDER BY created_at ASC, id ASC
+        SELECT j.id, j.decision_type, j.before_value, j.after_value, j.justification_text,
+               j.input_method, j.created_at::text AS created_at, j.employee_id,
+               e.nom_employe AS employee_name
+        FROM decision_justification_log j
+        LEFT JOIN employee e ON e.employee_id = j.employee_id
+        WHERE j.request_id = %(request_id)s
+        ORDER BY j.created_at ASC, j.id ASC
         """,
         {"request_id": request_id},
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def list_status_changes(conn, request_id: int) -> list[dict]:
+    """Status transitions made in the app, oldest first (from data_provenance)."""
+    rows = conn.execute(
+        """
+        SELECT dp.provenance_id AS id,
+               dp.previous_value AS status_from,
+               dp.ingested_value AS status_to,
+               (dp.ingested_at AT TIME ZONE 'UTC') AS changed_at,
+               dp.employee_id,
+               e.nom_employe AS employee_name
+        FROM data_provenance dp
+        LEFT JOIN employee e ON e.employee_id = dp.employee_id
+        WHERE dp.target_table = 'maintenance_request'
+          AND dp.target_pk = %(pk)s
+          AND dp.target_column = 'status'
+          AND dp.source_type = 'app'
+        ORDER BY dp.ingested_at ASC, dp.provenance_id ASC
+        """,
+        {"pk": str(request_id)},
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def employee_names(conn, employee_ids: list[int]) -> dict[int, str]:
+    if not employee_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT employee_id, nom_employe FROM employee WHERE employee_id = ANY(%(ids)s)",
+        {"ids": employee_ids},
+    ).fetchall()
+    return {r["employee_id"]: r["nom_employe"] for r in rows if r["nom_employe"]}
 
 
 def list_units(conn, building_id: int) -> list[dict]:

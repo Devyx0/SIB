@@ -6,6 +6,7 @@ import { goEnRoute, markArrived, ApiError, GENERIC_ERROR_FR } from '../../api/cl
 import type { MeResponse, RequestDetail } from '../../api/schema.d.ts';
 import type { Lang } from '../../i18n';
 import { t, statusLabel } from '../../i18n';
+import { formatEntryDate } from '../../components/HistoryTimeline';
 import TechHeader from './TechHeader';
 import { elapsedLabel } from './elapsed';
 import styles from './TechPortal.module.css';
@@ -242,7 +243,7 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
               {req.followup_log.map((f) => (
                 <div key={f.followup_id} className={styles.followupEntry}>
                   <span className={styles.muted}>
-                    {f.entry_date ?? '—'} {f.entered_by_initials ? `· ${f.entered_by_initials}` : ''}
+                    {formatEntryDate(f.entry_date, lang)} {f.entered_by_initials ? `· ${f.entered_by_initials}` : ''}
                   </span>
                   <p className={styles.preWrap}>{f.entry_text}</p>
                 </div>

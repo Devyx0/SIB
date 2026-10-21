@@ -206,12 +206,25 @@ class RouteBody(BaseModel):
 class JustificationEntry(BaseModel):
     id: int
     decision_type: str
+    # assigned_employee_id values come with an assigned_employee_name next to them.
     before_value: Optional[dict] = None
     after_value: Optional[dict] = None
     justification_text: str
     input_method: Optional[str] = None
     created_at: str
     employee_id: int
+    # Who made the decision.
+    employee_name: Optional[str] = None
+
+
+class StatusChange(BaseModel):
+    """A status transition made in the app (assignment, en route, arrival, closeout…)."""
+    id: int
+    status_from: Optional[str] = None
+    status_to: Optional[str] = None
+    changed_at: datetime
+    employee_id: Optional[int] = None
+    employee_name: Optional[str] = None
 
 
 class FollowupEntry(BaseModel):
@@ -279,6 +292,8 @@ class RequestDetail(ListRow):
     caller_type: Optional[str] = None
     followup_log: list[FollowupEntry] = Field(default_factory=list)
     justification_log: list[JustificationEntry] = Field(default_factory=list)
+    # Coordinator / director only, like justification_log.
+    status_history: list[StatusChange] = Field(default_factory=list)
     visits: list[VisitEntry] = Field(default_factory=list)
     # Photos attached at intake (new call form).
     intake_photo_ids: list[int] = Field(default_factory=list)

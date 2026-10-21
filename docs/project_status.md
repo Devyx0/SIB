@@ -121,7 +121,9 @@ These were confirmed during Drive exploration and review. They are open items, n
 The MÉNAGE (cleaning/housekeeping) subfolder does not appear in either the French or English Maintenance Drive. Its absence was confirmed but the root cause is unresolved — the folder may have been moved, deleted, or never created under this naming. No action taken.
 
 ### PEINTURE folder — confirmed empty (real source is elsewhere)
-The PEINTURE (paint) subfolder exists in the Maintenance Drive but is empty. The real paint data source is `"0 - Charte des couleurs de peinture SIB"` — a distinct file confirmed via the live DB map review. It has not yet been pulled or ingested. This maps to the `building_paint_spec` table in the schema, which is also empty.
+The PEINTURE (paint) subfolder exists in the Maintenance Drive but is empty. The real paint data source is `"0 - Charte des couleurs de peinture SIB"` (Paint_Chart_EN.xlsx) — a distinct file confirmed via the live DB map review. It has been ingested into `building_paint_spec` by `drive_pipeline/ingestion/ingest_building_paint_spec.py` (563 rows across 32 buildings as of 2026-10-21).
+
+**The app is now the source of truth for building reference info (2026-10-21).** Paint specs, the fiche technique (`building.raw_fiche_technique`), the typed characteristics and document links are viewed and edited on Portfolio → building → « Informations du bâtiment »; every edit is recorded in `data_provenance` (source_type `app`). Do **not** re-run `ingest_building_paint_spec.py`: it inserts with `MAX(id)+1` and no dedup, so a re-run appends duplicate rows next to the app's edits. Re-running the building ingestion is safe for edited rows (it inserts with `ON CONFLICT DO NOTHING`), but it also skips any new Drive data for existing buildings.
 
 ### File 10 — Abandoned (superseded by direct Calendar ingestion)
 

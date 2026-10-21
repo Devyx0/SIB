@@ -175,11 +175,27 @@ def get_request(conn, request_id: int, user: CurrentUser, *, bypass_scope: bool 
             for field in _CASE_SCOPED_PII:
                 row[field] = None
     else:
-        row["justification_log"] = repo.list_justification_entries(conn, request_id)
+        row["justification_log"] = _with_assignee_names(conn, repo.list_justification_entries(conn, request_id))
+        row["status_history"] = repo.list_status_changes(conn, request_id)
 
     # Weather summary is coordinator/director-only, like the manual check endpoint.
     row["weather_evaluation"] = None if is_restricted else weather_repo.get_latest_evaluation(conn, request_id)
     return RequestDetail(**row)
+
+
+def _with_assignee_names(conn, entries: list[dict]) -> list[dict]:
+    """Put assigned_employee_name next to each assigned_employee_id in before/after."""
+    ids = {
+        v["assigned_employee_id"] for e in entries for v in (e["before_value"], e["after_value"])
+        if isinstance(v, dict) and isinstance(v.get("assigned_employee_id"), int)
+    }
+    names = repo.employee_names(conn, sorted(ids))
+    for e in entries:
+        for side in ("before_value", "after_value"):
+            v = e[side]
+            if isinstance(v, dict) and isinstance(v.get("assigned_employee_id"), int):
+                e[side] = {**v, "assigned_employee_name": names.get(v["assigned_employee_id"])}
+    return entries
 
 
 def _after_action(conn, request_id: int, user: CurrentUser) -> RequestDetail:

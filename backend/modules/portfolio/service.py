@@ -2,20 +2,32 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from backend.core.exceptions import NotFoundError
 from backend.core.security import CurrentUser
 from backend.core.utils import today_local
 from backend.modules.intake.service import allowed_sector_ids
 
+from . import edit_repository as edit_repo
 from . import repository as repo
 from .schemas import (
     BuildingDetail,
+    BuildingReference,
+    DocumentOut,
+    FicheEntry,
+    PaintSpecOut,
     BuildingSummary,
     LeaseOut,
+    PortfolioSearchResult,
     ProjectDetail,
     ProjectSummary,
     SectorDetail,
+    SearchBuildingHit,
+    SearchFactHit,
+    SearchProjectHit,
+    SearchTenantHit,
+    SearchUnitHit,
     SectorSummary,
     TenantOut,
     TenantTurnover,
@@ -23,6 +35,8 @@ from .schemas import (
     TurnoverOut,
     TurnoverSettlementOut,
     UnitDetail,
+    UnitListPage,
+    UnitListRow,
     UnitSummary,
 )
 
@@ -70,7 +84,25 @@ def get_building(conn, building_id: int, user: CurrentUser) -> BuildingDetail:
     if row is None or not _in_scope(allowed_sector_ids(conn, user), row["sector_id"]):
         raise NotFoundError("Bâtiment introuvable")
     units = [_unit_summary(u) for u in _sorted_units(repo.list_units(conn, building_id, today_local()))]
-    return BuildingDetail(**row, units=units)
+    ref = edit_repo.get_building_reference(conn, building_id) or {}
+    return BuildingDetail(
+        **row,
+        units=units,
+        reference=BuildingReference(**{k: v for k, v in ref.items() if k != "fiche"}),
+        fiche=_fiche_entries(ref.get("fiche") or {}),
+        paint_specs=[PaintSpecOut(**p) for p in edit_repo.list_paint_specs(conn, building_id)],
+        documents=[DocumentOut(**d) for d in edit_repo.list_documents(conn, building_id)],
+    )
+
+
+def _fiche_entries(fiche: dict) -> list[FicheEntry]:
+    """Fiche-technique lines in alphabetical order (accents ignored)."""
+    entries = [FicheEntry(label=k, value=str(v)) for k, v in fiche.items() if v is not None]
+    return sorted(entries, key=lambda e: _fold(e.label))
+
+
+def _is_paint_label(label: str) -> bool:
+    return "peinture" in _fold(label) or "paint" in _fold(label)
 
 
 def get_unit(conn, unit_id: int, user: CurrentUser) -> UnitDetail:
@@ -94,8 +126,16 @@ def get_unit(conn, unit_id: int, user: CurrentUser) -> UnitDetail:
         "unit_id", "building_id", "project_id", "sector_id",
         "numero_appartement", "rue", "grandeur",
         "building_adresse", "web_building_name", "nom_unique_projet", "territoire",
+        "unique_unit_number",
     )}
-    return UnitDetail(**payload, lease=lease, tenants=tenants)
+    ref = edit_repo.get_building_reference(conn, row["building_id"]) or {}
+    return UnitDetail(
+        **payload,
+        lease=lease,
+        tenants=tenants,
+        paint_specs=[PaintSpecOut(**p) for p in edit_repo.list_paint_specs(conn, row["building_id"])],
+        paint_notes=[e for e in _fiche_entries(ref.get("fiche") or {}) if _is_paint_label(e.label)],
+    )
 
 
 def get_tenant_turnover(conn, unit_id: int, tenant_id: int, user: CurrentUser) -> TenantTurnover:
@@ -138,9 +178,10 @@ def _unit_summary(row: dict) -> UnitSummary:
     return UnitSummary(
         unit_id=row["unit_id"],
         numero_appartement=row["numero_appartement"],
+        unique_unit_number=row["unique_unit_number"],
         rue=row["rue"],
         grandeur=row["grandeur"],
-        tenant_name=row["tenant_name"],
+        tenant_names=row["tenant_names"],
         occupant_count=row["occupant_count"],
         lease_statut=row["lease_statut"],
     )
@@ -157,3 +198,122 @@ def _sorted_units(rows: list[dict]) -> list[dict]:
         return (civic, apt, u["numero_appartement"] or "", u["unit_id"])
 
     return sorted(rows, key=key)
+
+
+# ── Search ────────────────────────────────────────────────────────────────────
+
+# English words staff type for French fiche-technique labels (and a few French
+# spellings that differ from the labels). Keys are unaccented and lower-case.
+_SYNONYMS: dict[str, list[str]] = {
+    "paint": ["peinture"],
+    "painting": ["peinture"],
+    "colour": ["peinture", "couleur"],
+    "color": ["peinture", "couleur"],
+    "heating": ["chauffage"],
+    "heat": ["chauffage"],
+    "heater": ["chauffe-eau", "chauffage"],
+    "boiler": ["chaudiere", "chauffe-eau"],
+    "key": ["cle"],
+    "keys": ["cle"],
+    "keybox": ["boite a cle"],
+    "lockbox": ["boite a cle"],
+    "fire": ["incendie"],
+    "alarm": ["alarme"],
+    "roof": ["toiture", "toit"],
+    "window": ["fenetre"],
+    "windows": ["fenetre"],
+    "parking": ["stationnement"],
+    "laundry": ["buanderie"],
+    "elevator": ["ascenseur"],
+    "plumbing": ["plomberie"],
+    "water": ["eau"],
+    "electrical": ["electricite"],
+    "electricity": ["electricite"],
+    "basement": ["sous-sol"],
+    "snow": ["deneigement"],
+    "storage": ["entrepot", "rangement"],
+    "door": ["porte"],
+    "garage": ["garage"],
+    "generator": ["generatrice"],
+    "siding": ["revetement"],
+}
+
+_MAX_TOKENS = 6
+
+
+def _fold(s: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn").lower()
+
+
+def search_tokens(q: str | None) -> list[list[str]]:
+    """Split a query into tokens, each with its synonyms (the word itself first)."""
+    words = [w for w in re.split(r"[\s,;]+", (q or "").strip()) if w]
+    tokens: list[list[str]] = []
+    for w in words[:_MAX_TOKENS]:
+        alts = [w.lower()]
+        for syn in _SYNONYMS.get(_fold(w), []):
+            if syn not in alts:
+                alts.append(syn)
+        tokens.append(alts)
+    return tokens
+
+
+def search(conn, q: str, user: CurrentUser, limit: int) -> PortfolioSearchResult:
+    q = (q or "").strip()
+    empty = PortfolioSearchResult(q=q, units=[], buildings=[], projects=[], tenants=[], facts=[])
+    tokens = search_tokens(q)
+    if len(q) < 2 or not tokens:
+        return empty
+    allowed = allowed_sector_ids(conn, user)
+    if allowed is not None and not allowed:
+        return empty
+    today = today_local()
+    return PortfolioSearchResult(
+        q=q,
+        units=[SearchUnitHit(**r) for r in repo.search_units(conn, tokens, allowed, today, limit)],
+        buildings=[SearchBuildingHit(**r) for r in repo.search_buildings(conn, tokens, allowed, limit)],
+        projects=[SearchProjectHit(**r) for r in repo.search_projects(conn, tokens, allowed, limit)],
+        tenants=[SearchTenantHit(**r) for r in repo.search_tenants(conn, tokens, allowed, today, limit)],
+        facts=[SearchFactHit(**r) for r in repo.search_facts(conn, tokens, allowed, limit)],
+    )
+
+
+def list_units_filtered(
+    conn,
+    user: CurrentUser,
+    *,
+    sector_id: int | None,
+    project_id: int | None,
+    building_id: int | None,
+    occupancy: str | None,
+    grandeur: str | None,
+    lease_ending_within_days: int | None,
+    q: str | None,
+    page: int,
+    page_size: int,
+) -> UnitListPage:
+    allowed = allowed_sector_ids(conn, user)
+    if allowed is not None and (not allowed or (sector_id is not None and sector_id not in allowed)):
+        return UnitListPage(items=[], total=0, vacant_total=0, grandeur_options=[], page=page, page_size=page_size)
+    result = repo.list_units_filtered(
+        conn,
+        sector_ids=allowed,
+        today=today_local(),
+        sector_id=sector_id,
+        project_id=project_id,
+        building_id=building_id,
+        occupancy=occupancy,
+        grandeur=grandeur,
+        lease_ending_within_days=lease_ending_within_days,
+        tokens=search_tokens(q),
+        limit=page_size,
+        offset=(page - 1) * page_size,
+    )
+    return UnitListPage(
+        items=[UnitListRow(**r) for r in result["items"]],
+        total=result["total"],
+        vacant_total=result["vacant_total"],
+        grandeur_options=result["grandeur_options"],
+        page=page,
+        page_size=page_size,
+    )

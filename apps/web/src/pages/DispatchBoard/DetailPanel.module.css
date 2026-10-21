@@ -350,12 +350,6 @@
   border-top: none;
 }
 
-.emptyHistory {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-neutral-600);
-}
-
 .loading {
   color: var(--color-neutral-600);
   font-size: 14px;

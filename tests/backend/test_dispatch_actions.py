@@ -445,6 +445,27 @@ def test_justification_log_visible_to_coordinator(ac, test_request):
     assert len(r.json()["justification_log"]) == 1
 
 
+def test_history_names_who_decided_and_the_assignee(ac, db_conn, test_request):
+    c = ac(_user(_COORD, "coordinator"))
+    c.post(f"/api/v1/requests/{test_request}/assign", json={
+        "employee_id": _TECH,
+        "current_assigned_employee_id": None,
+        "current_start_date": _DATE_A,
+        "current_urgency_tier": None,
+        "justification": {"text": "First available qualified technician", "input_method": "typed"},
+    })
+    names = {r["employee_id"]: r["nom_employe"] for r in db_conn.execute(
+        "SELECT employee_id, nom_employe FROM employee WHERE employee_id = ANY(%s)", [[_COORD, _TECH]],
+    ).fetchall()}
+    body = c.get(f"/api/v1/requests/{test_request}").json()
+    [entry] = body["justification_log"]
+    assert entry["employee_name"] == names[_COORD]
+    assert entry["after_value"] == {"assigned_employee_id": _TECH, "assigned_employee_name": names[_TECH]}
+    # The assignment moved the request to « scheduled »; the timeline shows who did it.
+    [change] = body["status_history"]
+    assert (change["status_to"], change["employee_name"]) == ("scheduled", names[_COORD])
+
+
 def test_justification_log_empty_for_technician(ac, db_conn, test_request):
     coord_c = ac(_user(_COORD, "coordinator"))
     coord_c.post(f"/api/v1/requests/{test_request}/assign", json={

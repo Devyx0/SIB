@@ -58,13 +58,13 @@ describe('DossierDetail', () => {
     wrap();
     await waitFor(() => expect(screen.getByText('Prise électrique cuisine')).toBeTruthy());
     expect(screen.getByText('123 rue Principale')).toBeTruthy();
-    expect(screen.getByTestId('visits-section')).toBeTruthy();
+    expect(screen.getByTestId('history-timeline')).toBeTruthy();
     expect(screen.getByText(/1 h 42/)).toBeTruthy();
     expect(screen.getAllByText(/Travail effectué/).length).toBeGreaterThan(0);
     await waitFor(() => expect(screen.getByTestId('visit-photo')).toBeTruthy());
     expect(vi.mocked(fetchPhotoUrl)).toHaveBeenCalledWith(15927, 41);
-    expect(screen.getByText('Journal de suivi')).toBeTruthy();
-    expect(screen.getByText('Historique des décisions')).toBeTruthy();
+    expect(screen.getByTestId('history-filter-decision')).toBeTruthy();
+    expect(screen.getByText('Assigné après triage.')).toBeTruthy();
   });
 
   it('shows the error branch with a back link for a non-numeric id', async () => {
@@ -86,7 +86,9 @@ describe('DossierDetail', () => {
   it('has no write controls', async () => {
     wrap();
     await waitFor(() => screen.getByText('Prise électrique cuisine'));
-    // Read-only page: the only interactive elements are the back link and images.
-    expect(document.querySelectorAll('button, input, select, textarea')).toHaveLength(0);
+    // Read-only page: no form fields; the only buttons filter the history.
+    expect(document.querySelectorAll('input, select, textarea')).toHaveLength(0);
+    const timeline = screen.getByTestId('history-timeline');
+    document.querySelectorAll('button').forEach((b) => expect(timeline.contains(b)).toBe(true));
   });
 });

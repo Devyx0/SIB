@@ -10,8 +10,9 @@ import TriageFeedbackWidget from '../../components/TriageFeedbackWidget';
 import { useJustify, type JustifyRequest } from '../../components/Justification';
 import type { DispatchFields, Justification } from '../../api/client';
 import {
-  DecisionHistorySection, FollowupLogSection, IntakePhotos, VisitsSection,
+  IntakePhotos,
 } from '../../components/RequestSections';
+import HistoryTimeline from '../../components/HistoryTimeline';
 import type { MeResponse } from '../../api/schema.d.ts';
 import { roleLabel, statusLabel, timeEstimateLabel, sourceCalendarLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
@@ -443,12 +444,14 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                   )}
 
                   <section className={`${styles.card} ${styles.historyCard}`}>
-                    <VisitsSection requestId={data.request_id} visits={data.visits ?? []} lang={lang} />
-                    <FollowupLogSection entries={data.followup_log} lang={lang} />
-                    <DecisionHistorySection entries={data.justification_log} lang={lang} />
-                    {(data.visits ?? []).length === 0 && data.followup_log.length === 0 && data.justification_log.length === 0 && (
-                      <p className={styles.emptyHistory}>{t(lang, 'Aucun historique pour le moment.', 'No history yet.')}</p>
-                    )}
+                    <HistoryTimeline
+                      requestId={data.request_id}
+                      visits={data.visits ?? []}
+                      followups={data.followup_log}
+                      decisions={data.justification_log}
+                      statusChanges={data.status_history ?? []}
+                      lang={lang}
+                    />
                   </section>
                 </div>
 

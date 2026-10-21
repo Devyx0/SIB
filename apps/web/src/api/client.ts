@@ -1,5 +1,5 @@
-import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse } from './schema.d.ts';
-export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse };
+import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse } from './schema.d.ts';
+export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse };
 import { supabase } from '../lib/supabase';
 
 // Dev: same-origin (Vite proxies /api → backend). Prod: absolute API host.
@@ -80,6 +80,18 @@ function apiFetch<T>(path: string): Promise<T> {
 
 function apiPost<T>(path: string, body: unknown): Promise<T> {
   return request<T>(path, 'POST', body);
+}
+
+function apiPatch<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, 'PATCH', body);
+}
+
+function apiPut<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, 'PUT', body);
+}
+
+function apiDelete<T>(path: string): Promise<T> {
+  return request<T>(path, 'DELETE');
 }
 
 function buildQuery(params: RequestListParams): string {
@@ -464,6 +476,113 @@ export function fetchPortfolioBuilding(buildingId: number): Promise<PortfolioBui
 
 export function fetchPortfolioUnit(unitId: number): Promise<PortfolioUnitDetail> {
   return apiFetch(`/api/v1/portfolio/units/${unitId}`);
+}
+
+export function searchPortfolio(q: string, limit = 8): Promise<PortfolioSearchResult> {
+  return apiFetch(`/api/v1/portfolio/search?q=${encodeURIComponent(q.trim())}&limit=${limit}`);
+}
+
+export interface PortfolioUnitListParams {
+  sector_id?: number | null;
+  project_id?: number | null;
+  building_id?: number | null;
+  occupancy?: 'vacant' | 'occupied' | null;
+  grandeur?: string | null;
+  lease_ending_within_days?: number | null;
+  q?: string | null;
+  page?: number;
+  page_size?: number;
+}
+
+export function fetchPortfolioUnits(params: PortfolioUnitListParams): Promise<PortfolioUnitListPage> {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== '') q.set(k, String(v));
+  }
+  return apiFetch(`/api/v1/portfolio/units?${q.toString()}`);
+}
+
+// ── Portfolio editing ────────────────────────────────────────────────────────
+// Edits send `changes` (only what changed) and `current` (what the editor saw
+// for those fields); a mismatch is refused with STALE_DATA.
+
+export type Patch<T> = { changes: Partial<T>; current: Partial<T> };
+
+export interface ProjectFields {
+  nom_unique_projet: string | null;
+  adresse_quickbooks: string | null;
+  accounting_project_number: string | null;
+}
+
+export interface BuildingFields extends Partial<BuildingReference> {
+  adresse?: string | null;
+  ville?: string | null;
+  code_postal?: string | null;
+  web_building_name?: string | null;
+  actif_inactif?: 'Actif' | 'Inactif' | null;
+  nb_logements?: string | null;
+  nb_etages?: string | null;
+  annee_construction?: string | null;
+}
+
+export interface UnitFields {
+  numero_appartement: string | null;
+  rue: string | null;
+  grandeur: string | null;
+  unique_unit_number: string | null;
+}
+
+export type PaintSpecFields = Omit<PaintSpec, 'paint_spec_id'>;
+
+export function createProject(body: Partial<ProjectFields> & {
+  nom_unique_projet: string; first_building: BuildingFields & { sector_id: number; adresse: string };
+}): Promise<PortfolioCreated> {
+  return apiPost('/api/v1/portfolio/projects', body);
+}
+
+export function updateProject(projectId: number, patch: Patch<ProjectFields>): Promise<void> {
+  return apiPatch(`/api/v1/portfolio/projects/${projectId}`, patch);
+}
+
+export function createBuilding(body: BuildingFields & { project_id: number; sector_id: number; adresse: string }): Promise<PortfolioCreated> {
+  return apiPost('/api/v1/portfolio/buildings', body);
+}
+
+export function updateBuilding(buildingId: number, patch: Patch<BuildingFields>): Promise<void> {
+  return apiPatch(`/api/v1/portfolio/buildings/${buildingId}`, patch);
+}
+
+export function createUnit(body: Partial<UnitFields> & { building_id: number; numero_appartement: string }): Promise<PortfolioCreated> {
+  return apiPost('/api/v1/portfolio/units', body);
+}
+
+export function updateUnit(unitId: number, patch: Patch<UnitFields>): Promise<void> {
+  return apiPatch(`/api/v1/portfolio/units/${unitId}`, patch);
+}
+
+/** Set one fiche-technique line; value null removes it. */
+export function setFicheEntry(buildingId: number, body: { label: string; value: string | null; current_value: string | null }): Promise<void> {
+  return apiPut(`/api/v1/portfolio/buildings/${buildingId}/fiche`, body);
+}
+
+export function createPaintSpec(buildingId: number, body: Partial<PaintSpecFields>): Promise<PortfolioCreated> {
+  return apiPost(`/api/v1/portfolio/buildings/${buildingId}/paint-specs`, body);
+}
+
+export function updatePaintSpec(paintSpecId: number, patch: Patch<PaintSpecFields>): Promise<void> {
+  return apiPatch(`/api/v1/portfolio/paint-specs/${paintSpecId}`, patch);
+}
+
+export function deletePaintSpec(paintSpecId: number): Promise<void> {
+  return apiDelete(`/api/v1/portfolio/paint-specs/${paintSpecId}`);
+}
+
+export function createBuildingDocument(buildingId: number, body: { title: string; url: string; category?: string | null }): Promise<PortfolioCreated> {
+  return apiPost(`/api/v1/portfolio/buildings/${buildingId}/documents`, body);
+}
+
+export function deleteBuildingDocument(documentId: number): Promise<void> {
+  return apiDelete(`/api/v1/portfolio/documents/${documentId}`);
 }
 
 export function fetchTenantTurnover(unitId: number, tenantId: number): Promise<TenantTurnover> {
