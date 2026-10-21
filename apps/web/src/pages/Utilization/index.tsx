@@ -10,7 +10,9 @@ import Select from '../../components/Select';
 type Row = UtilizationResponse['rows'][number];
 type OutcomeKey = keyof Row['outcome_mix'];
 type Review = Row['reviews'][number];
-type SortKey = 'name' | 'assigned' | 'closed' | 'rate' | 'planned' | 'visit' | 'rating';
+/** Reviews shown per technician before « Voir les N autres ». */
+const REVIEW_PREVIEW = 3;
+type SortKey ='name' | 'assigned' | 'closed' | 'rate' | 'planned' | 'visit' | 'rating';
 
 const OUTCOMES: Array<{ key: OutcomeKey; short: readonly [string, string]; cls: string }> = [
   { key: 'complete', short: ['Terminé', 'Done'], cls: 'oComplete' },
@@ -98,9 +100,26 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
   const [showAllReviews, setShowAllReviews] = useState(false);
+  // Technicians whose expanded row shows every review, not just the latest few.
+  const [allFor, setAllFor] = useState<Set<number>>(() => new Set());
 
   function toggleReviews(id: number) {
     setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    // Reopening a row starts back at the short list.
+    setAllFor((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleAllFor(id: number) {
+    setAllFor((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
@@ -411,6 +430,10 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                       const rate = closeRate(r);
                       const oTotal = outcomeTotal(r);
                       const open = expanded.has(r.employee_id) && r.reviews.length > 0;
+                      const newestFirst = [...r.reviews].sort((a, b) => b.submitted_at.localeCompare(a.submitted_at));
+                      const showAll = allFor.has(r.employee_id);
+                      const shownReviews = showAll ? newestFirst : newestFirst.slice(0, REVIEW_PREVIEW);
+                      const hiddenCount = newestFirst.length - REVIEW_PREVIEW;
                       return (
                         <Fragment key={r.employee_id}>
                         <tr data-testid={`util-row-${r.employee_id}`}>
@@ -529,10 +552,26 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                           <tr className={styles.reviewsRow} id={`util-reviews-${r.employee_id}`}
                             data-testid={`util-reviews-${r.employee_id}`}>
                             <td colSpan={5}>
-                              <ul className={styles.reviewList}
-                                aria-label={t(lang, `Avis pour ${r.nom_employe}`, `Reviews for ${r.nom_employe}`)}>
-                                {r.reviews.map((rv) => <ReviewItem key={rv.survey_id} lang={lang} review={rv} />)}
+                              <ul className={`${styles.reviewList} ${showAll ? styles.reviewListScroll : ''}`}
+                                aria-label={t(lang, `Avis pour ${r.nom_employe}`, `Reviews for ${r.nom_employe}`)}
+                                data-testid={`util-review-list-${r.employee_id}`}>
+                                {shownReviews.map((rv) => <ReviewItem key={rv.survey_id} lang={lang} review={rv} />)}
                               </ul>
+                              {hiddenCount > 0 && (
+                                <button
+                                  type="button"
+                                  className={styles.moreBtn}
+                                  aria-expanded={showAll}
+                                  onClick={() => toggleAllFor(r.employee_id)}
+                                  data-testid={`util-reviews-more-${r.employee_id}`}
+                                >
+                                  {showAll
+                                    ? t(lang, 'Afficher moins ▴', 'Show less ▴')
+                                    : hiddenCount === 1
+                                      ? t(lang, 'Voir 1 autre avis ▾', 'Show 1 more review ▾')
+                                      : t(lang, `Voir les ${hiddenCount} autres ▾`, `Show ${hiddenCount} more ▾`)}
+                                </button>
+                              )}
                             </td>
                           </tr>
                         )}

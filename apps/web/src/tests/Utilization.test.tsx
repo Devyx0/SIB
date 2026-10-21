@@ -137,6 +137,52 @@ describe('Utilization', () => {
     expect(screen.queryByTestId('util-all-reviews')).toBeNull();
   });
 
+  it('previews the 3 newest reviews and opens the rest in a scroll box', async () => {
+    const reviews = [1, 2, 3, 4, 5].map((n) => ({
+      survey_id: n, request_id: 100 + n, submitted_at: `2026-10-1${n}T14:00:00Z`,
+      rating: 4, polite: true, problem_solved: true,
+      comments: `Avis ${n}`, building_address: null,
+    }));
+    vi.mocked(fetchUtilization).mockResolvedValue({
+      ...body,
+      rows: [{ ...body.rows[0], avg_rating: 4, rating_count: 5, reviews }],
+    });
+    wrap(<Utilization lang="fr" />);
+    fireEvent.click(await screen.findByTestId('util-rating-24'));
+
+    const list = screen.getByTestId('util-review-list-24');
+    const items = within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(3);
+    expect(items[0]).toHaveTextContent('Avis 5'); // newest first
+    expect(list).not.toHaveTextContent('Avis 2');
+
+    const more = screen.getByTestId('util-reviews-more-24');
+    expect(more).toHaveTextContent('Voir les 2 autres');
+    fireEvent.click(more);
+    expect(within(list).getAllByRole('listitem')).toHaveLength(5);
+    expect(list.className).toMatch(/reviewListScroll/);
+    expect(more).toHaveTextContent('Afficher moins');
+
+    fireEvent.click(more);
+    expect(within(list).getAllByRole('listitem')).toHaveLength(3);
+  });
+
+  it('has no "more" button with 3 reviews or fewer', async () => {
+    vi.mocked(fetchUtilization).mockResolvedValue({
+      ...body,
+      rows: [{
+        ...body.rows[0], avg_rating: 5, rating_count: 1,
+        reviews: [{
+          survey_id: 1, request_id: 101, submitted_at: '2026-10-18T14:00:00Z',
+          rating: 5, polite: true, problem_solved: true, comments: null, building_address: null,
+        }],
+      }],
+    });
+    wrap(<Utilization lang="fr" />);
+    fireEvent.click(await screen.findByTestId('util-rating-24'));
+    expect(screen.queryByTestId('util-reviews-more-24')).toBeNull();
+  });
+
   it('shows "Aucun avis" when a technician has no reviews', async () => {
     wrap(<Utilization lang="fr" />);
     const row = await screen.findByTestId('util-row-24');
