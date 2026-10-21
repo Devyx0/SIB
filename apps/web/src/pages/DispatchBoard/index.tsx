@@ -271,10 +271,10 @@ export default function DispatchBoard({ lang, me }: Props) {
         onReset={resetFilters}
       />
 
-      {/* Only this area scrolls; header, filters and paging stay put. */}
+      {/* Only the table cards scroll; header, filters and paging stay put. */}
       <div className={styles.scrollArea} data-testid="board-scroll">
         {(data?.unscheduled_items?.length ?? 0) > 0 && (
-          <div className={styles.tableWrap} data-testid="unscheduled-group">
+          <div className={`${styles.tableWrap} ${styles.unscheduledGroup}`} data-testid="unscheduled-group">
             <h2 className={styles.groupHeading}>
               {t(
                 lang,
@@ -299,7 +299,7 @@ export default function DispatchBoard({ lang, me }: Props) {
           </div>
         )}
 
-        <div className={styles.tableWrap}>
+        <div className={`${styles.tableWrap} ${styles.mainGroup}`}>
           <RequestTable
             lang={lang}
             inScroller

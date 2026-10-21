@@ -7,14 +7,14 @@
   box-shadow: var(--sh-card);
 }
 
-/* Inside a scrolling parent the wrap must not clip, or the sticky header
-   would stick to the wrap instead of the parent's viewport. fit-content
-   lets the card grow with a wide column set, which the parent then
-   scrolls sideways. */
+/* Inside a height-bounded flex column the card is the scroller on both
+   axes: it keeps the parent's width, shrinks to the room left, and the
+   sticky header sticks to the card's own top. */
 .inScroller {
-  overflow: visible;
-  width: fit-content;
-  min-width: 100%;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .inScroller .table thead th:first-child {
@@ -365,6 +365,15 @@
   background: var(--color-danger);
   color: #fff;
   letter-spacing: 0.02em;
+}
+
+/* Phones and short windows scroll the page instead (see the board's
+   index.module.css): the card only scrolls sideways. */
+@media (max-width: 639px), (max-height: 560px) {
+  .inScroller {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
 }
 
 @media (max-width: 639px) {

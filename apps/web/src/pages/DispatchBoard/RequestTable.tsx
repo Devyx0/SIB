@@ -17,7 +17,7 @@ interface Props {
   total: number;
   showAllCols?: boolean;
   errorMsg?: string;
-  /** Rendered inside a scrolling parent: let the header stick to it. */
+  /** Rendered in a height-bounded flex column: the card scrolls internally. */
   inScroller?: boolean;
 }
 
