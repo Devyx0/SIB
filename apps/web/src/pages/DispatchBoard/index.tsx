@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useRequests } from '../../hooks/useRequests';
 import { useTasks } from '../../hooks/useTasks';
@@ -314,15 +314,22 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
               : t(lang, 'Travaux à planifier, planifiés et en cours', 'Work to plan, planned and in progress')}
           </p>
         </div>
-        {isCoordOrDir && (
-          <button
-            data-testid="nouvel-appel-btn"
-            onClick={() => setShowNewCall(true)}
-            className={styles.newCallBtn}
-          >
-            {t(lang, '+ Nouvel appel', '+ New call')}
-          </button>
-        )}
+        <div className={styles.headerActions}>
+          {!isTriage && (
+            <Link to="/tasks/calendar" className={styles.calendarLink} data-testid="calendar-link">
+              {t(lang, 'Calendrier', 'Calendar')}
+            </Link>
+          )}
+          {isCoordOrDir && (
+            <button
+              data-testid="nouvel-appel-btn"
+              onClick={() => setShowNewCall(true)}
+              className={styles.newCallBtn}
+            >
+              {t(lang, '+ Nouvel appel', '+ New call')}
+            </button>
+          )}
+        </div>
       </header>
 
       <FilterBar

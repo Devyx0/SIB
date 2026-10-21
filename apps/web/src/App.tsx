@@ -4,6 +4,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import AppShell from './components/AppShell';
 import DispatchBoard from './pages/DispatchBoard';
+import TaskCalendar from './pages/TaskCalendar';
 import Dashboard from './pages/Dashboard';
 import Utilization from './pages/Utilization';
 import Portfolio from './pages/Portfolio';
@@ -124,6 +125,7 @@ export default function App() {
               >
                 <Routes>
                   <Route path="triage" element={<DispatchBoard lang={lang} me={me} mode="triage" />} />
+                  <Route path="tasks/calendar" element={<TaskCalendar lang={lang} />} />
                   <Route path="tasks" element={<DispatchBoard lang={lang} me={me} mode="tasks" />} />
                   <Route path="board" element={<Navigate to="/triage" replace />} />
                   <Route path="tableau-de-bord" element={<Dashboard lang={lang} />} />
