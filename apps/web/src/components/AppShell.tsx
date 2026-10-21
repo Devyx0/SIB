@@ -63,16 +63,16 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
             </NavLink>
           ) : (
             <>
-              <NavLink to="/board" data-testid="nav-board" className={navItemClass}>
-                {t(lang, 'Répartition', 'Dispatch')}
+              <NavLink to="/triage" data-testid="nav-triage" className={navItemClass}>
+                {t(lang, 'Triage', 'Triage')}
               </NavLink>
-              <Link to="/board?nouvel-appel=1" data-testid="nav-nouvel-appel" className={styles.navItem}>
+              <NavLink to="/tasks" data-testid="nav-tasks" className={navItemClass}>
+                {t(lang, 'Tâches', 'Tasks')}
+              </NavLink>
+              <Link to="/triage?nouvel-appel=1" data-testid="nav-nouvel-appel" className={styles.navItem}>
                 <span className={styles.plus} aria-hidden="true">+</span>
                 {t(lang, 'Nouvel appel', 'New call')}
               </Link>
-              <NavLink to="/dossiers" data-testid="nav-dossiers" className={navItemClass}>
-                {t(lang, 'Dossiers', 'Cases')}
-              </NavLink>
               <NavLink to="/portfolio" data-testid="nav-portfolio" className={navItemClass}>
                 {t(lang, 'Portfolio', 'Portfolio')}
               </NavLink>

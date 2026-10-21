@@ -1,5 +1,4 @@
-// Request photo and duration helpers shared by the dispatch DetailPanel, the
-// Dossiers pages and the history timeline (HistoryTimeline.tsx).
+// Request photo and duration helpers shared by DetailPanel and HistoryTimeline.
 import { useQuery } from '@tanstack/react-query';
 import { fetchPhotoUrl } from '../api/client';
 import { t } from '../i18n';

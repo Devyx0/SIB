@@ -36,7 +36,7 @@ export default function AlertBell({ lang }: { lang: Lang }) {
       qc.invalidateQueries({ queryKey: ['alerts'] });
     }
     setOpen(false);
-    navigate(`/board?request_id=${requestId}`);
+    navigate(`/triage?request_id=${requestId}`);
   }
 
   async function onMarkAll() {

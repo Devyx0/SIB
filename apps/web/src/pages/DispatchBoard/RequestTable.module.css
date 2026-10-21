@@ -119,6 +119,11 @@
   box-shadow: inset 3px 0 0 var(--color-danger);
 }
 
+/* Tasks: awaiting_redispatch — left rail only (status pill already labels it) */
+.escalatedRow {
+  box-shadow: inset 3px 0 0 #c45c26;
+}
+
 .dupRow {
   background: color-mix(in srgb, #c45c26 10%, transparent);
   box-shadow: inset 3px 0 0 #c45c26;

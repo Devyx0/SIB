@@ -218,27 +218,6 @@ export interface ListResponse {
   unscheduled_items: ListRow[];
 }
 
-export interface DossierRow {
-  request_id: number;
-  last_en_route_at: string;
-  last_closeout_at: string | null;
-  unit_label: string | null;
-  raw_title: string | null;
-  territoire: string | null;
-  color_code: string | null;
-  employee_name: string | null;
-  last_outcome: string | null;
-  photo_count: number;
-  visit_count: number;
-  closeout_urgent: boolean | null;
-  status: string;
-}
-
-export interface DossierListResponse {
-  total: number;
-  items: DossierRow[];
-}
-
 export interface SectorLookup {
   sector_id: number;
   territoire: string;

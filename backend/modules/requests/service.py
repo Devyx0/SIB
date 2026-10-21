@@ -21,7 +21,7 @@ from backend.modules.weather import repository as weather_repo
 from . import repository as repo
 from . import storage
 from .schemas import (
-    AddLogBody, ArrivedBody, AssignBody, CloseoutBody, DossierListResponse, DossierRow,
+    AddLogBody, ArrivedBody, AssignBody, CloseoutBody,
     EnRouteBody, ListResponse, ListRow,
     PhotoUploadResponse, PhotoUrlResponse, RequestDetail, RescheduleBody,
     RouteBody, SaveDispatchBody, SetCostBody, SetFollowUpDateBody, SetNextStepsBody,
@@ -140,20 +140,6 @@ def list_requests(conn, params, user: CurrentUser) -> ListResponse:
         items=[ListRow(**r) for r in rows],
         unscheduled_items=[ListRow(**r) for r in unscheduled],
     )
-
-
-def list_dossiers(conn, *, outcome, employee_id, start_date, end_date, q,
-                  limit, offset) -> DossierListResponse:
-    if (start_date is None) != (end_date is None):
-        raise ValidationFailed("start_date and end_date must be provided together")
-    if start_date is not None and end_date < start_date:
-        raise ValidationFailed("end_date must not be before start_date")
-    total, rows = repo.list_dossiers(
-        conn, outcome=outcome, employee_id=employee_id,
-        start_date=start_date, end_date=end_date, q=q,
-        limit=limit, offset=offset,
-    )
-    return DossierListResponse(total=total, items=[DossierRow(**r) for r in rows])
 
 
 def get_request(conn, request_id: int, user: CurrentUser, *, bypass_scope: bool = False) -> RequestDetail:

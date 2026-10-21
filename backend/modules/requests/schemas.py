@@ -328,27 +328,6 @@ class ListResponse(BaseModel):
     unscheduled_items: list[ListRow] = Field(default_factory=list)
 
 
-class DossierRow(BaseModel):
-    request_id: int
-    last_en_route_at: datetime
-    last_closeout_at: Optional[datetime] = None
-    unit_label: Optional[str] = None
-    raw_title: Optional[str] = None
-    territoire: Optional[str] = None
-    color_code: Optional[str] = None
-    employee_name: Optional[str] = None     # last visit's employee
-    last_outcome: Optional[str] = None      # null = visit still open
-    photo_count: int = 0
-    visit_count: int = 0
-    closeout_urgent: Optional[bool] = None
-    status: str
-
-
-class DossierListResponse(BaseModel):
-    total: int
-    items: list[DossierRow]
-
-
 class SectorLookup(BaseModel):
     sector_id: int
     territoire: str

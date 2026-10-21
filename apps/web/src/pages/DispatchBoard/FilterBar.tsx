@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import type { BoardMode } from '../../api/boardModes';
+import { statusesForMode } from '../../api/boardModes';
 import { statusLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import type { SectorLookup, EmployeeLookup } from '../../api/schema.d.ts';
@@ -9,6 +11,8 @@ import Select from '../../components/Select';
 
 interface Props {
   lang?: Lang;
+  /** triage = no date period; tasks = dates + escalated filter. */
+  mode?: BoardMode;
   startDate: string;
   endDate: string;
   status: string[];
@@ -44,6 +48,7 @@ interface Props {
 
 export default function FilterBar({
   lang = 'fr',
+  mode = 'tasks',
   startDate, endDate, status, sourceCalendar, q, total,
   sectors = [], sectorId = null, urgency = '',
   employees = [], assignedEmployeeId = null,
@@ -61,6 +66,8 @@ export default function FilterBar({
   hasActiveFilters = false,
   onReset,
 }: Props) {
+  const showDates = mode === 'tasks';
+  const statusOptions = statusesForMode(mode);
   const [draft, setDraft] = useState(q);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -271,7 +278,7 @@ export default function FilterBar({
           )}
         </button>
 
-        <div className={styles.fieldGroup}>
+        {showDates && <div className={styles.fieldGroup}>
           <span className={styles.label} id="board-period">{t(lang, 'Période', 'Period')}</span>
           <div
             className={styles.periodWrap}
@@ -360,11 +367,16 @@ export default function FilterBar({
               </div>
             </div>
           </div>
-        </div>
+        </div>}
 
         <div className={styles.fieldGroup}>
           <span className={styles.label}>{t(lang, 'Statut', 'Status')}</span>
-          <StatusSelect lang={lang} value={status} onChange={onStatus} />
+          <StatusSelect
+            lang={lang}
+            value={status}
+            onChange={onStatus}
+            allowedStatuses={statusOptions}
+          />
         </div>
 
         <div className={styles.fieldGroup}>
@@ -475,17 +487,19 @@ export default function FilterBar({
         )}
 
         <div className={styles.tools}>
-          <label
-            className={`${styles.toggleChip} ${redispatch ? styles.toggleChipActive : ''}`}
-            data-testid="redispatch-filter"
-          >
-            <input
-              type="checkbox"
-              checked={redispatch}
-              onChange={(e) => onRedispatch(e.target.checked)}
-            />
-            {t(lang, 'À redispatcher', 'To re-dispatch')}
-          </label>
+          {mode === 'tasks' && (
+            <label
+              className={`${styles.toggleChip} ${redispatch ? styles.toggleChipActive : ''}`}
+              data-testid="redispatch-filter"
+            >
+              <input
+                type="checkbox"
+                checked={redispatch}
+                onChange={(e) => onRedispatch(e.target.checked)}
+              />
+              {t(lang, 'À redispatcher', 'To re-dispatch')}
+            </label>
+          )}
 
           <button
             type="button"

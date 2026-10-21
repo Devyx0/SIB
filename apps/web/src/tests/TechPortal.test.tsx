@@ -110,17 +110,17 @@ describe('role routing', () => {
     await waitFor(() => expect(screen.getByText(/Mes appels/)).toBeTruthy());
   });
 
-  it('coordinator keeps the dispatch board', async () => {
+  it('coordinator keeps the triage board', async () => {
     mocks.fetchMe.mockResolvedValue(COORD);
     wrap(['/board']);
-    await waitFor(() => expect(screen.getAllByText('Répartition').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Triage').length).toBeGreaterThan(0));
     expect(screen.queryByText(/Mes appels/)).toBeNull();
   });
 
-  it('technician+coordinator keeps the dispatch board', async () => {
+  it('technician+coordinator keeps the triage board', async () => {
     mocks.fetchMe.mockResolvedValue(TECH_COORD);
     wrap(['/board']);
-    await waitFor(() => expect(screen.getAllByText('Répartition').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Triage').length).toBeGreaterThan(0));
   });
 });
 

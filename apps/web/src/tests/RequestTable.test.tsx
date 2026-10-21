@@ -73,6 +73,11 @@ describe('RequestTable', () => {
     expect(screen.getByText(/Erreur lors du chargement/)).toBeTruthy();
   });
 
+  it('marks awaiting_redispatch rows as escalated', () => {
+    render(<RequestTable {...defaultProps} rows={[makeRow({ status: 'awaiting_redispatch' })]} />);
+    expect(screen.getByTestId('request-row').getAttribute('data-escalated')).not.toBeNull();
+  });
+
   it('renders row data', () => {
     render(<RequestTable {...defaultProps} rows={[makeRow()]} />);
     expect(screen.getByText('Test titre')).toBeTruthy();

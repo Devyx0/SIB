@@ -220,7 +220,9 @@ export default function PublicDemande({
                 />
               </div>
             )}
-            <Turnstile action="tenant_lookup" onToken={setLookupToken} resetKey={lookupReset} />
+            <div className={styles.turnstile}>
+              <Turnstile action="tenant_lookup" onToken={setLookupToken} resetKey={lookupReset} />
+            </div>
             {showDeskPhone && (
               <p className={styles.deskHelp} data-testid="public-desk-help">
                 {t(
@@ -382,7 +384,9 @@ export default function PublicDemande({
               </div>
             </div>
 
-            <Turnstile action="tenant_submit" onToken={setSubmitToken} resetKey={submitReset} />
+            <div className={styles.turnstile}>
+              <Turnstile action="tenant_submit" onToken={setSubmitToken} resetKey={submitReset} />
+            </div>
             {errorMsg && <p className={styles.error}>{errorMsg}</p>}
             <button
               type="submit"

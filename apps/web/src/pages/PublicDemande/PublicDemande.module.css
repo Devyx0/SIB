@@ -30,10 +30,21 @@
   color: var(--color-neutral-600, #5c6570);
 }
 
+.card form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .field {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding-block: 4px;
+}
+
+.turnstile {
+  padding-block: 12px;
 }
 
 .label {

@@ -175,6 +175,7 @@ export default function RequestTable({
       }
 
       const isUrgent = row.urgency_tier === 'URGENT';
+      const isEscalated = row.status === 'awaiting_redispatch';
       const isDup = row.duplicate_of_request_id != null;
       const isAdd = row.addition_to_request_id != null;
       const isSelected = row.request_id === selectedId;
@@ -186,6 +187,7 @@ export default function RequestTable({
           className={[
             styles.row,
             isUrgent ? styles.ajdRow : '',
+            isEscalated ? styles.escalatedRow : '',
             isDup ? styles.dupRow : '',
             isAdd ? styles.addRow : '',
             isSelected ? styles.selectedRow : '',
@@ -196,6 +198,7 @@ export default function RequestTable({
           data-testid="request-row"
           data-duplicate={isDup || undefined}
           data-addition={isAdd || undefined}
+          data-escalated={isEscalated || undefined}
           tabIndex={0}
         >
           {/* mandatory cells */}

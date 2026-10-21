@@ -4,8 +4,6 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import AppShell from './components/AppShell';
 import DispatchBoard from './pages/DispatchBoard';
-import DossiersList from './pages/Dossiers';
-import DossierDetail from './pages/Dossiers/DossierDetail';
 import Dashboard from './pages/Dashboard';
 import Utilization from './pages/Utilization';
 import Portfolio from './pages/Portfolio';
@@ -22,7 +20,7 @@ import type { MeResponse } from './api/schema.d.ts';
 import type { Lang } from './i18n';
 
 function homePath(me: MeResponse | null): string {
-  if (!me) return '/board';
+  if (!me) return '/triage';
   const elevated = me.roles.some((r) => r === 'coordinator' || r === 'director');
   if (me.roles.includes('receptionist') && !elevated) return '/intake';
   if (
@@ -31,7 +29,7 @@ function homePath(me: MeResponse | null): string {
   ) {
     return '/tech';
   }
-  return '/board';
+  return '/triage';
 }
 
 export default function App() {
@@ -125,13 +123,13 @@ export default function App() {
                 onSignOut={handleSignOut}
               >
                 <Routes>
-                  <Route path="board" element={<DispatchBoard lang={lang} me={me} />} />
-                  <Route path="dossiers" element={<DossiersList lang={lang} />} />
-                  <Route path="dossiers/:id" element={<DossierDetail lang={lang} />} />
+                  <Route path="triage" element={<DispatchBoard lang={lang} me={me} mode="triage" />} />
+                  <Route path="tasks" element={<DispatchBoard lang={lang} me={me} mode="tasks" />} />
+                  <Route path="board" element={<Navigate to="/triage" replace />} />
                   <Route path="tableau-de-bord" element={<Dashboard lang={lang} />} />
                   <Route path="utilisation" element={<Utilization lang={lang} />} />
                   <Route path="portfolio/*" element={<Portfolio lang={lang} />} />
-                  <Route path="*" element={<Navigate to="board" replace />} />
+                  <Route path="*" element={<Navigate to="/triage" replace />} />
                 </Routes>
               </AppShell>
             )

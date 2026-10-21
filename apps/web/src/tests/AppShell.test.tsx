@@ -53,9 +53,9 @@ describe('AppShell side menu', () => {
 
   it('renders the menu items with French labels', () => {
     wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
-    expect(screen.getByTestId('nav-board')).toHaveTextContent('Répartition');
+    expect(screen.getByTestId('nav-triage')).toHaveTextContent('Triage');
+    expect(screen.getByTestId('nav-tasks')).toHaveTextContent('Tâches');
     expect(screen.getByTestId('nav-nouvel-appel')).toHaveTextContent('Nouvel appel');
-    expect(screen.getByTestId('nav-dossiers')).toHaveTextContent('Dossiers');
     expect(screen.getByTestId('nav-apres-heures')).toHaveTextContent('Après les heures');
     expect(screen.getByText("Vue d'ensemble")).toBeTruthy();
     expect(screen.getByTestId('nav-tableau-bord')).toHaveTextContent('Tableau de bord');
@@ -76,12 +76,12 @@ describe('AppShell side menu', () => {
       .toBe('/utilisation');
   });
 
-  it('routes: Répartition → /board, Dossiers → /dossiers, Nouvel appel → /board?nouvel-appel=1', () => {
+  it('routes: Triage → /triage, Tasks → /tasks, Nouvel appel → /triage?nouvel-appel=1', () => {
     wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
-    expect((screen.getByTestId('nav-board') as HTMLAnchorElement).getAttribute('href')).toBe('/board');
-    expect((screen.getByTestId('nav-dossiers') as HTMLAnchorElement).getAttribute('href')).toBe('/dossiers');
+    expect((screen.getByTestId('nav-triage') as HTMLAnchorElement).getAttribute('href')).toBe('/triage');
+    expect((screen.getByTestId('nav-tasks') as HTMLAnchorElement).getAttribute('href')).toBe('/tasks');
     expect((screen.getByTestId('nav-nouvel-appel') as HTMLAnchorElement).getAttribute('href'))
-      .toBe('/board?nouvel-appel=1');
+      .toBe('/triage?nouvel-appel=1');
   });
 
   it('Escape closes the mobile slide-over', async () => {
@@ -109,8 +109,8 @@ describe('AppShell side menu', () => {
     expect(screen.getByTestId('nav-nouvel-appel')).toHaveTextContent('Nouvel appel');
     expect((screen.getByTestId('nav-nouvel-appel') as HTMLAnchorElement).getAttribute('href'))
       .toBe('/intake');
-    expect(screen.queryByTestId('nav-board')).toBeNull();
-    expect(screen.queryByTestId('nav-dossiers')).toBeNull();
+    expect(screen.queryByTestId('nav-triage')).toBeNull();
+    expect(screen.queryByTestId('nav-tasks')).toBeNull();
     expect(screen.queryByTestId('nav-tableau-bord')).toBeNull();
   });
 });

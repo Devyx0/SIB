@@ -5,6 +5,7 @@ import FilterBar from '../pages/DispatchBoard/FilterBar';
 
 const noop = () => {};
 const defaultProps = {
+  mode: 'tasks' as const,
   startDate: '2026-09-01',
   endDate: '2026-09-25',
   status: [],
@@ -17,6 +18,7 @@ const defaultProps = {
   onSourceCalendar: noop,
   onQ: noop,
 };
+const triageProps = { ...defaultProps, mode: 'triage' as const };
 
 describe('FilterBar', () => {
   it('renders the request count', () => {
@@ -50,7 +52,7 @@ describe('FilterBar', () => {
   });
 
   it('status checkboxes live in a dropdown, hidden until opened', async () => {
-    render(<FilterBar {...defaultProps} />);
+    render(<FilterBar {...triageProps} />);
     expect(screen.queryByText('Reçu')).toBeNull();
     expect(screen.getByTestId('status-select').textContent).toMatch(/Tous les statuts/);
     await userEvent.click(screen.getByTestId('status-select'));
@@ -60,29 +62,29 @@ describe('FilterBar', () => {
 
   it('checking a status in the dropdown calls onStatus', async () => {
     const onStatus = vi.fn();
-    render(<FilterBar {...defaultProps} status={['triaged']} onStatus={onStatus} />);
+    render(<FilterBar {...triageProps} status={['triaged']} onStatus={onStatus} />);
     await userEvent.click(screen.getByTestId('status-select'));
     await userEvent.click(screen.getByLabelText('Reçu'));
     expect(onStatus).toHaveBeenCalledWith(['triaged', 'intake_received']);
   });
 
   it('trigger summarises the selection', () => {
-    const { rerender } = render(<FilterBar {...defaultProps} status={['triaged']} />);
+    const { rerender } = render(<FilterBar {...triageProps} status={['triaged']} />);
     expect(screen.getByTestId('status-select').textContent).toMatch(/Trié/);
-    rerender(<FilterBar {...defaultProps} status={['triaged', 'closed']} />);
+    rerender(<FilterBar {...triageProps} status={['triaged', 'intake_received']} />);
     expect(screen.getByTestId('status-select').textContent).toMatch(/2 statuts/);
   });
 
   it('calls onStatus with cleared array when clear is clicked', async () => {
     const onStatus = vi.fn();
-    render(<FilterBar {...defaultProps} status={['triaged']} onStatus={onStatus} />);
+    render(<FilterBar {...triageProps} status={['triaged']} onStatus={onStatus} />);
     await userEvent.click(screen.getByTestId('status-select'));
     await userEvent.click(screen.getByText('Effacer'));
     expect(onStatus).toHaveBeenCalledWith([]);
   });
 
   it('closes the status dropdown on Escape', async () => {
-    render(<FilterBar {...defaultProps} />);
+    render(<FilterBar {...triageProps} />);
     await userEvent.click(screen.getByTestId('status-select'));
     expect(screen.getByText('Reçu')).toBeTruthy();
     await userEvent.keyboard('{Escape}');
@@ -198,13 +200,22 @@ describe('FilterBar', () => {
 });
 
 describe('phone filter toggle', () => {
-  beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
+  const store: Record<string, string> = {};
+  beforeEach(() => {
+    Object.keys(store).forEach((k) => delete store[k]);
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store[k] ?? null,
+      setItem: (k: string, v: string) => { store[k] = v; },
+      removeItem: (k: string) => { delete store[k]; },
+      clear: () => { Object.keys(store).forEach((k) => delete store[k]); },
+    });
+  });
 
   it('starts folded, summarises active filters, and opens/closes', async () => {
     render(
       <FilterBar
         {...defaultProps}
-        status={['triaged']}
+        status={['scheduled']}
         urgency="URGENT"
         sectors={[{ sector_id: 2, territoire: 'Haute-Ville', color_code: null }]}
         sectorId={2}
@@ -213,7 +224,7 @@ describe('phone filter toggle', () => {
     const toggle = screen.getByTestId('filters-toggle');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.textContent).toMatch(/Filtres\s*3/);
-    expect(screen.getByTestId('filters-summary').textContent).toBe('01/09 → 25/09 · Trié · Urgent · Haute-Ville');
+    expect(screen.getByTestId('filters-summary').textContent).toBe('01/09 → 25/09 · Planifié · Urgent · Haute-Ville');
 
     await userEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');

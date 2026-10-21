@@ -10,6 +10,13 @@ from backend.main import create_app
 from backend.modules.intake import public_service
 
 
+def test_format_address_shows_full_civic():
+    assert public_service._format_address("123 Rue Principale", "4B") == (
+        "123 Rue Principale, app. 4B"
+    )
+    assert public_service._format_address(None, None) == "Adresse enregistrée"
+
+
 @pytest.fixture
 def client(db_conn):
     app = create_app()
@@ -77,7 +84,8 @@ def test_lookup_by_phone_and_submit(client, db_conn):
     body = r.json()
     assert body["session_token"]
     assert body["pets_allowed"] in (True, False)
-    assert "***" in body["address_label"] or body["address_label"]
+    assert body["address_label"]
+    assert "***" not in body["address_label"]
 
     r2 = client.post(
         "/api/v1/public/intake/submit",
@@ -163,37 +171,10 @@ def test_rate_limit_lookup(client, db_conn):
     assert r.status_code == 429
 
 
-def test_verify_turnstile_fail_closed(monkeypatch):
+def test_verify_turnstile_is_noop():
+    """Backend Turnstile check disabled — always accepts (FE widget optional)."""
     from backend.core import turnstile as ts
-    from backend.core.exceptions import PermissionDenied
-    from unittest.mock import MagicMock
 
-    monkeypatch.setenv("TURNSTILE_SECRET", "secret")
-    monkeypatch.setenv("TURNSTILE_HOSTNAMES", "localhost")
-    # Reload settings fields used by verify (pydantic may ignore plain setattr).
-    object.__setattr__(ts.settings, "TURNSTILE_SECRET", "secret")
-    object.__setattr__(ts.settings, "TURNSTILE_HOSTNAMES", "localhost")
-
-    def _run(payload):
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = payload
-        mock_client = MagicMock()
-        mock_client.__enter__.return_value = mock_client
-        mock_client.__exit__.return_value = False
-        mock_client.post.return_value = mock_resp
-        monkeypatch.setattr(ts.httpx, "Client", MagicMock(return_value=mock_client))
-
-    _run({"success": True, "action": "wrong", "hostname": "localhost"})
-    with pytest.raises(PermissionDenied):
-        ts.verify_turnstile("tok", expected_action="tenant_lookup")
-
-    _run({"success": True, "action": "tenant_lookup", "hostname": "evil.com"})
-    with pytest.raises(PermissionDenied):
-        ts.verify_turnstile("tok", expected_action="tenant_lookup")
-
-    _run({"success": True, "action": "tenant_lookup", "hostname": "localhost"})
-    ts.verify_turnstile("tok", expected_action="tenant_lookup")
-
-    with pytest.raises(PermissionDenied):
-        ts.verify_turnstile("", expected_action="tenant_lookup")
+    ts.verify_turnstile(None, expected_action="tenant_lookup")
+    ts.verify_turnstile("", expected_action="tenant_submit")
+    ts.verify_turnstile("any-token", expected_action="tenant_lookup")

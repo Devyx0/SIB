@@ -8,6 +8,8 @@ interface Props {
   lang: Lang;
   value: string[];
   onChange: (v: string[]) => void;
+  /** Limit checkboxes (triage vs tasks). Default: all filterable statuses. */
+  allowedStatuses?: readonly string[];
 }
 
 /** Collapse triage_pending into intake_received for the checkbox UI. */
@@ -21,12 +23,15 @@ function uiStatuses(value: string[]): string[] {
 
 // Multi-select dropdown for the status filter: a trigger summarising the
 // selection and a popover of checkboxes. Closes on outside click / Escape.
-export default function StatusSelect({ lang, value, onChange }: Props) {
+export default function StatusSelect({ lang, value, onChange, allowedStatuses }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popId = useId();
   const selected = uiStatuses(value);
+  const options = (allowedStatuses?.length
+    ? FILTER_STATUS_VALUES.filter((s) => allowedStatuses.includes(s))
+    : FILTER_STATUS_VALUES);
 
   useEffect(() => {
     if (!open) return;
@@ -77,7 +82,7 @@ export default function StatusSelect({ lang, value, onChange }: Props) {
       {open && (
         <div id={popId} className={styles.popover} role="group" aria-label={t(lang, 'Statut', 'Status')}>
           <div className={styles.popoverList}>
-            {FILTER_STATUS_VALUES.map((s) => (
+            {options.map((s) => (
               <label key={s} className={styles.popoverOption}>
                 <input
                   type="checkbox"

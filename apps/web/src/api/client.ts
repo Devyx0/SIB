@@ -1,5 +1,5 @@
-import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse } from './schema.d.ts';
-export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DossierListResponse, DossierRow, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse };
+import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse } from './schema.d.ts';
+export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse };
 import { supabase } from '../lib/supabase';
 
 // Dev: same-origin (Vite proxies /api → backend). Prod: absolute API host.
@@ -120,28 +120,6 @@ export function fetchRequests(params: RequestListParams): Promise<ListResponse> 
 
 export function fetchRequest(id: number): Promise<RequestDetail> {
   return apiFetch<RequestDetail>(`/api/v1/requests/${id}`);
-}
-
-export interface DossierListParams {
-  outcome?: string;
-  employee_id?: number;
-  start_date?: string;
-  end_date?: string;
-  q?: string;
-  limit?: number;
-  offset?: number;
-}
-
-export function fetchDossiers(params: DossierListParams): Promise<DossierListResponse> {
-  const qp = new URLSearchParams();
-  if (params.outcome) qp.set('outcome', params.outcome);
-  if (params.employee_id != null) qp.set('employee_id', String(params.employee_id));
-  if (params.start_date) qp.set('start_date', params.start_date);
-  if (params.end_date) qp.set('end_date', params.end_date);
-  if (params.q) qp.set('q', params.q);
-  if (params.limit != null) qp.set('limit', String(params.limit));
-  if (params.offset != null) qp.set('offset', String(params.offset));
-  return apiFetch<DossierListResponse>(`/api/v1/dossiers?${qp.toString()}`);
 }
 
 export function fetchSectors(): Promise<SectorLookup[]> {

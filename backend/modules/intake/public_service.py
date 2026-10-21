@@ -38,17 +38,9 @@ def _digits(phone: str) -> str:
     return _PHONE_DIGITS.sub("", phone or "")
 
 
-def _mask_address(adresse: str | None, apt: str | None) -> str:
-    """Show street name; mask leading civic number."""
-    raw = (adresse or "").strip()
-    if not raw:
-        label = "Adresse enregistrée"
-    else:
-        parts = raw.split(None, 1)
-        if len(parts) == 2 and parts[0][:1].isdigit():
-            label = f"*** {parts[1]}"
-        else:
-            label = raw
+def _format_address(adresse: str | None, apt: str | None) -> str:
+    """Full building address + apt — shown so tenant can confirm before submit."""
+    label = (adresse or "").strip() or "Adresse enregistrée"
     if apt:
         label = f"{label}, app. {apt}"
     return label
@@ -186,7 +178,7 @@ def lookup_tenant(
         caller_name=(row["nom_complet"] or "").strip() or "Locataire",
         phone=row.get("phone"),
         email=row.get("email"),
-        address_label=_mask_address(row.get("building_adresse"), row.get("numero_appartement")),
+        address_label=_format_address(row.get("building_adresse"), row.get("numero_appartement")),
         unit_label=row.get("numero_appartement"),
         pets_allowed=row.get("droit_animaux") is True,
     )

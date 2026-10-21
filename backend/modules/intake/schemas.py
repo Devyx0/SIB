@@ -110,7 +110,8 @@ class MatchResponse(BaseModel):
 class PublicLookupBody(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
-    turnstile_token: str = Field(..., min_length=1, max_length=2048)
+    # Optional — backend verification disabled (see core/turnstile.py).
+    turnstile_token: Optional[str] = Field(default=None, max_length=2048)
 
 
 class PublicLookupResponse(BaseModel):
@@ -125,7 +126,8 @@ class PublicLookupResponse(BaseModel):
 
 class PublicSubmitBody(BaseModel):
     session_token: str = Field(..., min_length=1)
-    turnstile_token: str = Field(..., min_length=1, max_length=2048)
+    # Optional — backend verification disabled (see core/turnstile.py).
+    turnstile_token: Optional[str] = Field(default=None, max_length=2048)
     access: AccessChoice
     access_details: Optional[str] = None
     animals: Optional[AnimalsChoice] = None

@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useRequests } from '../../hooks/useRequests';
 import { fetchSectors, fetchEmployees, ApiError } from '../../api/client';
+import type { BoardMode } from '../../api/boardModes';
+import { clampStatusesToMode, statusesForMode } from '../../api/boardModes';
 import { expandStatusFilter } from '../../api/statusValues';
 import type { Lang } from '../../i18n';
 import { t } from '../../i18n';
@@ -10,6 +12,7 @@ import FilterBar from './FilterBar';
 import RequestTable from './RequestTable';
 import DetailPanel from './DetailPanel';
 import NouvelAppelModal from './NouvelAppelModal';
+import TaskDayStrip from './TaskDayStrip';
 import Pagination from '../../components/Pagination';
 import { DEMO_ROW, isDemoEnabled } from '../../dev/demoRequest';
 import styles from './index.module.css';
@@ -19,6 +22,7 @@ import type { MeResponse } from '../../api/schema.d.ts';
 interface Props {
   lang: Lang;
   me?: MeResponse | null;
+  mode: BoardMode;
 }
 
 const PAGE_SIZE = 50;
@@ -36,12 +40,13 @@ function defaultDateRange(): { start: string; end: string } {
 
 const { start: DEFAULT_START, end: DEFAULT_END } = defaultDateRange();
 
-export default function DispatchBoard({ lang, me }: Props) {
+export default function DispatchBoard({ lang, me, mode }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showAllCols, setShowAllCols] = useState(false);
   const [showNewCall, setShowNewCall] = useState(false);
   const isCoordOrDir = !!(me?.roles.includes('coordinator') || me?.roles.includes('director'));
+  const isTriage = mode === 'triage';
 
   // Side-menu entry point: ?nouvel-appel=1 opens the modal. The param is
   // stripped on close/save so a refresh afterwards does not reopen it.
@@ -67,13 +72,19 @@ export default function DispatchBoard({ lang, me }: Props) {
     }
   }
 
-  const startDate = searchParams.get('start_date') ?? DEFAULT_START;
-  const endDate = searchParams.get('end_date') ?? DEFAULT_END;
-  const statusParam = searchParams.getAll('status');
+  const rangeStart = searchParams.get('start_date') ?? DEFAULT_START;
+  const rangeEnd = searchParams.get('end_date') ?? DEFAULT_END;
+  /** Tasks: optional single-day focus within the range. */
+  const dayFocus = searchParams.get('day');
+  const startDate = isTriage ? '' : (dayFocus && dayFocus >= rangeStart && dayFocus <= rangeEnd ? dayFocus : rangeStart);
+  const endDate = isTriage ? '' : (dayFocus && dayFocus >= rangeStart && dayFocus <= rangeEnd ? dayFocus : rangeEnd);
+  const statusParam = clampStatusesToMode(mode, searchParams.getAll('status'));
   const sourceCalendar = searchParams.get('source_calendar') ?? undefined;
   const q = searchParams.get('q') ?? undefined;
-  const sortBy = searchParams.get('sort_by') ?? 'start_date';
-  const sortDir = (searchParams.get('sort_dir') ?? 'asc') as 'asc' | 'desc';
+  const sortBy = searchParams.get('sort_by')
+    ?? (isTriage ? 'urgency_tier' : 'start_date');
+  const sortDir = (searchParams.get('sort_dir')
+    ?? (isTriage ? 'asc' : 'asc')) as 'asc' | 'desc';
   const offset = Number(searchParams.get('offset') ?? '0');
   const sectorId = searchParams.get('sector_id')
     ? Number(searchParams.get('sector_id'))
@@ -82,20 +93,20 @@ export default function DispatchBoard({ lang, me }: Props) {
   const assignedEmployeeId = searchParams.get('assigned_employee_id')
     ? Number(searchParams.get('assigned_employee_id'))
     : undefined;
-  const redispatch = searchParams.get('redispatch') === '1';
+  const redispatch = !isTriage && searchParams.get('redispatch') === '1';
   const hasSubParam = searchParams.get('has_subcontractor');
   const hasSubcontractor = hasSubParam === 'true' ? true
     : hasSubParam === 'false' ? false
     : undefined;
 
-  // Received filter also covers the transient triage_pending lock.
-  const statusForApi = statusParam.length
-    ? expandStatusFilter(statusParam)
-    : undefined;
+  // Mode default statuses when URL has none; Received expands triage_pending.
+  const statusForApi = expandStatusFilter(
+    statusParam.length ? statusParam : statusesForMode(mode),
+  );
 
   const params = {
-    start_date: startDate,
-    end_date: endDate,
+    start_date: isTriage ? undefined : startDate,
+    end_date: isTriage ? undefined : endDate,
     status: statusForApi,
     source_calendar: sourceCalendar,
     q: q || undefined,
@@ -111,7 +122,7 @@ export default function DispatchBoard({ lang, me }: Props) {
   };
 
   const isDateRangeValid = (() => {
-    if (!startDate || !endDate) return true;
+    if (isTriage || !startDate || !endDate) return true;
     const days = (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000;
     return days >= 0 && days <= 31;
   })();
@@ -146,9 +157,9 @@ export default function DispatchBoard({ lang, me }: Props) {
 
   // URL params that narrow the list (sort and paging are not filters).
   const FILTER_KEYS = [
-    'start_date', 'end_date', 'status', 'source_calendar', 'q',
+    'start_date', 'end_date', 'day', 'status', 'source_calendar', 'q',
     'sector_id', 'urgency', 'assigned_employee_id', 'redispatch',
-    'has_subcontractor',
+    'has_subcontractor', 'sort_by', 'sort_dir',
   ];
   const hasActiveFilters = FILTER_KEYS.some((k) => searchParams.has(k));
 
@@ -156,6 +167,16 @@ export default function DispatchBoard({ lang, me }: Props) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       FILTER_KEYS.forEach((k) => next.delete(k));
+      next.delete('offset');
+      return next;
+    });
+  }
+
+  function setDayFocus(day: string | null) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (day) next.set('day', day);
+      else next.delete('day');
       next.delete('offset');
       return next;
     });
@@ -174,7 +195,7 @@ export default function DispatchBoard({ lang, me }: Props) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.delete('status');
-      values.forEach((v) => next.append('status', v));
+      clampStatusesToMode(mode, values).forEach((v) => next.append('status', v));
       next.delete('offset');
       return next;
     });
@@ -218,8 +239,16 @@ export default function DispatchBoard({ lang, me }: Props) {
     <div className={styles.page}>
       <header className={styles.header}>
         <div className={styles.titleBlock}>
-          <h1>{t(lang, 'Répartition', 'Dispatch')}</h1>
-          <p className={styles.subtitle}>{t(lang, 'Appels de service et assignations', 'Service calls and assignments')}</p>
+          <h1>
+            {isTriage
+              ? t(lang, 'Triage', 'Triage')
+              : t(lang, 'Tâches', 'Tasks')}
+          </h1>
+          <p className={styles.subtitle}>
+            {isTriage
+              ? t(lang, 'Nouveaux appels à prioriser et assigner', 'New calls to prioritize and assign')
+              : t(lang, 'Appels planifiés et en cours', 'Scheduled and in-progress calls')}
+          </p>
         </div>
         {isCoordOrDir && (
           <button
@@ -234,8 +263,9 @@ export default function DispatchBoard({ lang, me }: Props) {
 
       <FilterBar
         lang={lang}
-        startDate={startDate}
-        endDate={endDate}
+        mode={mode}
+        startDate={rangeStart}
+        endDate={rangeEnd}
         status={statusParam}
         sourceCalendar={sourceCalendar ?? ''}
         q={q ?? ''}
@@ -249,12 +279,25 @@ export default function DispatchBoard({ lang, me }: Props) {
         showAllCols={showAllCols}
         redispatch={redispatch}
         onRedispatch={(v) => setFilter('redispatch', v ? '1' : null)}
-        onStartDate={(v) => setFilter('start_date', v)}
-        onEndDate={(v) => setFilter('end_date', v)}
+        onStartDate={(v) => setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          if (v) next.set('start_date', v); else next.delete('start_date');
+          next.delete('day');
+          next.delete('offset');
+          return next;
+        })}
+        onEndDate={(v) => setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          if (v) next.set('end_date', v); else next.delete('end_date');
+          next.delete('day');
+          next.delete('offset');
+          return next;
+        })}
         onDateRange={(start, end) => setSearchParams((prev) => {
           const next = new URLSearchParams(prev);
           next.set('start_date', start);
           next.set('end_date', end);
+          next.delete('day');
           next.delete('offset');
           return next;
         })}
@@ -277,16 +320,32 @@ export default function DispatchBoard({ lang, me }: Props) {
         onReset={resetFilters}
       />
 
+      {!isTriage && (
+        <TaskDayStrip
+          lang={lang}
+          startDate={rangeStart}
+          endDate={rangeEnd}
+          selectedDay={dayFocus && dayFocus >= rangeStart && dayFocus <= rangeEnd ? dayFocus : null}
+          onSelectDay={setDayFocus}
+        />
+      )}
+
       {/* Only the table cards scroll; header, filters and paging stay put. */}
       <div className={styles.scrollArea} data-testid="board-scroll">
         {(data?.unscheduled_items?.length ?? 0) > 0 && (
           <div className={`${styles.tableWrap} ${styles.unscheduledGroup}`} data-testid="unscheduled-group">
             <h2 className={styles.groupHeading}>
-              {t(
-                lang,
-                `À traiter — sans date (${data!.unscheduled_items.length})`,
-                `Needs attention — no date yet (${data!.unscheduled_items.length})`,
-              )}
+              {isTriage
+                ? t(
+                  lang,
+                  `Sans date (${data!.unscheduled_items.length})`,
+                  `No date (${data!.unscheduled_items.length})`,
+                )
+                : t(
+                  lang,
+                  `Escaladé — sans date (${data!.unscheduled_items.length})`,
+                  `Escalated — no date (${data!.unscheduled_items.length})`,
+                )}
             </h2>
             <RequestTable
               lang={lang}

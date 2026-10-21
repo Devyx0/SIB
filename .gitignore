@@ -49,3 +49,7 @@ Thumbs.db
 *.log
 *.dump
 docs/mockups/
+
+# ── Git worktrees / SDD scratch ───────────────────────
+.worktrees/
+.superpowers/
