@@ -23,6 +23,7 @@ export const DEMO_ROW: ListRow = {
   raw_title: "[DÉMO] Fuite sous l'évier de cuisine",
   building_id: null,
   building_address: '1240 chemin Sainte-Foy, Québec',
+  building_full_address: '1240 chemin Sainte-Foy, Québec, G1S 2J3',
   building_name: 'Le Montcalm',
   sector_id: null,
   territoire: 'Haute-Ville',

@@ -46,6 +46,7 @@ export interface ListRow {
   raw_title: string | null;
   building_id: number | null;
   building_address: string | null;
+  building_full_address: string | null;
   building_name: string | null;
   sector_id: number | null;
   territoire: string | null;

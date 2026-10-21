@@ -14,6 +14,7 @@ function makeRow(overrides: Partial<ListRow> = {}): ListRow {
     raw_title: 'Test titre',
     building_id: 1,
     building_address: '123 rue Test',
+    building_full_address: '123 rue Test, Québec, G1A 1A1',
     building_name: null,
     sector_id: 1,
     territoire: 'Butler',
@@ -84,6 +85,23 @@ describe('RequestTable', () => {
     render(<RequestTable {...defaultProps} rows={[makeRow()]} onSelect={onSelect} />);
     await userEvent.click(screen.getByTestId('request-row'));
     expect(onSelect).toHaveBeenCalledWith(1);
+  });
+
+  it('links the building to Google Maps without opening the row', async () => {
+    const onSelect = vi.fn();
+    render(<RequestTable {...defaultProps} rows={[makeRow()]} onSelect={onSelect} />);
+    const link = screen.getByTestId('row-map-link') as HTMLAnchorElement;
+    expect(link.textContent).toBe('123 rue Test ↗');
+    expect(link.target).toBe('_blank');
+    expect(link.href).toContain(encodeURIComponent('123 rue Test, Québec, G1A 1A1'));
+    link.addEventListener('click', (e) => e.preventDefault()); // jsdom: no navigation
+    await userEvent.click(link);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('shows no map link when the building has no address', () => {
+    render(<RequestTable {...defaultProps} rows={[makeRow({ building_address: null, building_full_address: null })]} />);
+    expect(screen.queryByTestId('row-map-link')).toBeNull();
   });
 
   it('inserts day-header rows when sortBy=start_date', () => {

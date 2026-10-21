@@ -245,6 +245,17 @@
   cursor: pointer;
 }
 
+/* Building address → Google Maps (new tab). */
+.mapLink {
+  color: var(--color-accent, #0b57d0);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.mapLink:hover {
+  text-decoration-thickness: 2px;
+}
+
 .dupBanner {
   border-color: #c45c26;
   background: color-mix(in srgb, #c45c26 10%, var(--color-surface));

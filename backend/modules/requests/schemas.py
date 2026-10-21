@@ -230,6 +230,7 @@ class ListRow(BaseModel):
     raw_title: Optional[str] = None
     building_id: Optional[int] = None
     building_address: Optional[str] = None
+    building_full_address: Optional[str] = None
     building_name: Optional[str] = None
     sector_id: Optional[int] = None
     territoire: Optional[str] = None

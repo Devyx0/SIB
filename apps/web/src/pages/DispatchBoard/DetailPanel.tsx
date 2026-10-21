@@ -15,6 +15,7 @@ import {
 import type { MeResponse } from '../../api/schema.d.ts';
 import { roleLabel, statusLabel, timeEstimateLabel, sourceCalendarLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
+import { googleMapsUrl } from '../../lib/maps';
 import styles from './DetailPanel.module.css';
 import Select from '../../components/Select';
 
@@ -284,6 +285,7 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
 
   const accessText = data ? ((data.raw_caller_body?.entry_permission ?? data.entry_permission) || '—') : '—';
   const animalsText = data ? ((data.raw_caller_body?.animals ?? data.animals) || '—') : '—';
+  const buildingAddress = data ? (data.building_full_address ?? data.building_address) : null;
 
   return (
     <>
@@ -456,7 +458,21 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                     <h3 className={styles.cardTitle}>{t(lang, 'Lieu', 'Location')}</h3>
                     <dl className={styles.facts}>
                       <dt>{t(lang, 'Immeuble', 'Building')}</dt>
-                      <dd>{data.building_address ?? '—'}</dd>
+                      <dd>
+                        {buildingAddress ? (
+                          <a
+                            className={styles.mapLink}
+                            href={googleMapsUrl(buildingAddress)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={t(lang, 'Ouvrir dans Google Maps', 'Open in Google Maps')}
+                            data-testid="building-map-link"
+                          >
+                            {buildingAddress}
+                            <span aria-hidden="true"> ↗</span>
+                          </a>
+                        ) : '—'}
+                      </dd>
                       <dt>{t(lang, 'Unité', 'Unit')}</dt>
                       <dd>{data.unit_label ?? '—'}</dd>
                       <dt>{t(lang, "N° d'unité", 'Unit #')}</dt>

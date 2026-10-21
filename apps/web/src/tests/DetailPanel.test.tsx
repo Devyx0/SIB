@@ -155,6 +155,25 @@ describe('DetailPanel', () => {
     expect(screen.getByText(/350/)).toBeTruthy();      // Coût estimé row — formatted CAD
   });
 
+  it('links the full building address to Google Maps in a new tab', () => {
+    const req = { ...MOCK_REQUEST, building_address: '1580 Perigord', building_full_address: '1580 Perigord, Québec, G1E 6J5' };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
+    const link = screen.getByTestId('building-map-link') as HTMLAnchorElement;
+    expect(link.textContent).toContain('1580 Perigord, Québec, G1E 6J5');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+    expect(link.href).toBe(
+      'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('1580 Perigord, Québec, G1E 6J5, QC, Canada'),
+    );
+  });
+
+  it('shows no map link when the building has no address', () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
+    expect(screen.queryByTestId('building-map-link')).toBeNull();
+  });
+
   it('shows not urgent when urgency_tier is null', () => {
     const req = { ...MOCK_REQUEST, urgency_tier: null };
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });

@@ -1,6 +1,7 @@
 import { useRef, KeyboardEvent } from 'react';
 import type { ListRow } from '../../api/schema.d.ts';
 import { statusLabel, t, timeEstimateLabel, type Lang } from '../../i18n';
+import { googleMapsUrl } from '../../lib/maps';
 import styles from './RequestTable.module.css';
 
 interface Props {
@@ -172,6 +173,7 @@ export default function RequestTable({
       const isDup = row.duplicate_of_request_id != null;
       const isAdd = row.addition_to_request_id != null;
       const isSelected = row.request_id === selectedId;
+      const mapAddress = row.building_full_address ?? row.building_address;
 
       result.push(
         <tr
@@ -210,7 +212,22 @@ export default function RequestTable({
           </td>
           <td className={styles.nowrap}>{row.territoire ?? '—'}</td>
           <td className={styles.buildingCell}>
-            <span className={styles.clamp} title={row.building_address ?? undefined}>{row.building_address ?? '—'}</span>
+            {mapAddress ? (
+              <a
+                className={`${styles.clamp} ${styles.mapLink}`}
+                href={googleMapsUrl(mapAddress)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`${mapAddress} — ${t(lang, 'Ouvrir dans Google Maps', 'Open in Google Maps')}`}
+                data-testid="row-map-link"
+                // Opening Maps must not also open the detail panel.
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                {row.building_address ?? mapAddress}
+                <span aria-hidden="true"> ↗</span>
+              </a>
+            ) : '—'}
           </td>
           <td className={styles.nowrap + ' ' + styles.mono} title={row.unique_unit_number ?? undefined}>
             {row.unique_unit_number ?? '—'}
