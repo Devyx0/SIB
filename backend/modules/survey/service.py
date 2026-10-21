@@ -28,7 +28,8 @@ def submit_survey(conn, token: str, body: SurveySubmitBody) -> SurveySubmitRespo
         raise ConflictError("Sondage déjà soumis")
     comments = body.comments.strip() if body.comments else None
     if not repo.submit(
-        conn, token=token, polite=body.polite, satisfied=body.satisfied,
+        conn, token=token, polite=body.polite,
+        satisfaction_rating=body.satisfaction_rating,
         problem_solved=body.problem_solved, comments=comments,
     ):
         raise ConflictError("Sondage déjà soumis")

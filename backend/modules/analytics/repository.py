@@ -276,3 +276,29 @@ def utilization_rows(conn, start: date, end: date) -> list[dict]:
         d["utilization_pct"] = None
         out.append(d)
     return out
+
+
+def reviews_in_range(conn, start: date, end: date) -> list[dict]:
+    """Submitted tenant surveys in the range (by submission date), newest first."""
+    rows = conn.execute(
+        """
+        SELECT s.survey_id,
+               s.request_id,
+               s.employee_id,
+               s.submitted_at,
+               s.satisfaction_rating::int AS rating,
+               s.polite,
+               s.problem_solved,
+               s.comments,
+               b.adresse AS building_address
+        FROM satisfaction_survey s
+        JOIN maintenance_request mr ON mr.request_id = s.request_id
+        LEFT JOIN building b ON b.building_id = mr.building_id
+        WHERE s.submitted_at IS NOT NULL
+          AND (s.submitted_at AT TIME ZONE 'America/Toronto')::date
+                BETWEEN %(start)s AND %(end)s
+        ORDER BY s.submitted_at DESC
+        """,
+        {"start": start, "end": end},
+    ).fetchall()
+    return [dict(r) for r in rows]

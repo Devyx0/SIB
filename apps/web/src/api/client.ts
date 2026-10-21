@@ -483,7 +483,7 @@ export async function fetchSurvey(token: string): Promise<SurveyPublic> {
 
 export async function submitSurvey(
   token: string,
-  body: { polite: boolean; satisfied: boolean; problem_solved: boolean; comments: string | null },
+  body: { polite: boolean; satisfaction_rating: number; problem_solved: boolean; comments: string | null },
 ): Promise<{ ok: boolean }> {
   const res = await fetch(`${API_BASE}/api/v1/survey/${encodeURIComponent(token)}`, {
     method: 'POST',

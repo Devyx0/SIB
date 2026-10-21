@@ -115,14 +115,25 @@ def test_complete_creates_survey_and_alert(ac, app, db_conn):
     assert g.json()["already_submitted"] is False
     assert g.json()["technician_name"] == "Tech Survey"
 
+    for bad in (0, 6):
+        r_bad = client.post(f"/api/v1/survey/{survey['token']}", json={
+            "polite": True, "satisfaction_rating": bad, "problem_solved": False,
+            "comments": None,
+        })
+        assert r_bad.status_code == 422, r_bad.text
+
     s = client.post(f"/api/v1/survey/{survey['token']}", json={
-        "polite": True, "satisfied": True, "problem_solved": False,
+        "polite": True, "satisfaction_rating": 4, "problem_solved": False,
         "comments": "Fuite réduite mais goutte encore.",
     })
     assert s.status_code == 200, s.text
+    assert db_conn.execute(
+        "SELECT satisfaction_rating FROM satisfaction_survey WHERE token = %s",
+        [survey["token"]],
+    ).fetchone()["satisfaction_rating"] == 4
 
     again = client.post(f"/api/v1/survey/{survey['token']}", json={
-        "polite": True, "satisfied": True, "problem_solved": True, "comments": None,
+        "polite": True, "satisfaction_rating": 5, "problem_solved": True, "comments": None,
     })
     assert again.status_code == 409
 

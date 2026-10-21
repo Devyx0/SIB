@@ -335,7 +335,22 @@ export interface UtilizationResponse {
     };
     capacity_minutes: number | null;
     utilization_pct: number | null;
+    avg_rating: number | null;
+    rating_count: number;
+    reviews: TechnicianReview[];
   }>;
+}
+
+export interface TechnicianReview {
+  survey_id: number;
+  request_id: number;
+  submitted_at: string;
+  /** 1–5; null for surveys submitted before the star rating existed */
+  rating: number | null;
+  polite: boolean | null;
+  problem_solved: boolean | null;
+  comments: string | null;
+  building_address: string | null;
 }
 
 // ── Portfolio browser (sector → project → building → unit → tenant) ─────────

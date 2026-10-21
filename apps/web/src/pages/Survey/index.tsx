@@ -32,12 +32,52 @@ function YesNo({
   );
 }
 
+const RATING_LABELS: Array<readonly [string, string]> = [
+  ['Très insatisfait', 'Very dissatisfied'],
+  ['Insatisfait', 'Dissatisfied'],
+  ['Correct', 'Okay'],
+  ['Satisfait', 'Satisfied'],
+  ['Très satisfait', 'Very satisfied'],
+];
+
+function StarRating({
+  lang, value, onChange, labelledBy,
+}: { lang: Lang; value: number | null; onChange: (v: number) => void; labelledBy: string }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const shown = hover ?? value ?? 0;
+  return (
+    <>
+      <div className={styles.stars} role="radiogroup" aria-labelledby={labelledBy}
+        onMouseLeave={() => setHover(null)}>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            role="radio"
+            aria-checked={value === n}
+            aria-label={t(lang, `${n} étoile${n > 1 ? 's' : ''}`, `${n} star${n > 1 ? 's' : ''}`)}
+            className={`${styles.star} ${n <= shown ? styles.starOn : ''}`}
+            onMouseEnter={() => setHover(n)}
+            onClick={() => onChange(n)}
+            data-testid={`survey-star-${n}`}
+          >
+            {n <= shown ? '★' : '☆'}
+          </button>
+        ))}
+      </div>
+      <span className={styles.ratingHint} aria-live="polite">
+        {shown > 0 ? t(lang, RATING_LABELS[shown - 1][0], RATING_LABELS[shown - 1][1]) : ''}
+      </span>
+    </>
+  );
+}
+
 export default function SurveyPage({ lang }: { lang: Lang }) {
   const { token = '' } = useParams();
   const [survey, setSurvey] = useState<SurveyPublic | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [polite, setPolite] = useState<Ans>(null);
-  const [satisfied, setSatisfied] = useState<Ans>(null);
+  const [rating, setRating] = useState<number | null>(null);
   const [solved, setSolved] = useState<Ans>(null);
   const [comments, setComments] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -56,7 +96,7 @@ export default function SurveyPage({ lang }: { lang: Lang }) {
       });
   }, [token, lang]);
 
-  const ready = polite != null && satisfied != null && solved != null;
+  const ready = polite != null && rating != null && solved != null;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -66,7 +106,7 @@ export default function SurveyPage({ lang }: { lang: Lang }) {
     try {
       await submitSurvey(token, {
         polite: polite!,
-        satisfied: satisfied!,
+        satisfaction_rating: rating!,
         problem_solved: solved!,
         comments: comments.trim() || null,
       });
@@ -118,10 +158,10 @@ export default function SurveyPage({ lang }: { lang: Lang }) {
             </div>
 
             <div className={styles.question} style={{ marginTop: 16 }}>
-              <span className={styles.questionLabel}>
-                {t(lang, "Êtes-vous satisfait dans l'ensemble?", 'Overall, are you satisfied?')}
+              <span className={styles.questionLabel} id="survey-rating-label">
+                {t(lang, "Dans l'ensemble, quelle note donnez-vous?", 'Overall, how would you rate the visit?')}
               </span>
-              <YesNo lang={lang} value={satisfied} onChange={setSatisfied} />
+              <StarRating lang={lang} value={rating} onChange={setRating} labelledBy="survey-rating-label" />
             </div>
 
             <div className={styles.question} style={{ marginTop: 16 }}>

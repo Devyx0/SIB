@@ -139,6 +139,54 @@ def test_visit_minutes_and_outcome_mix(ac, db_conn, building):
     assert row["outcome_mix"]["complete"] >= 1
 
 
+def _survey(db_conn, building, *, rating, submitted_at, comments=None):
+    rid = db_conn.execute(
+        "INSERT INTO maintenance_request (status, building_id, sector_id, assigned_employee_id, "
+        "raw_title, start_date) "
+        "VALUES ('closed', %(b)s, %(s)s, %(e)s, 'Survey util', %(d)s) RETURNING request_id",
+        {"b": building["building_id"], "s": building["sector_id"], "e": _TECH,
+         "d": today_local()},
+    ).fetchone()["request_id"]
+    return db_conn.execute(
+        "INSERT INTO satisfaction_survey (token, request_id, employee_id, polite, "
+        "satisfaction_rating, problem_solved, comments, submitted_at) "
+        "VALUES (%(t)s, %(r)s, %(e)s, true, %(rt)s, false, %(c)s, %(sa)s) RETURNING survey_id",
+        {"t": f"util-test-{rid}", "r": rid, "e": _TECH, "rt": rating,
+         "c": comments, "sa": submitted_at},
+    ).fetchone()["survey_id"]
+
+
+def test_reviews_and_avg_rating(ac, db_conn, building):
+    # Isolate from any existing sib_test surveys for this tech.
+    db_conn.execute("DELETE FROM satisfaction_survey WHERE employee_id = %s", [_TECH])
+    now = datetime.now(timezone.utc)
+    newest = _survey(db_conn, building, rating=5, submitted_at=now, comments="Très efficace")
+    _survey(db_conn, building, rating=2, submitted_at=now - timedelta(hours=3))
+    old = _survey(db_conn, building, rating=1, submitted_at=now - timedelta(days=20))
+
+    r = ac(_user(_COORD, "coordinator")).get(f"/api/v1/analytics/utilization?{_range_q()}")
+    assert r.status_code == 200, r.text
+    row = next(x for x in r.json()["rows"] if x["employee_id"] == _TECH)
+    assert row["rating_count"] == 2
+    assert row["avg_rating"] == 3.5
+    ids = [rv["survey_id"] for rv in row["reviews"]]
+    assert ids[0] == newest  # newest first
+    assert old not in ids    # outside date range
+    first = row["reviews"][0]
+    assert first["rating"] == 5
+    assert first["comments"] == "Très efficace"
+    assert first["polite"] is True and first["problem_solved"] is False
+
+
+def test_no_reviews_defaults(ac, db_conn):
+    db_conn.execute("DELETE FROM satisfaction_survey WHERE employee_id = %s", [_TECH])
+    r = ac(_user(_COORD, "coordinator")).get(f"/api/v1/analytics/utilization?{_range_q()}")
+    row = next(x for x in r.json()["rows"] if x["employee_id"] == _TECH)
+    assert row["rating_count"] == 0
+    assert row["avg_rating"] is None
+    assert row["reviews"] == []
+
+
 def test_includes_active_techs_with_zeros(ac):
     r = ac(_user(_COORD, "coordinator")).get(f"/api/v1/analytics/utilization?{_range_q()}")
     assert r.status_code == 200

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchUtilization } from '../../api/client';
 import type { UtilizationResponse } from '../../api/schema.d.ts';
@@ -9,7 +9,8 @@ import Select from '../../components/Select';
 
 type Row = UtilizationResponse['rows'][number];
 type OutcomeKey = keyof Row['outcome_mix'];
-type SortKey = 'name' | 'assigned' | 'closed' | 'rate' | 'planned' | 'visit';
+type Review = Row['reviews'][number];
+type SortKey = 'name' | 'assigned' | 'closed' | 'rate' | 'planned' | 'visit' | 'rating';
 
 const OUTCOMES: Array<{ key: OutcomeKey; short: readonly [string, string]; cls: string }> = [
   { key: 'complete', short: ['Terminé', 'Done'], cls: 'oComplete' },
@@ -38,6 +39,54 @@ function initials(name: string): string {
   return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
 }
 
+/** Read-only 5-star display; rounds to the nearest whole star. */
+function Stars({ value, label }: { value: number; label: string }) {
+  const full = Math.round(value);
+  return (
+    <span className={styles.stars} role="img" aria-label={label}>
+      {'★'.repeat(full)}
+      <span className={styles.starsOff}>{'★'.repeat(5 - full)}</span>
+    </span>
+  );
+}
+
+function fmtRating(n: number, lang: Lang): string {
+  return lang === 'fr' ? n.toFixed(1).replace('.', ',') : n.toFixed(1);
+}
+
+function YesNoChip({ lang, value, label }: { lang: Lang; value: boolean | null; label: readonly [string, string] }) {
+  if (value == null) return null;
+  return (
+    <span className={`${styles.chip} ${value ? styles.chipYes : styles.chipNo}`}>
+      {t(lang, label[0], label[1])} : {value ? t(lang, 'oui', 'yes') : t(lang, 'non', 'no')}
+    </span>
+  );
+}
+
+function ReviewItem({ lang, review, technician }: { lang: Lang; review: Review; technician?: string }) {
+  const when = new Date(review.submitted_at).toLocaleDateString(lang === 'fr' ? 'fr-CA' : 'en-CA', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  });
+  return (
+    <li className={styles.review}>
+      <div className={styles.reviewHead}>
+        {technician && <span className={styles.reviewTech}>{technician}</span>}
+        {review.rating != null
+          ? <Stars value={review.rating} label={t(lang, `${review.rating} sur 5`, `${review.rating} out of 5`)} />
+          : <span className={styles.muted}>{t(lang, 'Sans note', 'No rating')}</span>}
+        <YesNoChip lang={lang} value={review.polite} label={['Poli', 'Polite']} />
+        <YesNoChip lang={lang} value={review.problem_solved} label={['Résolu', 'Solved']} />
+        <span className={styles.reviewMeta}>
+          {when} · #{review.request_id}{review.building_address ? ` · ${review.building_address}` : ''}
+        </span>
+      </div>
+      {review.comments
+        ? <p className={styles.reviewText}>{review.comments}</p>
+        : <span className={styles.muted}>{t(lang, 'Aucun commentaire', 'No comment')}</span>}
+    </li>
+  );
+}
+
 const closeRate = (r: Row) => (r.calls_assigned > 0 ? r.calls_closed / r.calls_assigned : 0);
 const outcomeTotal = (r: Row) => OUTCOMES.reduce((n, o) => n + r.outcome_mix[o.key], 0);
 
@@ -47,6 +96,16 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('assigned');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
+  const [showAllReviews, setShowAllReviews] = useState(false);
+
+  function toggleReviews(id: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   const { data, isError, isLoading } = useQuery({
     queryKey: ['utilization', start, end],
@@ -75,9 +134,14 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
         case 'rate': return closeRate(r);
         case 'planned': return r.planned_minutes;
         case 'visit': return r.visit_minutes;
+        case 'rating': return r.avg_rating ?? -1;
       }
     };
     return [...filtered].sort((a, b) => {
+      // Unrated people always sink to the bottom when sorting by rating.
+      if (sortKey === 'rating' && (a.avg_rating == null) !== (b.avg_rating == null)) {
+        return a.avg_rating == null ? 1 : -1;
+      }
       const va = val(a);
       const vb = val(b);
       const cmp = va < vb ? -1 : va > vb ? 1 : 0;
@@ -88,7 +152,12 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
   const totals = useMemo(() => {
     const all = data?.rows ?? [];
     const sum = (f: (r: Row) => number) => all.reduce((n, r) => n + f(r), 0);
+    const ratingCount = sum((r) => r.rating_count);
+    // Weighted by review count; avg_rating is already rounded, so sum raw ratings.
+    const ratingSum = sum((r) => r.reviews.reduce((n, rv) => n + (rv.rating ?? 0), 0));
     return {
+      ratingCount,
+      avgRating: ratingCount > 0 ? ratingSum / ratingCount : null,
       people: all.length,
       assigned: sum((r) => r.calls_assigned),
       closed: sum((r) => r.calls_closed),
@@ -97,6 +166,14 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
       visits: sum((r) => r.visits_count),
     };
   }, [data]);
+
+  // Every review in the range across the team, newest first.
+  const allReviews = useMemo(
+    () => (data?.rows ?? [])
+      .flatMap((r) => r.reviews.map((review) => ({ review, technician: r.nom_employe })))
+      .sort((a, b) => b.review.submitted_at.localeCompare(a.review.submitted_at)),
+    [data],
+  );
 
   // Bars are scaled against the busiest person so rows compare at a glance.
   const maxMinutes = Math.max(1, ...rows.map((r) => Math.max(r.planned_minutes, r.visit_minutes)));
@@ -107,6 +184,7 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
     { key: 'rate', label: t(lang, 'Taux de clôture', 'Close rate') },
     { key: 'visit', label: t(lang, 'Temps sur place', 'Time on site') },
     { key: 'planned', label: t(lang, 'Temps planifié', 'Planned time') },
+    { key: 'rating', label: t(lang, 'Note client', 'Customer rating') },
     { key: 'name', label: t(lang, 'Nom', 'Name') },
   ];
 
@@ -117,7 +195,9 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
 
   // Which column the current sort belongs to — that header gets a marker.
   const sortedCol =
-    sortKey === 'name' ? 'person' : sortKey === 'planned' || sortKey === 'visit' ? 'time' : 'calls';
+    sortKey === 'name' ? 'person'
+      : sortKey === 'planned' || sortKey === 'visit' ? 'time'
+        : sortKey === 'rating' ? 'rating' : 'calls';
   const sortMark = <span className={styles.sortMark} aria-hidden="true">{sortDir === 'asc' ? '↑' : '↓'}</span>;
 
   const pct = (n: number) => `${Math.round(n * 100)} %`;
@@ -196,7 +276,58 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                 <span className={styles.kpiLabel}>{t(lang, 'Temps planifié', 'Planned time')}</span>
                 <span className={styles.kpiValue}>{fmtMinutes(totals.planned)}</span>
               </div>
+              <button
+                type="button"
+                className={`${styles.kpi} ${styles.kpiBtn}`}
+                data-testid="kpi-rating"
+                disabled={allReviews.length === 0}
+                aria-expanded={showAllReviews && allReviews.length > 0}
+                aria-controls="util-all-reviews"
+                onClick={() => setShowAllReviews((v) => !v)}
+              >
+                <span className={styles.kpiLabel}>
+                  {t(lang, 'Note client moyenne', 'Avg customer rating')}
+                  {allReviews.length > 0 && (
+                    <span className={styles.kpiAction}>
+                      {showAllReviews ? t(lang, 'Masquer ▴', 'Hide ▴') : t(lang, 'Voir les avis ▾', 'View reviews ▾')}
+                    </span>
+                  )}
+                </span>
+                <span className={styles.kpiValue}>
+                  {totals.avgRating != null ? (
+                    <>
+                      {fmtRating(totals.avgRating, lang)}
+                      <span className={styles.kpiSub}>
+                        <Stars value={totals.avgRating}
+                          label={t(lang, `${fmtRating(totals.avgRating, lang)} sur 5`, `${fmtRating(totals.avgRating, lang)} out of 5`)} />
+                        {' '}{totals.ratingCount} {t(lang, 'avis', totals.ratingCount === 1 ? 'review' : 'reviews')}
+                      </span>
+                    </>
+                  ) : '—'}
+                </span>
+              </button>
             </section>
+
+            {showAllReviews && allReviews.length > 0 && (
+              <section className={styles.allReviews} id="util-all-reviews" data-testid="util-all-reviews"
+                aria-label={t(lang, 'Tous les avis clients', 'All customer reviews')}>
+                <div className={styles.allReviewsHead}>
+                  <h2 className={styles.allReviewsTitle}>
+                    {t(lang, 'Avis clients', 'Customer reviews')}
+                    <span className={styles.note}> · {allReviews.length}</span>
+                  </h2>
+                  <button type="button" className={styles.dirBtn} onClick={() => setShowAllReviews(false)}
+                    aria-label={t(lang, 'Fermer', 'Close')} title={t(lang, 'Fermer', 'Close')}>
+                    ×
+                  </button>
+                </div>
+                <ul className={styles.reviewList}>
+                  {allReviews.map(({ review, technician }) => (
+                    <ReviewItem key={review.survey_id} lang={lang} review={review} technician={technician} />
+                  ))}
+                </ul>
+              </section>
+            )}
 
             <section className={styles.card}>
               <div className={styles.toolbar}>
@@ -258,12 +389,18 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                         <span className={styles.colTitle}>{t(lang, 'Résultats de clôture', 'Closeout outcomes')}</span>
                         <span className={styles.colHint}>{t(lang, 'par type de résultat', 'by outcome type')}</span>
                       </th>
+                      <th scope="col">
+                        <span className={styles.colTitle}>
+                          {t(lang, 'Avis clients', 'Customer reviews')}{sortedCol === 'rating' && sortMark}
+                        </span>
+                        <span className={styles.colHint}>{t(lang, 'note moyenne sur 5', 'average out of 5')}</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.length === 0 && (
                       <tr>
-                        <td colSpan={4} className={styles.empty}>
+                        <td colSpan={5} className={styles.empty}>
                           {search
                             ? t(lang, 'Aucun employé ne correspond au filtre.', 'No employee matches the filter.')
                             : t(lang, 'Aucune activité sur cette période.', 'No activity in this period.')}
@@ -273,8 +410,10 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                     {rows.map((r) => {
                       const rate = closeRate(r);
                       const oTotal = outcomeTotal(r);
+                      const open = expanded.has(r.employee_id) && r.reviews.length > 0;
                       return (
-                        <tr key={r.employee_id} data-testid={`util-row-${r.employee_id}`}>
+                        <Fragment key={r.employee_id}>
+                        <tr data-testid={`util-row-${r.employee_id}`}>
                           <th scope="row" className={styles.stickyCol}>
                             <div className={styles.person}>
                               <span className={styles.avatar} aria-hidden="true">{initials(r.nom_employe)}</span>
@@ -356,7 +495,48 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                               </div>
                             )}
                           </td>
+
+                          <td>
+                            {r.reviews.length === 0 ? (
+                              <span className={styles.muted}>{t(lang, 'Aucun avis', 'No reviews')}</span>
+                            ) : (
+                              <button
+                                type="button"
+                                className={styles.ratingBtn}
+                                aria-expanded={open}
+                                aria-controls={`util-reviews-${r.employee_id}`}
+                                onClick={() => toggleReviews(r.employee_id)}
+                                data-testid={`util-rating-${r.employee_id}`}
+                              >
+                                {r.avg_rating != null ? (
+                                  <span className={styles.ratingTop}>
+                                    <Stars value={r.avg_rating}
+                                      label={t(lang, `${fmtRating(r.avg_rating, lang)} sur 5`, `${fmtRating(r.avg_rating, lang)} out of 5`)} />
+                                    <span className={styles.ratingValue}>{fmtRating(r.avg_rating, lang)}</span>
+                                  </span>
+                                ) : (
+                                  <span className={styles.muted}>{t(lang, 'Sans note', 'No rating')}</span>
+                                )}
+                                <span className={styles.ratingCount}>
+                                  {r.reviews.length} {t(lang, 'avis', r.reviews.length === 1 ? 'review' : 'reviews')}
+                                  {' '}{open ? '▴' : '▾'}
+                                </span>
+                              </button>
+                            )}
+                          </td>
                         </tr>
+                        {open && (
+                          <tr className={styles.reviewsRow} id={`util-reviews-${r.employee_id}`}
+                            data-testid={`util-reviews-${r.employee_id}`}>
+                            <td colSpan={5}>
+                              <ul className={styles.reviewList}
+                                aria-label={t(lang, `Avis pour ${r.nom_employe}`, `Reviews for ${r.nom_employe}`)}>
+                                {r.reviews.map((rv) => <ReviewItem key={rv.survey_id} lang={lang} review={rv} />)}
+                              </ul>
+                            </td>
+                          </tr>
+                        )}
+                        </Fragment>
                       );
                     })}
                   </tbody>

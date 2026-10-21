@@ -25,6 +25,9 @@ const body: UtilizationResponse = {
       outcome_mix: { complete: 0, partial_reschedule: 0, partial_expertise: 0, failed: 0 },
       capacity_minutes: null,
       utilization_pct: null,
+      avg_rating: null,
+      rating_count: 0,
+      reviews: [],
     },
   ],
 };
@@ -85,5 +88,58 @@ describe('Utilization', () => {
     fireEvent.change(screen.getByLabelText('Filtrer'), { target: { value: 'test' } });
     expect(screen.queryByTestId('util-row-25')).toBeNull();
     expect(screen.getByTestId('util-row-24')).toBeTruthy();
+  });
+
+  it('shows customer star rating and expands reviews', async () => {
+    vi.mocked(fetchUtilization).mockResolvedValue({
+      ...body,
+      rows: [{
+        ...body.rows[0],
+        avg_rating: 4.5,
+        rating_count: 2,
+        reviews: [
+          {
+            survey_id: 1, request_id: 101, submitted_at: '2026-10-18T14:00:00Z',
+            rating: 5, polite: true, problem_solved: true,
+            comments: 'Très professionnel', building_address: '12 rue Test',
+          },
+          {
+            survey_id: 2, request_id: 102, submitted_at: '2026-10-17T14:00:00Z',
+            rating: 4, polite: true, problem_solved: false,
+            comments: null, building_address: null,
+          },
+        ],
+      }],
+    });
+    wrap(<Utilization lang="fr" />);
+    const btn = await screen.findByTestId('util-rating-24');
+    expect(btn).toHaveTextContent('4,5');
+    expect(btn).toHaveTextContent('2 avis');
+    expect(screen.getByTestId('kpi-rating')).toHaveTextContent('4,5');
+    expect(screen.queryByTestId('util-reviews-24')).toBeNull();
+
+    fireEvent.click(btn);
+    const reviews = screen.getByTestId('util-reviews-24');
+    expect(reviews).toHaveTextContent('Très professionnel');
+    expect(reviews).toHaveTextContent('Résolu : non');
+    expect(within(reviews).getAllByRole('listitem')).toHaveLength(2);
+
+    fireEvent.click(btn);
+    expect(screen.queryByTestId('util-reviews-24')).toBeNull();
+
+    // Team-wide panel from the KPI tile, with technician names.
+    fireEvent.click(screen.getByTestId('kpi-rating'));
+    const all = screen.getByTestId('util-all-reviews');
+    expect(within(all).getAllByRole('listitem')).toHaveLength(2);
+    expect(all).toHaveTextContent('Test Tech');
+    expect(all).toHaveTextContent('Très professionnel');
+    fireEvent.click(screen.getByTestId('kpi-rating'));
+    expect(screen.queryByTestId('util-all-reviews')).toBeNull();
+  });
+
+  it('shows "Aucun avis" when a technician has no reviews', async () => {
+    wrap(<Utilization lang="fr" />);
+    const row = await screen.findByTestId('util-row-24');
+    expect(row).toHaveTextContent('Aucun avis');
   });
 });
