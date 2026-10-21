@@ -23,8 +23,8 @@ class TerritoryRow(BaseModel):
     sector_id: int
     territoire: str
     active: int
-    AJD: int  # noqa: N815 — matches urgency_tier enum / UI column
-    ajd: int
+    urgent: int
+    medium: int
     untriaged: int
     board_link: str
 

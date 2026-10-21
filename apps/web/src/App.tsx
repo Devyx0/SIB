@@ -15,10 +15,24 @@ import CloseoutForm from './pages/TechPortal/CloseoutForm';
 import Login from './pages/Login';
 import SurveyPage from './pages/Survey';
 import PublicDemande from './pages/PublicDemande';
+import ReceptionistIntake from './pages/ReceptionistIntake';
 import { JustificationProvider } from './components/Justification';
 import { fetchMe } from './api/client';
 import type { MeResponse } from './api/schema.d.ts';
 import type { Lang } from './i18n';
+
+function homePath(me: MeResponse | null): string {
+  if (!me) return '/board';
+  const elevated = me.roles.some((r) => r === 'coordinator' || r === 'director');
+  if (me.roles.includes('receptionist') && !elevated) return '/intake';
+  if (
+    me.roles.some((r) => r === 'technician' || r === 'contractor')
+    && !elevated
+  ) {
+    return '/tech';
+  }
+  return '/board';
+}
 
 export default function App() {
   const [lang, setLang] = useState<Lang>('fr');
@@ -62,6 +76,11 @@ export default function App() {
     me.roles.some((r) => r === 'technician' || r === 'contractor') &&
     !me.roles.some((r) => r === 'coordinator' || r === 'director');
 
+  const intakeOnly =
+    me != null &&
+    me.roles.includes('receptionist') &&
+    !me.roles.some((r) => r === 'coordinator' || r === 'director');
+
   return (
     <JustificationProvider lang={lang}>
       <Routes>
@@ -72,7 +91,7 @@ export default function App() {
         />
         <Route
           path="/login"
-          element={session ? <Navigate to={techOnly ? '/tech' : '/board'} replace /> : <Login />}
+          element={session ? <Navigate to={homePath(me)} replace /> : <Login />}
         />
         <Route
           path="/*"
@@ -86,6 +105,18 @@ export default function App() {
                 <Route path="tech/appels/:id/cloture" element={<CloseoutForm lang={lang} me={me} onSignOut={handleSignOut} onToggleLang={toggleLang} />} />
                 <Route path="*" element={<Navigate to="/tech" replace />} />
               </Routes>
+            ) : intakeOnly ? (
+              <AppShell
+                lang={lang}
+                onToggleLang={toggleLang}
+                me={me}
+                onSignOut={handleSignOut}
+              >
+                <Routes>
+                  <Route path="intake" element={<ReceptionistIntake lang={lang} />} />
+                  <Route path="*" element={<Navigate to="/intake" replace />} />
+                </Routes>
+              </AppShell>
             ) : (
               <AppShell
                 lang={lang}

@@ -21,6 +21,8 @@ function SoonChip({ lang }: { lang: Lang }) {
 
 export default function AppShell({ lang, onToggleLang, me, onSignOut, children }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const intakeOnly = !!me?.roles.includes('receptionist')
+    && !me.roles.some((r) => r === 'coordinator' || r === 'director');
   const navItemClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? `${styles.navItem} ${styles.navActive}` : styles.navItem;
 
@@ -52,34 +54,43 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
         </div>
 
         <nav className={styles.nav} onClick={() => setMenuOpen(false)}>
-          <NavLink to="/board" data-testid="nav-board" className={navItemClass}>
-            {t(lang, 'Répartition', 'Dispatch')}
-          </NavLink>
-          <Link to="/board?nouvel-appel=1" data-testid="nav-nouvel-appel" className={styles.navItem}>
-            <span className={styles.plus} aria-hidden="true">+</span>
-            {t(lang, 'Nouvel appel', 'New call')}
-          </Link>
-          <NavLink to="/dossiers" data-testid="nav-dossiers" className={navItemClass}>
-            {t(lang, 'Dossiers', 'Cases')}
-          </NavLink>
-          <NavLink to="/portfolio" data-testid="nav-portfolio" className={navItemClass}>
-            {t(lang, 'Portfolio', 'Portfolio')}
-          </NavLink>
-          <span
-            className={`${styles.navItem} ${styles.navDisabled}`}
-            data-testid="nav-apres-heures"
-            aria-disabled="true"
-          >
-            {t(lang, 'Après les heures', 'After hours')} <SoonChip lang={lang} />
-          </span>
+          {intakeOnly ? (
+            <NavLink to="/intake" data-testid="nav-nouvel-appel" className={navItemClass}>
+              <span className={styles.plus} aria-hidden="true">+</span>
+              {t(lang, 'Nouvel appel', 'New call')}
+            </NavLink>
+          ) : (
+            <>
+              <NavLink to="/board" data-testid="nav-board" className={navItemClass}>
+                {t(lang, 'Répartition', 'Dispatch')}
+              </NavLink>
+              <Link to="/board?nouvel-appel=1" data-testid="nav-nouvel-appel" className={styles.navItem}>
+                <span className={styles.plus} aria-hidden="true">+</span>
+                {t(lang, 'Nouvel appel', 'New call')}
+              </Link>
+              <NavLink to="/dossiers" data-testid="nav-dossiers" className={navItemClass}>
+                {t(lang, 'Dossiers', 'Cases')}
+              </NavLink>
+              <NavLink to="/portfolio" data-testid="nav-portfolio" className={navItemClass}>
+                {t(lang, 'Portfolio', 'Portfolio')}
+              </NavLink>
+              <span
+                className={`${styles.navItem} ${styles.navDisabled}`}
+                data-testid="nav-apres-heures"
+                aria-disabled="true"
+              >
+                {t(lang, 'Après les heures', 'After hours')} <SoonChip lang={lang} />
+              </span>
 
-          <div className={styles.navGroup}>{t(lang, "Vue d'ensemble", 'Overview')}</div>
-          <NavLink to="/tableau-de-bord" data-testid="nav-tableau-bord" className={navItemClass}>
-            {t(lang, 'Tableau de bord', 'Dashboard')}
-          </NavLink>
-          <NavLink to="/utilisation" data-testid="nav-utilisation" className={navItemClass}>
-            {t(lang, 'Utilisation', 'Utilization')}
-          </NavLink>
+              <div className={styles.navGroup}>{t(lang, "Vue d'ensemble", 'Overview')}</div>
+              <NavLink to="/tableau-de-bord" data-testid="nav-tableau-bord" className={navItemClass}>
+                {t(lang, 'Tableau de bord', 'Dashboard')}
+              </NavLink>
+              <NavLink to="/utilisation" data-testid="nav-utilisation" className={navItemClass}>
+                {t(lang, 'Utilisation', 'Utilization')}
+              </NavLink>
+            </>
+          )}
         </nav>
 
         <div className={styles.bottom}>
@@ -91,7 +102,7 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
           )}
 
           <div className={styles.bottomRow}>
-            <AlertBell lang={lang} />
+            {!intakeOnly && <AlertBell lang={lang} />}
             <button className={styles.langBtn} onClick={onToggleLang} aria-label={lang === 'fr' ? 'Switch to English' : 'Passer en français'}>
               {t(lang, 'EN', 'FR')}
             </button>

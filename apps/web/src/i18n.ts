@@ -4,10 +4,11 @@ export const t = (lang: Lang, fr: string, en: string): string =>
   lang === 'fr' ? fr : en;
 
 const _ROLE_LABELS: Record<string, readonly [string, string]> = {
-  technician:  ['Technicien',    'Technician'],
-  contractor:  ['Sous-traitant', 'Subcontractor'],
-  coordinator: ['Coordonnateur', 'Coordinator'],
-  director:    ['Directeur',     'Director'],
+  technician:   ['Technicien',     'Technician'],
+  contractor:   ['Sous-traitant',  'Subcontractor'],
+  coordinator:  ['Coordonnateur',  'Coordinator'],
+  director:     ['Directeur',      'Director'],
+  receptionist: ['Réceptionniste', 'Receptionist'],
 };
 
 export function roleLabel(lang: Lang, role: string): string {
@@ -58,7 +59,8 @@ export function closeoutOutcomeLabel(lang: Lang, outcome: string | null | undefi
 export function statusLabel(lang: Lang, status: string): string {
   const map: Record<string, readonly [string, string]> = {
     intake_received:     ['Reçu',             'Received'],
-    triage_pending:      ['En triage',        'Pending triage'],
+    // Backend lock only — UI treats as Received (triage is ~5s).
+    triage_pending:      ['Reçu',             'Received'],
     triaged:             ['Trié',             'Triaged'],
     scheduled:           ['Planifié',         'Scheduled'],
     awaiting_redispatch: ['À redispatcher',   'To re-dispatch'],

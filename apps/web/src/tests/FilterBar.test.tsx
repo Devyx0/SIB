@@ -55,7 +55,7 @@ describe('FilterBar', () => {
     expect(screen.getByTestId('status-select').textContent).toMatch(/Tous les statuts/);
     await userEvent.click(screen.getByTestId('status-select'));
     expect(screen.getByText('Reçu')).toBeTruthy();
-    expect(screen.getByText('En triage')).toBeTruthy();
+    expect(screen.queryByText('En triage')).toBeNull();
   });
 
   it('checking a status in the dropdown calls onStatus', async () => {
@@ -205,7 +205,7 @@ describe('phone filter toggle', () => {
       <FilterBar
         {...defaultProps}
         status={['triaged']}
-        urgency="AJD"
+        urgency="URGENT"
         sectors={[{ sector_id: 2, territoire: 'Haute-Ville', color_code: null }]}
         sectorId={2}
       />,
@@ -213,7 +213,7 @@ describe('phone filter toggle', () => {
     const toggle = screen.getByTestId('filters-toggle');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.textContent).toMatch(/Filtres\s*3/);
-    expect(screen.getByTestId('filters-summary').textContent).toBe('01/09 → 25/09 · Trié · AJD · Haute-Ville');
+    expect(screen.getByTestId('filters-summary').textContent).toBe('01/09 → 25/09 · Trié · Urgent · Haute-Ville');
 
     await userEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');

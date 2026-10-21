@@ -15,9 +15,20 @@ export const STATUS_VALUES = [
 
 export type StatusValue = (typeof STATUS_VALUES)[number];
 
+/** Coordinator-facing statuses — triage_pending is an in-flight lock, aliased to Received. */
+export const FILTER_STATUS_VALUES = STATUS_VALUES.filter((s) => s !== 'triage_pending');
+
+/** When filtering by Received, include the transient triage_pending lock. */
+export function expandStatusFilter(statuses: string[]): string[] {
+  if (!statuses.includes('intake_received') || statuses.includes('triage_pending')) {
+    return statuses;
+  }
+  return [...statuses, 'triage_pending'];
+}
+
 export const STATUS_LABELS: Record<StatusValue, string> = {
   intake_received: 'Reçu',
-  triage_pending: 'En triage',
+  triage_pending: 'Reçu',
   triaged: 'Trié',
   scheduled: 'Planifié',
   awaiting_redispatch: 'À redispatcher',

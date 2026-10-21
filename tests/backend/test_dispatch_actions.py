@@ -275,21 +275,21 @@ def test_reschedule_technician_403(ac, test_request):
 def test_set_urgency_success(ac, test_request):
     c = ac(_user(_COORD, "coordinator"))
     r = c.post(f"/api/v1/requests/{test_request}/urgency", json={
-        "urgency_tier": "AJD",
+        "urgency_tier": "URGENT",
         "current_urgency_tier": None,
         "current_assigned_employee_id": None,
         "current_start_date": _DATE_A,
         "justification": {"text": "Tenant has water damage spreading", "input_method": "typed"},
     })
     assert r.status_code == 200
-    assert r.json()["urgency_tier"] == "AJD"
+    assert r.json()["urgency_tier"] == "URGENT"
 
 
 def test_set_urgency_stale_409(ac, test_request):
     c = ac(_user(_COORD, "coordinator"))
     r = c.post(f"/api/v1/requests/{test_request}/urgency", json={
-        "urgency_tier": "AJD",
-        "current_urgency_tier": "ajd",  # wrong — DB has NULL
+        "urgency_tier": "URGENT",
+        "current_urgency_tier": "Intermédiaire",  # wrong — DB has NULL
         "current_assigned_employee_id": None,
         "current_start_date": _DATE_A,
         "justification": {"text": "Tenant has water damage spreading", "input_method": "typed"},
@@ -300,7 +300,7 @@ def test_set_urgency_stale_409(ac, test_request):
 def test_set_urgency_closed_409(ac, closed_request):
     c = ac(_user(_DIR, "director"))
     r = c.post(f"/api/v1/requests/{closed_request}/urgency", json={
-        "urgency_tier": "AJD",
+        "urgency_tier": "URGENT",
         "current_urgency_tier": None,
         "current_assigned_employee_id": None,
         "current_start_date": _DATE_A,
@@ -312,7 +312,7 @@ def test_set_urgency_closed_409(ac, closed_request):
 def test_set_urgency_technician_403(ac, test_request):
     c = ac(_user(_TECH, "technician"))
     r = c.post(f"/api/v1/requests/{test_request}/urgency", json={
-        "urgency_tier": "AJD",
+        "urgency_tier": "URGENT",
         "current_urgency_tier": None,
         "current_assigned_employee_id": None,
         "current_start_date": _DATE_A,
@@ -533,7 +533,7 @@ def test_reschedule_stores_provenance(ac, db_conn, test_request):
 def test_set_urgency_stores_provenance(ac, db_conn, test_request):
     c = ac(_user(_COORD, "coordinator"))
     c.post(f"/api/v1/requests/{test_request}/urgency", json={
-        "urgency_tier": "AJD",
+        "urgency_tier": "URGENT",
         "current_urgency_tier": None,
         "current_assigned_employee_id": None,
         "current_start_date": _DATE_A,
@@ -599,7 +599,7 @@ def test_concurrency_stale_on_cross_field(ac, test_request):
 
     # DB now has assigned_employee_id = _TECH; client still thinks it's None → stale
     r2 = c.post(f"/api/v1/requests/{test_request}/urgency", json={
-        "urgency_tier": "AJD",
+        "urgency_tier": "URGENT",
         "current_urgency_tier": None,
         "current_assigned_employee_id": None,  # stale — DB now has _TECH
         "current_start_date": _DATE_A,
@@ -756,7 +756,7 @@ _DECISIONS = {
         "current_assigned_employee_id": None, "current_urgency_tier": None,
     }),
     "urgency": ("urgency", {
-        "urgency_tier": "AJD", "current_urgency_tier": None,
+        "urgency_tier": "URGENT", "current_urgency_tier": None,
         "current_assigned_employee_id": None, "current_start_date": _DATE_A,
     }),
     "follow-up-date": ("follow_up_date", {
@@ -837,7 +837,7 @@ def test_save_dispatch_applies_several_changes_with_one_justification(ac, db_con
     r = c.post(f"/api/v1/requests/{test_request}/dispatch", json={
         "current": _snapshot(),
         "changes": {
-            "assigned_employee_id": _TECH, "start_date": _DATE_B, "urgency_tier": "AJD",
+            "assigned_employee_id": _TECH, "start_date": _DATE_B, "urgency_tier": "URGENT",
             "next_steps": "Commander la pièce", "estimated_cost": 250,
         },
         "justification": {"text": "Dégât d'eau actif, technicien disponible", "input_method": "voice"},
@@ -846,7 +846,7 @@ def test_save_dispatch_applies_several_changes_with_one_justification(ac, db_con
     d = r.json()
     assert d["assigned_employee_id"] == _TECH
     assert d["start_date"] == _DATE_B
-    assert d["urgency_tier"] == "AJD"
+    assert d["urgency_tier"] == "URGENT"
     assert d["next_steps"] == "Commander la pièce"
     assert float(d["estimated_cost"]) == 250
     rows = _justification_rows(db_conn, test_request)
@@ -887,7 +887,7 @@ def test_save_dispatch_requires_a_change_and_a_justification(ac, test_request):
     })
     assert r.status_code == 422
     r = c.post(f"/api/v1/requests/{test_request}/dispatch", json={
-        "current": _snapshot(), "changes": {"urgency_tier": "AJD"},
+        "current": _snapshot(), "changes": {"urgency_tier": "URGENT"},
     })
     assert r.status_code == 422
 
@@ -897,7 +897,7 @@ def test_save_dispatch_stale_screen_saves_nothing(ac, db_conn, test_request):
     r = c.post(f"/api/v1/requests/{test_request}/dispatch", json={
         # Screen thought cost was 10 — it is NULL in the DB → stale on the cost step.
         "current": _snapshot(estimated_cost=10),
-        "changes": {"urgency_tier": "AJD", "estimated_cost": 300},
+        "changes": {"urgency_tier": "URGENT", "estimated_cost": 300},
         "justification": _JUST,
     })
     assert r.status_code == 409
@@ -910,6 +910,6 @@ def test_save_dispatch_stale_screen_saves_nothing(ac, db_conn, test_request):
 def test_save_dispatch_forbidden_for_technician(ac, test_request):
     c = ac(_user(_TECH, "technician"))
     r = c.post(f"/api/v1/requests/{test_request}/dispatch", json={
-        "current": _snapshot(), "changes": {"urgency_tier": "AJD"}, "justification": _JUST,
+        "current": _snapshot(), "changes": {"urgency_tier": "URGENT"}, "justification": _JUST,
     })
     assert r.status_code == 403

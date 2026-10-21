@@ -252,13 +252,40 @@ describe('call view', () => {
     mocks.fetchRequest.mockResolvedValue(detail({
       problem_summary: 'RÉSUMÉ IA — NE PAS AFFICHER',
       problems: 'Texte brut du calendrier',
+      entry_permission: 'Présence exigée',
+      animals: 'Non',
       raw_caller_body: null,
     }));
     wrap(['/tech/appels/5']);
     await waitFor(() => expect(screen.getByText('Texte brut du calendrier')).toBeTruthy());
     expect(screen.getByText('Problème')).toBeTruthy();
+    expect(screen.getByText('Présence exigée')).toBeTruthy();
+    expect(screen.getByText('Non')).toBeTruthy();
     expect(screen.queryByText(/version du locataire/)).toBeNull();
     expect(screen.queryByText('RÉSUMÉ IA — NE PAS AFFICHER')).toBeNull();
+  });
+
+  it('shows taxonomy, next steps, ASNU and estimate for the technician', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({
+      asnu: 'ASNUF42',
+      time_estimate_bucket: 'MIN30_TO_1H',
+      element: 'Plomberie',
+      symptome: 'Fuite',
+      composante: 'Robinet',
+      emplacement: 'Cuisine',
+      next_steps: 'Couper l’eau avant d’ouvrir le mur.',
+      work_performed: null,
+      problems: 'Fuite sous évier',
+    }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByTestId('call-taxonomy')).toBeTruthy());
+    expect(screen.getByTestId('call-facts').textContent).toMatch(/ASNUF42/);
+    expect(screen.getByText('Plomberie')).toBeTruthy();
+    expect(screen.getByText('Fuite')).toBeTruthy();
+    expect(screen.getByText('Robinet')).toBeTruthy();
+    expect(screen.getByText('Cuisine')).toBeTruthy();
+    expect(screen.getByTestId('call-next-steps').textContent).toMatch(/Couper l’eau/);
   });
 
   it('shows « Fiche technique non disponible » when both ft fields are null', async () => {
@@ -384,11 +411,12 @@ describe('en route (stop 2)', () => {
 });
 
 describe('closeout entry (stop 3)', () => {
-  it('shows « Clôturer » on my en_route call', async () => {
+  it('shows « Clôturer » on my arrived call', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
     mocks.fetchRequest.mockResolvedValue(detail({
-      status: 'en_route',
+      status: 'arrived',
       en_route_at: new Date(Date.now() - 60000).toISOString(),
+      arrived_at: new Date().toISOString(),
     }));
     wrap(['/tech/appels/5']);
     await waitFor(() => expect(screen.getByTestId('closeout-btn')).toBeTruthy());

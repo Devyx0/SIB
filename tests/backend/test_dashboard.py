@@ -55,7 +55,7 @@ def test_dashboard_200_coordinator_shape(ac, db_conn, building, monkeypatch):
     db_conn.execute(
         "INSERT INTO maintenance_request (status, building_id, sector_id, assigned_employee_id, "
         "raw_title, start_date, urgency_tier) "
-        "VALUES ('scheduled', %(b)s, %(s)s, %(e)s, 'Dash today', %(d)s, 'AJD')",
+        "VALUES ('scheduled', %(b)s, %(s)s, %(e)s, 'Dash today', %(d)s, 'URGENT')",
         {"b": building["building_id"], "s": building["sector_id"], "e": _TECH, "d": today},
     )
     r = ac(_user(_COORD, "coordinator")).get("/api/v1/analytics/dashboard")

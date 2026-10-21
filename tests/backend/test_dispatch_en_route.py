@@ -119,7 +119,7 @@ def test_reschedule_en_route_allowed(en_route_call, db_conn):
 def test_set_urgency_en_route_allowed(en_route_call, db_conn):
     coord, rid = en_route_call
     r = coord.post(f"/api/v1/requests/{rid}/urgency", json={
-        "urgency_tier": "AJD", "current_urgency_tier": None,
+        "urgency_tier": "URGENT", "current_urgency_tier": None,
         "current_assigned_employee_id": _TECH, "current_start_date": None,
         "justification": _JUSTIF,
     })

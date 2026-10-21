@@ -516,7 +516,7 @@ describe('decision justification (system-wide)', () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
-    await userEvent.click(screen.getByRole('button', { name: 'AJD' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Urgent' }));
     await userEvent.click(screen.getByTestId('save-btn'));
     await waitFor(() => expect(screen.getByTestId('justification-dialog')).toBeTruthy());
     const confirm = screen.getByTestId('justification-confirm') as HTMLButtonElement;
@@ -531,7 +531,7 @@ describe('decision justification (system-wide)', () => {
     const save = vi.spyOn(client, 'dispatchSave').mockResolvedValue(ok);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'AJD' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Urgent' }));
     fireEvent.change(screen.getByTestId('follow-up-input'), { target: { value: '2026-11-03' } });
     fireEvent.change(screen.getByTestId('next-steps-input'), { target: { value: 'Commander la pièce' } });
     fireEvent.change(screen.getByTestId('cost-input'), { target: { value: '250' } });
@@ -543,7 +543,7 @@ describe('decision justification (system-wide)', () => {
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     expect(save).toHaveBeenCalledWith(1, expect.objectContaining({
       changes: {
-        urgency_tier: 'AJD',
+        urgency_tier: 'URGENT',
         next_follow_up_date: '2026-11-03',
         next_steps: 'Commander la pièce',
         estimated_cost: 250,
@@ -553,11 +553,11 @@ describe('decision justification (system-wide)', () => {
   });
   it('choosing the current value is not a change', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({
-      data: { ...MOCK_REQUEST, urgency_tier: 'AJD' }, isPending: false, isError: false, error: null,
+      data: { ...MOCK_REQUEST, urgency_tier: 'URGENT' }, isPending: false, isError: false, error: null,
     });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
-    await userEvent.click(screen.getByRole('button', { name: 'AJD' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Urgent' }));
     expect((screen.getByTestId('save-btn') as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByTestId('save-bar').textContent).toMatch(/Aucune modification/);
   });
@@ -568,7 +568,7 @@ describe('decision justification (system-wide)', () => {
     const onClose = vi.fn();
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     wrap(<DetailPanel requestId={1} onClose={onClose} lang="fr" me={coord} />);
-    await userEvent.click(screen.getByRole('button', { name: 'AJD' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Urgent' }));
     await userEvent.click(screen.getByRole('button', { name: 'Fermer' }));
     expect(confirmSpy).toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();

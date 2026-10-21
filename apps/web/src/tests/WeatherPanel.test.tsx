@@ -20,7 +20,7 @@ const TECH = { employee_id: 14, nom_employe: 'Tech', roles: ['technician'], weat
 // Shape returned by RequestDetail.weather_evaluation — triage-time or manual re-check.
 const EVAL_OK = {
   evaluation_id: 7, status: 'ok', location: 'quebec', band_name: 'critical',
-  suggested_tier: 'AJD', is_critical: true, min_forecast_temp_24h_c: -22,
+  suggested_tier: 'URGENT', is_critical: true, min_forecast_temp_24h_c: -22,
   current_tier_at_eval: null, evaluated_at: '2026-10-19T14:05:00-04:00',
 };
 
@@ -60,7 +60,7 @@ describe('Weather summary (read-only, set at triage)', () => {
   it('omits the astreinte badge when the band is not critical', () => {
     mockData({
       weather_evaluation: {
-        ...EVAL_OK, band_name: 'priority', suggested_tier: 'ajd',
+        ...EVAL_OK, band_name: 'priority', suggested_tier: 'Intermédiaire',
         is_critical: false, min_forecast_temp_24h_c: 2,
       },
     });

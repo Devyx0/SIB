@@ -24,13 +24,14 @@ TIME_ESTIMATE_LABELS: dict[str, str] = {
 }
 
 # Whitelisted sort-key → SQL expression (injected structurally, never as a value).
-# urgency_tier ranks: AJD (most urgent) > ajd > none.
+# urgency_tier ranks: URGENT > Intermédiaire > Faible > null.
 SORT_SQL: dict[str, str] = {
     "start_date":             "mr.start_date",
     "asnu":                   "mr.asnu",
     "urgency_tier":           (
-        "CASE mr.urgency_tier::text"
-        " WHEN 'AJD' THEN 1 WHEN 'ajd' THEN 2 WHEN 'none' THEN 3 ELSE 4 END"
+        "CASE mr.urgency_tier"
+        " WHEN 'URGENT' THEN 1 WHEN 'Intermédiaire' THEN 2"
+        " WHEN 'Faible' THEN 3 ELSE 4 END"
     ),
     "raw_title":              "mr.raw_title",
     "territoire":             "s.territoire",
@@ -132,7 +133,7 @@ class PhotoUrlResponse(BaseModel):
 
 
 class SetUrgencyBody(BaseModel):
-    urgency_tier: Optional[Literal["AJD", "ajd"]] = None
+    urgency_tier: Optional[Literal["URGENT", "Intermédiaire", "Faible"]] = None
     current_urgency_tier: Optional[str] = None
     current_assigned_employee_id: Optional[int] = None
     current_start_date: Optional[date] = None
@@ -174,7 +175,7 @@ class DispatchChanges(BaseModel):
     """Only the fields present are changed (an explicit null clears it)."""
     assigned_employee_id: Optional[int] = None
     start_date: Optional[date] = None
-    urgency_tier: Optional[Literal["AJD", "ajd"]] = None
+    urgency_tier: Optional[Literal["URGENT", "Intermédiaire", "Faible"]] = None
     next_follow_up_date: Optional[date] = None
     next_steps: Optional[str] = None
     estimated_cost: Optional[Decimal] = Field(None, ge=0)
@@ -306,6 +307,12 @@ class RequestDetail(ListRow):
     caller_tenant_id: Optional[int] = None
     raw_caller_body: Optional[dict] = None
     problems: Optional[str] = None
+    category_raw: Optional[str] = None
+    # 4-axis intake taxonomy — always visible to assigned tech/contractor.
+    element: Optional[str] = None
+    symptome: Optional[str] = None
+    composante: Optional[str] = None
+    emplacement: Optional[str] = None
     triage_model_version: Optional[str] = None
     # Fiche technique link — in the always-visible set for tech/contractor
     ft_link: Optional[str] = None

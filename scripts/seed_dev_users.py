@@ -142,25 +142,60 @@ def main() -> None:
             conn.commit()
             print(f"    employee {emp_id}: linked → {uid}")
 
+        _ensure_receptionist_employee(conn)
         # Canonical local logins (docs / .env.example) — always pin to a role match.
-        _pin_canonical(conn, existing)
+        _pin_canonical(conn, existing, password)
     finally:
         conn.close()
 
 
-def _pin_canonical(conn: psycopg.Connection, existing: dict[str, str]) -> None:
-    """Keep coordinator@/director@/technician@/contractor@sib.local usable after dumps."""
+def _ensure_receptionist_employee(conn: psycopg.Connection) -> None:
+    """Dev-only receptionist row so receptionist@sib.local has someone to pin to."""
+    row = conn.execute(
+        "SELECT employee_id FROM employee WHERE lower(coalesce(courriel, '')) = 'receptionist@sib.local'"
+    ).fetchone()
+    if row:
+        emp_id = row["employee_id"]
+    else:
+        # Dumps often leave the identity sequence behind max(employee_id).
+        conn.execute(
+            "SELECT setval(pg_get_serial_sequence('employee', 'employee_id'), "
+            "COALESCE((SELECT MAX(employee_id) FROM employee), 1))"
+        )
+        emp_id = conn.execute(
+            """
+            INSERT INTO employee (nom_employe, courriel, initials, employment_type, is_active, role)
+            VALUES ('Réception', 'receptionist@sib.local', 'RCP', 'unknown', true, 'receptionist')
+            RETURNING employee_id
+            """
+        ).fetchone()["employee_id"]
+        print(f"  employee {emp_id}: created Réception (receptionist@sib.local)")
+    conn.execute(
+        """
+        INSERT INTO employee_role (employee_id, role)
+        VALUES (%(id)s, 'receptionist')
+        ON CONFLICT (employee_id, role) DO NOTHING
+        """,
+        {"id": emp_id},
+    )
+    conn.commit()
+
+
+def _pin_canonical(conn: psycopg.Connection, existing: dict[str, str], password: str) -> None:
+    """Keep role@sib.local logins usable after dumps."""
     pins = [
         ("coordinator@sib.local", "coordinator"),
         ("director@sib.local", "director"),
         ("technician@sib.local", "technician"),
         ("contractor@sib.local", "contractor"),
+        ("receptionist@sib.local", "receptionist"),
     ]
     for email, role in pins:
         uid = existing.get(email)
         if not uid:
-            print(f"  {email}: no auth user — skip pin")
-            continue
+            uid = _create_user(email, password)
+            existing[email] = uid
+            print(f"  {email}: created ({uid})")
         already = conn.execute(
             "SELECT employee_id FROM employee WHERE auth_user_id = %s", [uid]
         ).fetchone()

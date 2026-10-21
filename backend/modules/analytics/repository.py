@@ -104,11 +104,11 @@ def by_territory(conn, today: date) -> list[dict]:
                s.territoire,
                count(*) FILTER (WHERE mr.status::text <> 'closed')::int AS active,
                count(*) FILTER (
-                   WHERE mr.status::text <> 'closed' AND mr.urgency_tier::text = 'AJD'
-               )::int AS "AJD",
+                   WHERE mr.status::text <> 'closed' AND mr.urgency_tier = 'URGENT'
+               )::int AS urgent,
                count(*) FILTER (
-                   WHERE mr.status::text <> 'closed' AND mr.urgency_tier::text = 'ajd'
-               )::int AS ajd,
+                   WHERE mr.status::text <> 'closed' AND mr.urgency_tier = 'Intermédiaire'
+               )::int AS medium,
                count(*) FILTER (
                    WHERE mr.status::text = ANY(%(untriaged)s)
                )::int AS untriaged

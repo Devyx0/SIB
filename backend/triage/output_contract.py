@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import re
 
+from backend.domain.urgency import URGENCY_VALUES as _URGENCY_STORED
+
 
 class ValidationError(Exception):
     pass
@@ -21,7 +23,7 @@ OUTPUT_SCHEMA = {
     "title": "str",
     "problems": "list[str]",
     "entry_permission": "str | null",
-    "urgency_tier": "AJD | ajd | null",
+    "urgency_tier": "URGENT | Intermédiaire | Faible | null",
     "heating_failure": "bool | null",
     "complexity_tier": "C1|C2|C3|C4",
     "congestion_level": "N1|N2|N3|N4|N5",
@@ -71,14 +73,12 @@ _PARKING_BAY = re.compile(r"\b(stationnement|borne|espace)\s+$", re.IGNORECASE)
 # "voir fiche Chamonix 1175" — model citing a technical sheet by building number
 _FICHE_REF = re.compile(r"\bfiche\b", re.IGNORECASE)
 
-# Rule 28: title prefix must match urgency_tier. Rule 37: no employee initials in prose.
-_URGENCY_VALUES = frozenset({None, "AJD", "ajd"})
-_TITLE_AJD = re.compile(r"AJD\b")
-_TITLE_ajd = re.compile(r"ajd\b")
+# Urgency is a plain field — no calendar title prefix required anymore.
+_URGENCY_VALUES = frozenset({None}) | _URGENCY_STORED
 _INITIALS = re.compile(r"\b[A-Z]{2,4}\b")
 # Operational tokens that are not employee initials.
 _INITIALS_OK = frozenset({
-    "AJD", "ASNU", "SDB", "WC", "AC", "BBQ", "LED", "PVC", "TAL", "CVAC",
+    "URGENT", "ASNU", "SDB", "WC", "AC", "BBQ", "LED", "PVC", "TAL", "CVAC",
     "NB", "OK", "GFCI", "AMP", "USB", "TV", "HD", "NIP",
     # Roman numerals / street tokens that appear in Québec addresses
     "II", "III", "IV", "VI", "VII", "VIII", "IX", "XI", "XII", "XIII",
@@ -105,15 +105,6 @@ def _vendor_kind(name: str) -> str | None:
     if re.search(r"fortin", n, re.IGNORECASE):
         return "fortin"
     return "other"
-
-
-def _title_urgency(title: str | None) -> str | None:
-    t = (title or "").lstrip()
-    if _TITLE_AJD.match(t):
-        return "AJD"
-    if _TITLE_ajd.match(t):
-        return "ajd"
-    return None
 
 
 def _text_fields(parsed: dict) -> list[str]:
@@ -159,9 +150,10 @@ def validate(
 
     urgency = parsed.get("urgency_tier")
     if urgency not in _URGENCY_VALUES:
-        return "rejected_invalid_urgency", f"urgency_tier must be AJD, ajd, or null, got {urgency!r}"
-    if _title_urgency(parsed.get("title")) != urgency:
-        return "rejected_urgency_title", "title urgency prefix does not match urgency_tier"
+        return (
+            "rejected_invalid_urgency",
+            f"urgency_tier must be URGENT, Intermédiaire, Faible, or null, got {urgency!r}",
+        )
 
     text_fields = _text_fields(parsed)
 

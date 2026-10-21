@@ -27,7 +27,7 @@ Return ONLY valid JSON matching this schema. No prose, no explanation.
   "title": string,
   "problems": [string, ...],
   "entry_permission": string | null,
-  "urgency_tier": "AJD" | "ajd" | null,
+  "urgency_tier": "URGENT" | "Intermédiaire" | "Faible" | null,
   "heating_failure": true | false | null,
   "complexity_tier": "C1" | "C2" | "C3" | "C4",
   "congestion_level": "N1" | "N2" | "N3" | "N4" | "N5",
@@ -43,7 +43,7 @@ Return ONLY valid JSON matching this schema. No prose, no explanation.
 
 There is NO assignee field. Do not include one. There is NO animals / pets field — do not include one; ignore any form yes/no pet answer. Never write employee initials (2–4 capital letters, e.g. CHGE) in title, problems, entry_permission, or other_notes. Vendor names (Duclos, Body Gym, Fortin, Éric) go in subcontractor_name only.
 Same-unit open calls: same problem → verdict "duplicate" (flag only, title contains DOUBLON POTENTIEL). Different problem + routing A1/A2/A3/A3b/A4 → verdict "single" (own ticket, never addition). Different problem + normal routing (A0/A5) → verdict "addition" (system will merge into the open call).
-urgency_tier is exactly "AJD" (do today: active water including hidden leaks, backflow, no heat or hot water, person stuck, alarm/fire, lock not working, dead fridge, electrical or structural danger), "ajd" (priority, not necessarily today: contained slow leak, mould, non-critical appliance, any vermin, AC in a heatwave), or null (not urgent). The title must start with the same token ("AJD " or "ajd ") or with neither when null. Judge urgency from the problem content only — ignore any caller/form self-report of urgency (Gravity "Urgent ou non-urgent", intake urgent flag, or similar).
+urgency_tier is exactly "URGENT" (do today: active water including hidden leaks, backflow, no heat or hot water, person stuck, alarm/fire, lock not working, dead fridge, electrical or structural danger), "Intermédiaire" (priority, not necessarily today: contained slow leak, mould, non-critical appliance, any vermin, AC in a heatwave), "Faible" (non-urgent / can wait), or null when urgency cannot be judged. Do NOT put urgency codes in the title — title is a plain short summary only. Judge urgency from the problem content only — ignore any caller/form self-report of urgency (Gravity "Urgent ou non-urgent", intake urgent flag, or similar).
 Routing codes (A0, A1, A2, A3, A3b, A4, A5) belong ONLY in the routing_rule field. NEVER write them in title, problems, entry_permission, other_notes, or any other text field — use plain operational language instead.
 Access codes and combinations are FORBIDDEN in all text fields. When a keybox, door code, NIP, or combination appears in the source request, reference the device by label only (e.g. "keybox H", "clavier principal") — never include the digit sequence.
 Exclusive vendors: A2 subcontractor_name is Body Gym. A3 (certain door/window replacement) is Duclos. A3b (unknown cause — diagnose first) leaves subcontractor_name null and must not name Duclos. A4 extermination names Éric. C4 plumbing names Fortin. Do not put those vendors on any other routing_rule.
@@ -59,7 +59,7 @@ _LANG_EN = """\
 The skill and guide above are in French — follow their rules exactly.
 Write ALL human-readable JSON string fields in English: title, problems, entry_permission, other_notes.
 Keep proper nouns and place names as-is (addresses, Ste-Foy, Duclos, etc.).
-Enum / code fields stay exactly as specified (AJD, ajd, C1–C4, A0–A5, YES/NO/CONDITIONAL, time buckets, etc.).
+Enum / code fields stay exactly as specified (URGENT, Intermédiaire, Faible, C1–C4, A0–A5, YES/NO/CONDITIONAL, time buckets, etc.).
 subcontractor_name: keep the vendor's real name; do not translate brand names.\
 """
 
@@ -67,7 +67,7 @@ _LANG_FR = """\
 ## Langue de sortie
 
 Rédige TOUS les champs texte lisibles du JSON en français : title, problems, entry_permission, other_notes.
-Les codes / enums restent tels que spécifiés (AJD, ajd, C1–C4, A0–A5, etc.).\
+Les codes / enums restent tels que spécifiés (URGENT, Intermédiaire, Faible, C1–C4, A0–A5, etc.).\
 """
 
 

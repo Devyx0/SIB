@@ -366,7 +366,7 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
             problem_summary         = %(title)s,
             problems                = %(problems)s,
             entry_permission        = %(entry_permission)s,
-            urgency_tier            = %(urgency_tier)s::urgency_tier,
+            urgency_tier            = %(urgency_tier)s,
             complexity_tier         = %(complexity_tier)s::complexity_tier,
             congestion_level        = %(congestion_level)s::congestion_level,
             time_estimate_bucket    = %(time_estimate_bucket)s::time_estimate_bucket,

@@ -85,6 +85,22 @@
   font-size: 0.9rem;
 }
 
+.deskHelp {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f7f1e8;
+  color: #5c4a2a;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.deskHelp a {
+  color: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .success {
   margin: 0;
   font-size: 1rem;

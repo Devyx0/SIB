@@ -44,20 +44,20 @@ ROWS = [
     ("dev-r-004", "[TEST] Infiltration eau plafond",         28, 15, 1, None,   4),
     ("dev-r-005", "[TEST] Drain bouché cuisine",             28, 16, 1, None,   5),
     ("dev-r-006", "[TEST] Serrure défectueuse",              28, 17, 1, None,   6),
-    ("dev-r-007", "[TEST] Ascenseur hors service",           31, 41, 1, "ajd",  7),
+    ("dev-r-007", "[TEST] Ascenseur hors service",           31, 41, 1, "Intermédiaire",  7),
     ("dev-r-008", "[TEST] Bris de glace fenêtre",            31, 58, 1, None,   8),
-    ("dev-r-009", "[TEST] Urgence plomberie — eau coupée",   29, 1,  4, "AJD",  1),
-    ("dev-r-010", "[TEST] Urgence électrique court-circuit", 29, 18, 4, "AJD",  2),
-    ("dev-r-011", "[TEST] Toiture à réparer",                32, 25, 4, "ajd",  3),
-    ("dev-r-012", "[TEST] Stationnement enneigé",            32, 26, 4, "ajd",  4),
+    ("dev-r-009", "[TEST] Urgence plomberie — eau coupée",   29, 1,  4, "URGENT",  1),
+    ("dev-r-010", "[TEST] Urgence électrique court-circuit", 29, 18, 4, "URGENT",  2),
+    ("dev-r-011", "[TEST] Toiture à réparer",                32, 25, 4, "Intermédiaire",  3),
+    ("dev-r-012", "[TEST] Stationnement enneigé",            32, 26, 4, "Intermédiaire",  4),
     ("dev-r-013", "[TEST] Verrou portail brisé",             26, 27, 4, None,   5),
     ("dev-r-014", "[TEST] Drain extérieur bouché",           26, 28, 4, None,   6),
     ("dev-r-015", "[TEST] Fenêtre cassée balcon",             1, 2,  5, None,   7),
-    ("dev-r-016", "[TEST] Balcon à réparer — garde-corps",    1, 5,  5, "AJD",  8),
+    ("dev-r-016", "[TEST] Balcon à réparer — garde-corps",    1, 5,  5, "URGENT",  8),
     ("dev-r-017", "[TEST] Éclairage extérieur hors service",  34, 6, 5, None,   9),
-    ("dev-r-018", "[TEST] Infiltration moisissures",          11, 60, 6, "AJD", 10),
+    ("dev-r-018", "[TEST] Infiltration moisissures",          11, 60, 6, "URGENT", 10),
     ("dev-r-019", "[TEST] Plancher à remplacer",              11, 61, 6, None,  11),
-    ("dev-r-020", "[TEST] Réfrigérateur brisé — locataire",   37, 62, 6, "ajd", 12),
+    ("dev-r-020", "[TEST] Réfrigérateur brisé — locataire",   37, 62, 6, "Intermédiaire", 12),
 ]
 
 
@@ -71,7 +71,7 @@ def seed(conn: psycopg.Connection) -> None:
                 (status, raw_title, assigned_employee_id, building_id, sector_id,
                  urgency_tier, start_date, external_source, external_ref)
             VALUES ('triaged', %(title)s, %(emp_id)s, %(bldg_id)s, %(sector_id)s,
-                    %(urgency)s::urgency_tier, %(start_date)s, 'dev_seed', %(ref)s)
+                    %(urgency)s, %(start_date)s, 'dev_seed', %(ref)s)
             ON CONFLICT (external_source, external_ref)
                 WHERE external_source IS NOT NULL AND external_ref IS NOT NULL
             DO NOTHING

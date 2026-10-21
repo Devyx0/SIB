@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useRequests } from '../../hooks/useRequests';
 import { fetchSectors, fetchEmployees, ApiError } from '../../api/client';
+import { expandStatusFilter } from '../../api/statusValues';
 import type { Lang } from '../../i18n';
 import { t } from '../../i18n';
 import FilterBar from './FilterBar';
@@ -87,10 +88,15 @@ export default function DispatchBoard({ lang, me }: Props) {
     : hasSubParam === 'false' ? false
     : undefined;
 
+  // Received filter also covers the transient triage_pending lock.
+  const statusForApi = statusParam.length
+    ? expandStatusFilter(statusParam)
+    : undefined;
+
   const params = {
     start_date: startDate,
     end_date: endDate,
-    status: statusParam.length ? statusParam : undefined,
+    status: statusForApi,
     source_calendar: sourceCalendar,
     q: q || undefined,
     sort_by: sortBy,

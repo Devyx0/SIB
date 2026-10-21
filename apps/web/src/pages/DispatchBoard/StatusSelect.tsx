@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { STATUS_VALUES } from '../../api/statusValues';
+import { FILTER_STATUS_VALUES } from '../../api/statusValues';
 import { statusLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import styles from './FilterBar.module.css';
@@ -10,6 +10,15 @@ interface Props {
   onChange: (v: string[]) => void;
 }
 
+/** Collapse triage_pending into intake_received for the checkbox UI. */
+function uiStatuses(value: string[]): string[] {
+  const out = value.filter((s) => s !== 'triage_pending');
+  if (value.includes('triage_pending') && !out.includes('intake_received')) {
+    out.push('intake_received');
+  }
+  return out;
+}
+
 // Multi-select dropdown for the status filter: a trigger summarising the
 // selection and a popover of checkboxes. Closes on outside click / Escape.
 export default function StatusSelect({ lang, value, onChange }: Props) {
@@ -17,6 +26,7 @@ export default function StatusSelect({ lang, value, onChange }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popId = useId();
+  const selected = uiStatuses(value);
 
   useEffect(() => {
     if (!open) return;
@@ -38,22 +48,22 @@ export default function StatusSelect({ lang, value, onChange }: Props) {
   }, [open]);
 
   function toggle(s: string) {
-    onChange(value.includes(s) ? value.filter((v) => v !== s) : [...value, s]);
+    onChange(selected.includes(s) ? selected.filter((v) => v !== s) : [...selected, s]);
   }
 
   const summary =
-    value.length === 0
+    selected.length === 0
       ? t(lang, 'Tous les statuts', 'All statuses')
-      : value.length === 1
-        ? statusLabel(lang, value[0])
-        : t(lang, `${value.length} statuts`, `${value.length} statuses`);
+      : selected.length === 1
+        ? statusLabel(lang, selected[0])
+        : t(lang, `${selected.length} statuts`, `${selected.length} statuses`);
 
   return (
     <div className={styles.dropdown} ref={rootRef}>
       <button
         ref={triggerRef}
         type="button"
-        className={`${styles.input} ${styles.dropdownTrigger} ${value.length > 0 ? styles.dropdownTriggerActive : ''}`}
+        className={`${styles.input} ${styles.dropdownTrigger} ${selected.length > 0 ? styles.dropdownTriggerActive : ''}`}
         aria-haspopup="true"
         aria-expanded={open}
         aria-controls={popId}
@@ -61,17 +71,17 @@ export default function StatusSelect({ lang, value, onChange }: Props) {
         onClick={() => setOpen((o) => !o)}
       >
         <span className={styles.dropdownSummary}>{summary}</span>
-        {value.length > 1 && <span className={styles.dropdownCount}>{value.length}</span>}
+        {selected.length > 1 && <span className={styles.dropdownCount}>{selected.length}</span>}
       </button>
 
       {open && (
         <div id={popId} className={styles.popover} role="group" aria-label={t(lang, 'Statut', 'Status')}>
           <div className={styles.popoverList}>
-            {STATUS_VALUES.map((s) => (
+            {FILTER_STATUS_VALUES.map((s) => (
               <label key={s} className={styles.popoverOption}>
                 <input
                   type="checkbox"
-                  checked={value.includes(s)}
+                  checked={selected.includes(s)}
                   onChange={() => toggle(s)}
                 />
                 {statusLabel(lang, s)}
@@ -83,7 +93,7 @@ export default function StatusSelect({ lang, value, onChange }: Props) {
               type="button"
               className={styles.linkBtn}
               onClick={() => onChange([])}
-              disabled={value.length === 0}
+              disabled={selected.length === 0}
             >
               {t(lang, 'Effacer', 'Clear')}
             </button>

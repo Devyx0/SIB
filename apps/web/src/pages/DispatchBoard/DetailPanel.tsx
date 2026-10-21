@@ -17,6 +17,7 @@ import type { MeResponse } from '../../api/schema.d.ts';
 import { roleLabel, statusLabel, timeEstimateLabel, sourceCalendarLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import { googleMapsUrl } from '../../lib/maps';
+import { urgencyLabel, urgencyOptions } from '../../lib/urgencyLevels';
 import styles from './DetailPanel.module.css';
 import Select from '../../components/Select';
 
@@ -36,11 +37,6 @@ interface Props {
   me?: MeResponse | null;
 }
 
-const URGENCY_OPTIONS: Array<{ value: string | null }> = [
-  { value: 'AJD' },
-  { value: 'ajd' },
-  { value: null },
-];
 
 const BAND_FR: Record<string, string> = {
   critical: 'critique', emergency: 'urgence', priority: 'priorité', normal: 'normal',
@@ -212,7 +208,7 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
     }
     if (urgencyDraft !== undefined && urgencyDraft !== (data.urgency_tier ?? null)) {
       pending.push({ key: 'urgency_tier', label: t(lang, 'Urgence', 'Urgency'),
-        before: data.urgency_tier ?? t(lang, 'Aucune', 'None'), after: urgencyDraft ?? t(lang, 'Aucune', 'None'), value: urgencyDraft });
+        before: urgencyLabel(lang, data.urgency_tier), after: urgencyLabel(lang, urgencyDraft), value: urgencyDraft });
     }
     if (followUpDate !== null && (followUpDate || null) !== (data.next_follow_up_date ?? null)) {
       pending.push({ key: 'next_follow_up_date', label: t(lang, 'Prochain suivi', 'Next follow-up'),
@@ -308,8 +304,8 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                   <>
                     <span className={styles.statusBadge} data-status={data.status}>{statusLabel(lang, data.status)}</span>
                     {data.urgency_tier ? (
-                      <span className={data.urgency_tier === 'AJD' ? styles.urgentBadge : styles.softBadge}>
-                        {data.urgency_tier}
+                      <span className={data.urgency_tier === 'URGENT' ? styles.urgentBadge : styles.softBadge}>
+                        {urgencyLabel(lang, data.urgency_tier)}
                       </span>
                     ) : (
                       <span className={styles.softBadge}>{t(lang, 'non urgente', 'not urgent')}</span>
@@ -705,7 +701,7 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                       <div className={`${styles.editField} ${changedKeys.has('urgency_tier') ? styles.editFieldChanged : ''}`}>
                         <span className={styles.editLabel}>{t(lang, 'Urgence', 'Urgency')}</span>
                         <div className={styles.urgencyPills}>
-                          {URGENCY_OPTIONS.map(({ value }) => (
+                          {urgencyOptions(lang).map(({ value, label }) => (
                             <button
                               key={String(value)}
                               type="button"
@@ -714,7 +710,7 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                               disabled={isClosed}
                               onClick={() => setUrgencyDraft(value)}
                             >
-                              {value ?? t(lang, 'Aucune', 'None')}
+                              {label}
                             </button>
                           ))}
                         </div>

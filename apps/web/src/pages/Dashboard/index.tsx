@@ -25,8 +25,7 @@ export default function Dashboard({ lang = 'fr' }: { lang?: Lang }) {
     );
   }
 
-  const untriagedTip = data.untriaged_statuses
-    .map((s) => statusLabel(lang, s))
+  const untriagedTip = [...new Set(data.untriaged_statuses.map((s) => statusLabel(lang, s)))]
     .join(', ');
 
   return (
@@ -133,8 +132,8 @@ export default function Dashboard({ lang = 'fr' }: { lang?: Lang }) {
               <tr>
                 <th>{t(lang, 'Territoire', 'Territory')}</th>
                 <th className={styles.num}>{t(lang, 'Actifs', 'Active')}</th>
-                <th className={`${styles.num} ${styles.urgencyCase}`}>AJD</th>
-                <th className={`${styles.num} ${styles.urgencyCase}`}>ajd</th>
+                <th className={`${styles.num} ${styles.urgencyCase}`}>{t(lang, 'Urgent', 'Urgent')}</th>
+                <th className={`${styles.num} ${styles.urgencyCase}`}>{t(lang, 'Intermédiaire', 'Medium')}</th>
                 <th
                   className={styles.num}
                   title={untriagedTip}
@@ -163,8 +162,8 @@ export default function Dashboard({ lang = 'fr' }: { lang?: Lang }) {
                   >
                     <td>{row.territoire}</td>
                     <td className={styles.num}>{row.active}</td>
-                    <td className={styles.num}>{row.AJD}</td>
-                    <td className={styles.num}>{row.ajd}</td>
+                    <td className={styles.num}>{row.urgent}</td>
+                    <td className={styles.num}>{row.medium}</td>
                     <td className={styles.num}>{row.untriaged}</td>
                   </tr>
                 ))

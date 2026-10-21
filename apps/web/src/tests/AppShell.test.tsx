@@ -28,10 +28,11 @@ function wrap(ui: React.ReactElement, initial = '/board') {
 }
 
 const CASES: [string, string][] = [
-  ['coordinator', 'Coordonnateur'],
-  ['director',    'Directeur'],
-  ['technician',  'Technicien'],
-  ['contractor',  'Sous-traitant'],
+  ['coordinator',  'Coordonnateur'],
+  ['director',     'Directeur'],
+  ['technician',   'Technicien'],
+  ['contractor',   'Sous-traitant'],
+  ['receptionist', 'Réceptionniste'],
 ];
 
 describe('AppShell sidebar role labels (lang=fr)', () => {
@@ -96,5 +97,20 @@ describe('AppShell side menu', () => {
   it('never shows a Milestone label', () => {
     wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
     expect(screen.queryByText(/milestone|jalon/i)).toBeNull();
+  });
+
+  it('receptionist only sees Nouvel appel → /intake', () => {
+    wrap(
+      <AppShell lang="fr" onToggleLang={vi.fn()} me={me('receptionist')} onSignOut={vi.fn()}>
+        x
+      </AppShell>,
+      '/intake',
+    );
+    expect(screen.getByTestId('nav-nouvel-appel')).toHaveTextContent('Nouvel appel');
+    expect((screen.getByTestId('nav-nouvel-appel') as HTMLAnchorElement).getAttribute('href'))
+      .toBe('/intake');
+    expect(screen.queryByTestId('nav-board')).toBeNull();
+    expect(screen.queryByTestId('nav-dossiers')).toBeNull();
+    expect(screen.queryByTestId('nav-tableau-bord')).toBeNull();
   });
 });

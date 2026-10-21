@@ -95,6 +95,10 @@ describe('CloseoutForm', () => {
     const submit = () => screen.getByTestId('closeout-submit') as HTMLButtonElement;
     expect(submit().disabled).toBe(true);
 
+    const hint = screen.getByTestId('closeout-comment-hint');
+    expect(hint.textContent).toMatch(/Minimum 10/);
+    expect(hint.textContent).toMatch(/0\/10/);
+
     fireEvent.click(screen.getByText(LABELS[0]));
     expect(submit().disabled).toBe(true);
 
@@ -104,9 +108,11 @@ describe('CloseoutForm', () => {
 
     setComment('court');
     expect(submit().disabled).toBe(true);
+    expect(hint.textContent).toMatch(/5\/10/);
 
     setComment('Travail terminé, tout est réparé.');
     await waitFor(() => expect(submit().disabled).toBe(false));
+    expect(hint.textContent).toMatch(/\d+\/10/);
   });
 
   it('uploads the photo and shows a thumbnail', async () => {

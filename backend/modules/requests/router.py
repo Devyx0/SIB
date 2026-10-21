@@ -50,6 +50,11 @@ dossiers_router = APIRouter(prefix="/dossiers", tags=["dossiers"])
 
 _ALL_ROLES = require_role("technician", "coordinator", "director", "contractor")
 _COORD_DIR  = require_role("coordinator", "director")
+_INTAKE = require_role("coordinator", "director", "receptionist")
+# Lookups needed to fill the intake form (not request list/detail).
+_INTAKE_LOOKUP = require_role(
+    "technician", "coordinator", "director", "contractor", "receptionist",
+)
 _TECH_CONTRACTOR = require_role("technician", "contractor")
 
 
@@ -66,7 +71,7 @@ class RequestListParams:
         building_id: Optional[int] = Query(default=None),
         sector_id: Optional[int] = Query(default=None),
         assigned_employee_id: Optional[int] = Query(default=None),
-        urgency: Optional[Literal["AJD", "ajd", "none"]] = Query(default=None),
+        urgency: Optional[Literal["URGENT", "Intermédiaire", "Faible"]] = Query(default=None),
         source_calendar: Optional[Literal["main", "st_maj", "unrouted"]] = Query(default=None),
         q: Optional[str] = Query(default=None),
         has_subcontractor: Optional[bool] = Query(default=None),
@@ -132,7 +137,7 @@ def request_get(
     response_model=list[SectorLookup],
 )
 def lookup_sectors(
-    user: CurrentUser = _ALL_ROLES,
+    user: CurrentUser = _INTAKE_LOOKUP,
     conn=Depends(get_db_conn),
 ) -> list[SectorLookup]:
     from backend.modules.intake.service import allowed_sector_ids
@@ -147,7 +152,7 @@ def lookup_sectors(
 )
 def lookup_buildings(
     sector_id: Optional[int] = Query(default=None),
-    user: CurrentUser = _ALL_ROLES,
+    user: CurrentUser = _INTAKE_LOOKUP,
     conn=Depends(get_db_conn),
 ) -> list[BuildingLookup]:
     from backend.modules.intake.service import allowed_sector_ids
@@ -325,7 +330,7 @@ def request_add_log(request_id: int, body: AddLogBody, user: CurrentUser = _ALL_
 )
 def lookup_units(
     building_id: int = Query(...),
-    user: CurrentUser = _ALL_ROLES,
+    user: CurrentUser = _INTAKE_LOOKUP,
     conn=Depends(get_db_conn),
 ) -> list[UnitLookup]:
     return [UnitLookup(**r) for r in repo.list_units(conn, building_id)]
@@ -339,7 +344,7 @@ def lookup_units(
 def lookup_unit_numbers(
     q: str = Query(..., min_length=1),
     limit: int = Query(default=20, ge=1, le=50),
-    user: CurrentUser = _COORD_DIR,
+    user: CurrentUser = _INTAKE,
     conn=Depends(get_db_conn),
 ) -> list[UnitNumberHit]:
     return [UnitNumberHit(**r) for r in repo.search_unique_unit_numbers(conn, q, limit=limit)]
@@ -352,7 +357,7 @@ def lookup_unit_numbers(
 )
 def lookup_unit_by_number(
     unique_unit_number: str = Query(..., min_length=1),
-    user: CurrentUser = _COORD_DIR,
+    user: CurrentUser = _INTAKE,
     conn=Depends(get_db_conn),
 ) -> UnitByNumberLookup:
     from backend.core.exceptions import NotFoundError
@@ -371,7 +376,7 @@ def lookup_unit_by_number(
 )
 def lookup_unit_context(
     unit_id: int = Query(...),
-    user: CurrentUser = _COORD_DIR,
+    user: CurrentUser = _INTAKE,
     conn=Depends(get_db_conn),
 ) -> UnitByNumberLookup:
     from backend.core.exceptions import NotFoundError

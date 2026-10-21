@@ -1,6 +1,7 @@
 import { useRef, KeyboardEvent } from 'react';
 import type { ListRow } from '../../api/schema.d.ts';
 import { statusLabel, t, timeEstimateLabel, type Lang } from '../../i18n';
+import { urgencyLabel } from '../../lib/urgencyLevels';
 import { googleMapsUrl } from '../../lib/maps';
 import styles from './RequestTable.module.css';
 
@@ -49,9 +50,13 @@ const OPTIONAL_COLS: ColDef[] = [
   { key: 'next_steps',            fr: 'Prochaines étapes',  en: 'Next steps',    sortable: false },
 ];
 
-function UrgencyTag({ tier }: { tier: string | null }) {
-  if (tier === 'AJD') return <span className={styles.tagAJD}>AJD</span>;
-  if (tier === 'ajd') return <span className={styles.tagAjd}>ajd</span>;
+function UrgencyTag({ tier, lang = 'fr' }: { tier: string | null; lang?: Lang }) {
+  if (tier === 'URGENT') {
+    return <span className={styles.tagAJD}>{urgencyLabel(lang, 'URGENT')}</span>;
+  }
+  if (tier === 'Intermédiaire' || tier === 'Faible') {
+    return <span className={styles.tagAjd}>{urgencyLabel(lang, tier)}</span>;
+  }
   return <span className={styles.muted}>—</span>;
 }
 
@@ -169,7 +174,7 @@ export default function RequestTable({
         }
       }
 
-      const isAJD = row.urgency_tier === 'AJD';
+      const isUrgent = row.urgency_tier === 'URGENT';
       const isDup = row.duplicate_of_request_id != null;
       const isAdd = row.addition_to_request_id != null;
       const isSelected = row.request_id === selectedId;
@@ -180,7 +185,7 @@ export default function RequestTable({
           key={row.request_id}
           className={[
             styles.row,
-            isAJD ? styles.ajdRow : '',
+            isUrgent ? styles.ajdRow : '',
             isDup ? styles.dupRow : '',
             isAdd ? styles.addRow : '',
             isSelected ? styles.selectedRow : '',
@@ -196,7 +201,7 @@ export default function RequestTable({
           {/* mandatory cells */}
           <td className={styles.nowrap + ' ' + styles.dateCell}>{row.start_date ?? '—'}</td>
           <td className={styles.nowrap + ' ' + styles.mono}>{row.asnu ?? '—'}</td>
-          <td className={styles.nowrap}><UrgencyTag tier={row.urgency_tier} /></td>
+          <td className={styles.nowrap}><UrgencyTag tier={row.urgency_tier} lang={lang} /></td>
           <td className={styles.titleCell}>
             <span className={styles.clamp} title={row.raw_title ?? undefined}>{row.raw_title ?? '—'}</span>
             {isDup && (

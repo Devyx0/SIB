@@ -29,7 +29,7 @@ vi.mock('../lib/assemblyStream', () => ({
 function Harness({ onResult }: { onResult: (j: Justification | null) => void }) {
   const justify = useJustify();
   return (
-    <button onClick={async () => onResult(await justify({ decision: 'Urgence', before: 'Aucune', after: 'AJD' }))}>
+    <button onClick={async () => onResult(await justify({ decision: 'Urgence', before: 'Aucune', after: 'URGENT' }))}>
       open
     </button>
   );
@@ -73,7 +73,7 @@ describe('JustificationProvider', () => {
     await userEvent.click(screen.getByText('open'));
     const dialog = screen.getByTestId('justification-dialog');
     expect(dialog.textContent).toContain('Aucune');
-    expect(dialog.textContent).toContain('AJD');
+    expect(dialog.textContent).toContain('URGENT');
     expect(screen.queryByTestId('justification-mic')).toBeNull(); // no engine in jsdom
     fireEvent.change(screen.getByTestId('justification-text'), { target: { value: 'Dégât d’eau actif' } });
     await userEvent.click(screen.getByTestId('justification-confirm'));

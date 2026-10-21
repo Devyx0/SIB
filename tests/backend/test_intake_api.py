@@ -113,6 +113,16 @@ def test_contractor_cannot_create(ac, db_conn):
     assert r.status_code == 403
 
 
+def test_receptionist_can_create(ac, db_conn):
+    r = ac(_user(_COORD, "receptionist")).post("/api/v1/intake", json=_valid_body(db_conn))
+    assert r.status_code == 201
+
+
+def test_receptionist_cannot_list_requests(ac, db_conn):
+    r = ac(_user(_COORD, "receptionist")).get("/api/v1/requests?limit=5")
+    assert r.status_code == 403
+
+
 def test_missing_problem_422(ac, db_conn):
     body = _valid_body(db_conn)
     del body["problem"]
@@ -266,6 +276,13 @@ def test_taxonomy_axes_persisted(ac, db_conn):
     assert row["symptome"] == "Fuite"
     assert row["composante"] == "Robinet"
     assert row["emplacement"] == "Cuisine"
+    detail = ac(_user(_COORD, "coordinator")).get(f"/api/v1/requests/{rid}")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["element"] == "Plomberie"
+    assert body["symptome"] == "Fuite"
+    assert body["composante"] == "Robinet"
+    assert body["emplacement"] == "Cuisine"
 
 
 def test_missing_taxonomy_axis_422(ac, db_conn):

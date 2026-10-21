@@ -15,6 +15,10 @@ import type { Lang } from '../../i18n';
 import { t } from '../../i18n';
 import styles from './PublicDemande.module.css';
 
+/** Central maintenance / front desk — DISP in client guide. Override via env. */
+const FRONT_DESK_PHONE =
+  (import.meta.env.VITE_FRONT_DESK_PHONE as string | undefined)?.trim() || '581-531-1011';
+
 function accessOptions(lang: Lang): { value: AccessChoice; label: string }[] {
   return [
     { value: 'yes', label: t(lang, 'Accès autorisé', 'Access granted') },
@@ -22,6 +26,13 @@ function accessOptions(lang: Lang): { value: AccessChoice; label: string }[] {
     { value: 'tenant_required', label: t(lang, 'Présence du locataire exigée', 'Tenant presence required') },
     { value: 'common_area', label: t(lang, 'Espace commun', 'Common area') },
   ];
+}
+
+function isLookupNoMatch(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return false;
+  if (err.code === 'NOT_FOUND') return true;
+  // Ambiguous multi-unit match — same UX: call the desk, no free-text apartment.
+  return err.code === 'VALIDATION_FAILED' && /plusieurs logements|multiple|contactez/i.test(err.message);
 }
 
 export default function PublicDemande({
@@ -44,6 +55,7 @@ export default function PublicDemande({
   const [submitting, setSubmitting] = useState(false);
   const [doneId, setDoneId] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showDeskPhone, setShowDeskPhone] = useState(false);
 
   const [access, setAccess] = useState<AccessChoice>('yes');
   const [accessDetails, setAccessDetails] = useState('');
@@ -63,6 +75,7 @@ export default function PublicDemande({
     if (!lookupToken || lookingUp) return;
     setLookingUp(true);
     setErrorMsg(null);
+    setShowDeskPhone(false);
     try {
       const res = await publicIntakeLookup({
         phone: mode === 'phone' ? phone.trim() : undefined,
@@ -74,7 +87,11 @@ export default function PublicDemande({
       setLookupToken(null);
       setLookupReset((k) => k + 1);
     } catch (err) {
-      setErrorMsg(err instanceof ApiError ? err.message : t(lang, 'Échec — réessayez', 'Failed — retry'));
+      if (isLookupNoMatch(err)) {
+        setShowDeskPhone(true);
+      } else {
+        setErrorMsg(err instanceof ApiError ? err.message : t(lang, 'Échec — réessayez', 'Failed — retry'));
+      }
       setLookupReset((k) => k + 1);
       setLookupToken(null);
     } finally {
@@ -169,11 +186,11 @@ export default function PublicDemande({
           <form onSubmit={onLookup}>
             <div className={styles.row}>
               <label className={styles.radioRow}>
-                <input type="radio" checked={mode === 'phone'} onChange={() => setMode('phone')} />
+                <input type="radio" checked={mode === 'phone'} onChange={() => { setMode('phone'); setShowDeskPhone(false); setErrorMsg(null); }} />
                 {t(lang, 'Téléphone', 'Phone')}
               </label>
               <label className={styles.radioRow}>
-                <input type="radio" checked={mode === 'email'} onChange={() => setMode('email')} />
+                <input type="radio" checked={mode === 'email'} onChange={() => { setMode('email'); setShowDeskPhone(false); setErrorMsg(null); }} />
                 {t(lang, 'Courriel', 'Email')}
               </label>
             </div>
@@ -204,6 +221,17 @@ export default function PublicDemande({
               </div>
             )}
             <Turnstile action="tenant_lookup" onToken={setLookupToken} resetKey={lookupReset} />
+            {showDeskPhone && (
+              <p className={styles.deskHelp} data-testid="public-desk-help">
+                {t(
+                  lang,
+                  'Aucun logement trouvé. Appelez l’accueil au ',
+                  'No matching unit found. Call the front desk at ',
+                )}
+                <a href={`tel:${FRONT_DESK_PHONE.replace(/\D/g, '')}`}>{FRONT_DESK_PHONE}</a>
+                .
+              </p>
+            )}
             {errorMsg && <p className={styles.error}>{errorMsg}</p>}
             <button
               type="submit"

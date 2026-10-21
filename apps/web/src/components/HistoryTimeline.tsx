@@ -13,6 +13,7 @@ import { useMemo, useState } from 'react';
 import type { FollowupEntry, JustificationEntry, StatusChange, VisitEntry } from '../api/schema.d.ts';
 import { closeoutOutcomeLabel, sourceCalendarLabel, statusLabel, t } from '../i18n';
 import type { Lang } from '../i18n';
+import { urgencyLabel } from '../lib/urgencyLevels';
 import { VisitPhoto, formatDurationMinutes } from './RequestSections';
 import styles from './HistoryTimeline.module.css';
 
@@ -121,7 +122,8 @@ function decisionChange(e: JustificationEntry, lang: Lang): Change {
     case 'reschedule':
       return { label, before: formatEntryDate(b.start_date as string, lang), after: formatEntryDate(a.start_date as string, lang) };
     case 'urgency': {
-      const tier = (v: Record<string, unknown>) => (v.urgency_tier as string | null) || none;
+      const tier = (v: Record<string, unknown>) =>
+        urgencyLabel(lang, (v.urgency_tier as string | null) ?? null);
       const weather = a.weather ? t(lang, ' (météo)', ' (weather)') : '';
       return { label, before: tier(b), after: tier(a) + weather };
     }

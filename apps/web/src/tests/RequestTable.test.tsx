@@ -139,9 +139,9 @@ describe('RequestTable', () => {
     expect(screen.queryAllByTestId('day-header').length).toBe(0);
   });
 
-  it('renders AJD row without error', () => {
-    render(<RequestTable {...defaultProps} rows={[makeRow({ urgency_tier: 'AJD' })]} />);
-    expect(screen.getByText('AJD')).toBeTruthy();
+  it('renders Urgent row without error', () => {
+    render(<RequestTable {...defaultProps} rows={[makeRow({ urgency_tier: 'URGENT' })]} />);
+    expect(screen.getByText('Urgent')).toBeTruthy();
   });
 
   it('marks selected row', () => {

@@ -14,8 +14,8 @@ const base: DashboardResponse = {
       sector_id: 1,
       territoire: 'QUÉBEC-EST',
       active: 3,
-      AJD: 1,
-      ajd: 0,
+      urgent: 1,
+      medium: 0,
       untriaged: 0,
       board_link: '/board?sector_id=1&start_date=2026-09-19&end_date=2026-10-19',
     },
@@ -98,7 +98,9 @@ describe('Dashboard', () => {
     vi.mocked(fetchDashboard).mockResolvedValue(base);
     wrap(<Dashboard lang="fr" />);
     const hdr = await screen.findByTestId('untriaged-header');
-    expect(hdr.getAttribute('title')).toMatch(/Reçu|En triage|Clarification|Triage échoué/);
+    expect(hdr.getAttribute('title')).toMatch(/Reçu/);
+    expect(hdr.getAttribute('title')).toMatch(/Clarification|Triage échoué/);
+    expect(hdr.getAttribute('title')).not.toMatch(/En triage|Pending triage/);
     expect(screen.getByTestId('count-a-router')).toHaveTextContent('0');
     expect(screen.getByTestId('count-a-redispatcher')).toHaveTextContent('2');
   });
@@ -110,15 +112,15 @@ describe('Dashboard', () => {
     expect(screen.queryByText(/8\s*[-–àa]\s*14|calls per employee|appels par employé/i)).toBeNull();
   });
 
-  it('keeps ajd lowercase in the territory header', async () => {
+  it('shows Urgent and Medium territory headers', async () => {
     vi.mocked(fetchDashboard).mockResolvedValue(base);
     wrap(<Dashboard lang="en" />);
     await screen.findByTestId('territory-table');
     const headers = [...screen.getByTestId('territory-table').querySelectorAll('th')].map(
       (th) => th.textContent,
     );
-    expect(headers).toContain('AJD');
-    expect(headers).toContain('ajd');
+    expect(headers).toContain('Urgent');
+    expect(headers).toContain('Medium');
   });
 
   it('shows No active calls when territory list is empty', async () => {

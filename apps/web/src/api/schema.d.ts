@@ -148,6 +148,11 @@ export interface RequestDetail extends ListRow {
   caller_tenant_id: number | null;
   raw_caller_body: { entry_permission: string | null; animals: string | null; problems: string | null } | null;
   problems: string | null;
+  category_raw: string | null;
+  element: string | null;
+  symptome: string | null;
+  composante: string | null;
+  emplacement: string | null;
   triage_model_version: string | null;
   ft_link: string | null;
   ft_name: string | null;
@@ -303,8 +308,8 @@ export interface DashboardResponse {
     sector_id: number;
     territoire: string;
     active: number;
-    AJD: number;
-    ajd: number;
+    urgent: number;
+    medium: number;
     untriaged: number;
     board_link: string;
   }>;

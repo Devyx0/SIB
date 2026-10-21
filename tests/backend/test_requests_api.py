@@ -167,10 +167,10 @@ def test_list_filter_assigned_employee_id(ac):
 
 def test_list_filter_urgency(ac):
     c = ac(_user(_COORD_EMP, "coordinator"))
-    r = c.get(f"/api/v1/requests?{_BASE}&urgency=AJD")
+    r = c.get(f"/api/v1/requests?{_BASE}&urgency=URGENT")
     assert r.status_code == 200
     for item in r.json()["items"]:
-        assert item["urgency_tier"] == "AJD"
+        assert item["urgency_tier"] == "URGENT"
 
 
 def test_list_filter_source_calendar(ac):
@@ -401,6 +401,12 @@ def test_detail_includes_missing_fields_as_null(ac):
     assert body["estimated_cost"]      is None
     assert body["next_follow_up_date"] is None
     assert body["next_steps"]          is None
+    # Taxonomy axes are on the detail payload (null when unset).
+    assert "element" in body and body["element"] is None
+    assert "symptome" in body
+    assert "composante" in body
+    assert "emplacement" in body
+    assert "category_raw" in body
 
 
 # ── Follow-up log ──────────────────────────────────────────────────────────────

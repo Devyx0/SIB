@@ -112,9 +112,9 @@ export default function FilterBar({
 
   const URGENCY_OPTS = [
     { value: '', label: t(lang, 'Tout', 'All') },
-    { value: 'AJD', label: 'AJD' },
-    { value: 'ajd', label: 'ajd' },
-    { value: 'none', label: t(lang, 'Aucune', 'None') },
+    { value: 'URGENT', label: t(lang, 'Urgent', 'Urgent') },
+    { value: 'Intermédiaire', label: t(lang, 'Intermédiaire', 'Medium') },
+    { value: 'Faible', label: t(lang, 'Faible', 'Low') },
   ];
 
   const SUB_OPTS = [

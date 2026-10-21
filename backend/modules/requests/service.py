@@ -51,7 +51,8 @@ _INTERNAL_TECH: frozenset[str] = frozenset({
 #   status, event_id, problem_summary, work_performed, entry_permission, animals,
 #   follow_up_expected, unit_id/label, project_id/label, html_link, caller_type,
 #   bail_raw, historique_raw, ft_link, ft_name, problems, followup_log,
-#   estimated_cost/next_follow_up_date/next_steps (all null – migration 0002)
+#   category_raw, element, symptome, composante, emplacement,
+#   estimated_cost/next_follow_up_date/next_steps
 _CASE_SCOPED_PII: frozenset[str] = frozenset({
     "caller_name",
     "caller_phone",

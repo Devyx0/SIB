@@ -4,6 +4,7 @@ import { STATUS_VALUES } from '../../api/statusValues';
 import type { MeResponse, ListRow } from '../../api/schema.d.ts';
 import type { Lang } from '../../i18n';
 import { t, statusLabel } from '../../i18n';
+import { urgencyLabel } from '../../lib/urgencyLevels';
 import TechHeader from './TechHeader';
 import { elapsedLabel } from './elapsed';
 import styles from './TechPortal.module.css';
@@ -31,7 +32,7 @@ function CallRow({ row, lang }: { row: ListRow; lang: Lang }) {
           {statusLabel(lang, row.status)}
         </span>
         {row.urgency_tier && row.urgency_tier !== 'none' && (
-          <span className={styles.urgencyBadge}>{row.urgency_tier}</span>
+          <span className={styles.urgencyBadge}>{urgencyLabel(lang, row.urgency_tier)}</span>
         )}
       </div>
       <div className={styles.callTitle}>{row.raw_title ?? `#${row.request_id}`}</div>

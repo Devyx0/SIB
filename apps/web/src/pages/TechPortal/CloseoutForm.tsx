@@ -18,6 +18,7 @@ interface Props {
 }
 
 const OUTCOMES = ['complete', 'partial_reschedule', 'partial_expertise', 'failed'] as const;
+const COMMENT_MIN = 10;
 type Outcome = (typeof OUTCOMES)[number];
 
 interface PhotoItem {
@@ -61,10 +62,11 @@ export default function CloseoutForm({ lang, me, onSignOut, onToggleLang }: Prop
   const needsDate = outcome === 'partial_reschedule';
   const allowsUrgent = outcome === 'partial_expertise' || outcome === 'failed';
 
+  const commentLen = comment.trim().length;
   const valid =
     outcome !== null &&
     photos.length >= 1 &&
-    comment.trim().length >= 10 &&
+    commentLen >= COMMENT_MIN &&
     (!needsDate || (nextDate !== '' && nextDate >= today));
 
   async function handleAddPhoto(e: React.ChangeEvent<HTMLInputElement>) {
@@ -191,11 +193,24 @@ export default function CloseoutForm({ lang, me, onSignOut, onToggleLang }: Prop
 
         <section className={styles.card}>
           <h2 className={styles.cardTitle}>{t(lang, 'Explication', 'Explanation')}</h2>
+          <p id="closeout-comment-hint" className={styles.commentHint} data-testid="closeout-comment-hint">
+            {t(
+              lang,
+              `Minimum ${COMMENT_MIN} caractères`,
+              `Minimum ${COMMENT_MIN} characters`,
+            )}
+            {' · '}
+            <span className={commentLen >= COMMENT_MIN ? undefined : styles.commentShort}>
+              {commentLen}/{COMMENT_MIN}
+            </span>
+          </p>
           <div className={styles.commentRow}>
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               rows={4}
+              minLength={COMMENT_MIN}
+              aria-describedby="closeout-comment-hint"
               placeholder={t(lang, 'Décrivez le travail et les prochaines étapes…', 'Describe the work and next steps…')}
               data-testid="closeout-comment"
             />

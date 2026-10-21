@@ -16,6 +16,8 @@ interface Props {
   open: boolean;
   onClose: () => void;
   lang?: Lang;
+  /** Full page (receptionist) — no overlay / dismiss chrome. */
+  asPage?: boolean;
 }
 
 function accessOptions(lang: Lang): { value: AccessChoice; label: string }[] {
@@ -27,7 +29,7 @@ function accessOptions(lang: Lang): { value: AccessChoice; label: string }[] {
   ];
 }
 
-export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) {
+export default function NouvelAppelModal({ open, onClose, lang = 'fr', asPage = false }: Props) {
   const qc = useQueryClient();
 
   const [callerName, setCallerName] = useState('');
@@ -161,7 +163,10 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
     setSubmitting(false); setErrorMsg(null);
   }
 
-  function handleClose() { reset(); onClose(); }
+  function handleClose() {
+    reset();
+    if (!asPage) onClose();
+  }
 
   function clearCallerFields() {
     setCallerName('');
@@ -434,8 +439,14 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
   }
 
   return (
-    <div className={styles.overlay} role="dialog" aria-modal aria-label={t(lang, 'Nouvel appel', 'New call')}>
-      <div className={styles.modal}>
+    <div
+      className={asPage ? styles.page : styles.overlay}
+      role={asPage ? undefined : 'dialog'}
+      aria-modal={asPage ? undefined : true}
+      aria-label={t(lang, 'Nouvel appel', 'New call')}
+      data-testid={asPage ? 'nouvel-appel-page' : undefined}
+    >
+      <div className={asPage ? styles.pagePanel : styles.modal}>
         <div className={styles.headRow}>
           <div>
             <h2 className={styles.heading}>{t(lang, 'Nouvel appel', 'New call')}</h2>
@@ -443,17 +454,19 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
               {t(lang, 'Saisissez la demande du locataire — les champs * sont requis.', 'Enter the tenant’s request — fields marked * are required.')}
             </p>
           </div>
-          <button
-            type="button"
-            className={styles.closeBtn}
-            onClick={handleClose}
-            aria-label={t(lang, 'Fermer', 'Close')}
-            data-testid="nouvel-appel-close"
-          >
-            <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M5 5l10 10M15 5L5 15" />
-            </svg>
-          </button>
+          {!asPage && (
+            <button
+              type="button"
+              className={styles.closeBtn}
+              onClick={handleClose}
+              aria-label={t(lang, 'Fermer', 'Close')}
+              data-testid="nouvel-appel-close"
+            >
+              <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M5 5l10 10M15 5L5 15" />
+              </svg>
+            </button>
+          )}
         </div>
 
         <form className={styles.modalForm} onSubmit={handleSubmit} noValidate>
@@ -920,7 +933,9 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
 
           <div className={styles.actions}>
             <button type="button" className={styles.cancelBtn} onClick={handleClose}>
-              {t(lang, 'Annuler', 'Cancel')}
+              {asPage
+                ? t(lang, 'Effacer', 'Clear')
+                : t(lang, 'Annuler', 'Cancel')}
             </button>
             <button type="submit" className={styles.submitBtn}
               disabled={submitting || blockReasons.length > 0}

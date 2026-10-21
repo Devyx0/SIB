@@ -5,8 +5,10 @@ import { useRequest } from '../../hooks/useRequest';
 import { goEnRoute, markArrived, ApiError, GENERIC_ERROR_FR } from '../../api/client';
 import type { MeResponse, RequestDetail } from '../../api/schema.d.ts';
 import type { Lang } from '../../i18n';
-import { t, statusLabel } from '../../i18n';
+import { t, statusLabel, timeEstimateLabel } from '../../i18n';
 import { formatEntryDate } from '../../components/HistoryTimeline';
+import { IntakePhotos } from '../../components/RequestSections';
+import { urgencyLabel } from '../../lib/urgencyLevels';
 import TechHeader from './TechHeader';
 import { elapsedLabel } from './elapsed';
 import styles from './TechPortal.module.css';
@@ -102,6 +104,18 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
   }
 
   const ft = req ? ftInfo(req) : { href: null, label: null };
+  const problemText = req
+    ? (req.raw_caller_body?.problems ?? req.problems)
+    : null;
+  const entryPermission = req
+    ? (req.raw_caller_body?.entry_permission ?? req.entry_permission)
+    : null;
+  const animals = req
+    ? (req.raw_caller_body?.animals ?? req.animals)
+    : null;
+  const hasTaxonomy = !!(
+    req?.element || req?.symptome || req?.composante || req?.emplacement || req?.category_raw
+  );
 
   return (
     <div className={styles.page}>
@@ -120,10 +134,32 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
                 {statusLabel(lang, req.status)}
               </span>
               {req.urgency_tier && req.urgency_tier !== 'none' && (
-                <span className={styles.urgencyBadge}>{req.urgency_tier}</span>
+                <span className={styles.urgencyBadge}>{urgencyLabel(lang, req.urgency_tier)}</span>
               )}
             </div>
             <h1 className={styles.callViewTitle}>{req.raw_title ?? `#${req.request_id}`}</h1>
+            {(req.asnu || req.time_estimate_bucket || req.next_follow_up_date) && (
+              <dl className={styles.callFacts} data-testid="call-facts">
+                {req.asnu && (
+                  <div>
+                    <dt>ASNU</dt>
+                    <dd className={styles.mono}>{req.asnu}</dd>
+                  </div>
+                )}
+                {req.time_estimate_bucket && (
+                  <div>
+                    <dt>{t(lang, 'Estimation', 'Estimate')}</dt>
+                    <dd>{timeEstimateLabel(lang, req.time_estimate_bucket)}</dd>
+                  </div>
+                )}
+                {req.next_follow_up_date && (
+                  <div>
+                    <dt>{t(lang, 'Suivi', 'Follow-up')}</dt>
+                    <dd>{req.next_follow_up_date}</dd>
+                  </div>
+                )}
+              </dl>
+            )}
 
             {req.status === 'en_route' && (
               <div className={styles.openCallBannerCard}>
@@ -189,21 +225,69 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
               {req.building_name && <p className={styles.muted}>{req.building_name}</p>}
             </section>
 
-            {req.raw_caller_body ? (
-              <section className={styles.card}>
-                <h2 className={styles.cardTitle}>
-                  {t(lang, 'Problème (version du locataire)', 'Problem (tenant version)')}
-                </h2>
-                <p className={styles.preWrap}>{req.raw_caller_body.problems ?? '—'}</p>
-                <h2 className={styles.cardTitle}>{t(lang, "Permission d'entrer", 'Entry permission')}</h2>
-                <p>{req.raw_caller_body.entry_permission ?? '—'}</p>
-                <h2 className={styles.cardTitle}>{t(lang, 'Animaux', 'Animals')}</h2>
-                <p>{req.raw_caller_body.animals ?? '—'}</p>
+            <section className={styles.card} data-testid="call-problem">
+              <h2 className={styles.cardTitle}>
+                {req.raw_caller_body
+                  ? t(lang, 'Problème (version du locataire)', 'Problem (tenant version)')
+                  : t(lang, 'Problème', 'Problem')}
+              </h2>
+              <p className={styles.preWrap}>{problemText ?? '—'}</p>
+              <IntakePhotos requestId={req.request_id} ids={req.intake_photo_ids ?? []} lang={lang} />
+              <h2 className={styles.cardTitle}>{t(lang, "Permission d'entrer", 'Entry permission')}</h2>
+              <p>{entryPermission ?? '—'}</p>
+              <h2 className={styles.cardTitle}>{t(lang, 'Animaux', 'Animals')}</h2>
+              <p>{animals ?? '—'}</p>
+            </section>
+
+            {hasTaxonomy && (
+              <section className={styles.card} data-testid="call-taxonomy">
+                <h2 className={styles.cardTitle}>{t(lang, 'Taxonomie', 'Taxonomy')}</h2>
+                <dl className={styles.taxonomyList}>
+                  {req.element && (
+                    <div>
+                      <dt>{t(lang, 'Élément', 'Element')}</dt>
+                      <dd>{req.element}</dd>
+                    </div>
+                  )}
+                  {req.symptome && (
+                    <div>
+                      <dt>{t(lang, 'Symptôme', 'Symptom')}</dt>
+                      <dd>{req.symptome}</dd>
+                    </div>
+                  )}
+                  {req.composante && (
+                    <div>
+                      <dt>{t(lang, 'Composante', 'Component')}</dt>
+                      <dd>{req.composante}</dd>
+                    </div>
+                  )}
+                  {req.emplacement && (
+                    <div>
+                      <dt>{t(lang, 'Emplacement', 'Location')}</dt>
+                      <dd>{req.emplacement}</dd>
+                    </div>
+                  )}
+                  {req.category_raw && !req.element && (
+                    <div>
+                      <dt>{t(lang, 'Catégorie', 'Category')}</dt>
+                      <dd>{req.category_raw}</dd>
+                    </div>
+                  )}
+                </dl>
               </section>
-            ) : (
-              <section className={styles.card}>
-                <h2 className={styles.cardTitle}>{t(lang, 'Problème', 'Problem')}</h2>
-                <p className={styles.preWrap}>{req.problems ?? '—'}</p>
+            )}
+
+            {req.next_steps && (
+              <section className={styles.card} data-testid="call-next-steps">
+                <h2 className={styles.cardTitle}>{t(lang, 'Prochaines étapes', 'Next steps')}</h2>
+                <p className={styles.preWrap}>{req.next_steps}</p>
+              </section>
+            )}
+
+            {req.work_performed && (
+              <section className={styles.card} data-testid="call-work-performed">
+                <h2 className={styles.cardTitle}>{t(lang, 'Travail effectué', 'Work performed')}</h2>
+                <p className={styles.preWrap}>{req.work_performed}</p>
               </section>
             )}
 

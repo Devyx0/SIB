@@ -43,7 +43,7 @@ describe('buildTimeline', () => {
         decision({ id: 1, before_value: { assigned_employee_id: null },
                    after_value: { assigned_employee_id: 24, assigned_employee_name: 'Marc Tech' } }),
         decision({ id: 2, decision_type: 'urgency', created_at: '2026-10-17T14:00:01+00:00',
-                   before_value: { urgency_tier: null }, after_value: { urgency_tier: 'AJD' } }),
+                   before_value: { urgency_tier: null }, after_value: { urgency_tier: 'URGENT' } }),
         // Same person, same text, but minutes later: a separate decision.
         decision({ id: 3, decision_type: 'cost', created_at: '2026-10-17T15:00:00+00:00',
                    before_value: { estimated_cost: null }, after_value: { estimated_cost: '250.00' } }),
@@ -57,7 +57,7 @@ describe('buildTimeline', () => {
     expect(save.who).toBe('Marie Lavoie');
     expect(save.changes).toEqual([
       { label: 'Assignation', before: 'Personne', after: 'Marc Tech' },
-      { label: 'Urgence', before: 'Aucune', after: 'AJD' },
+      { label: 'Urgence', before: 'Aucune', after: 'Urgent' },
     ]);
   });
 

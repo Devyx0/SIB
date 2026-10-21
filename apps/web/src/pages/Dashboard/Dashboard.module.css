@@ -113,7 +113,7 @@
   color: var(--color-neutral-700);
 }
 
-/* urgency_tier enum is case-sensitive: AJD vs ajd — don't uppercase the label */
+/* urgency_tier is case-sensitive text (URGENT / Intermédiaire / Faible) */
 .table th.urgencyCase {
   text-transform: none;
   letter-spacing: 0;
