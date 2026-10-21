@@ -86,6 +86,22 @@ CREATE INDEX request_visit_task_id_idx ON public.request_visit (task_id);
 COMMENT ON COLUMN public.request_visit.task_id IS
     'Task this visit belongs to. Nullable until the open-request backfill; NOT NULL for new rows once enforced.';
 
+COMMENT ON TYPE public.request_status IS
+    'Service Call (maintenance_request) container lifecycle. Fieldwork (scheduled / en_route / arrived / working) lives on dispatch_task.status, not here. Always triage before fieldwork: no intake → en_route bypass. Auto-retry eligibility: only triage_pending and triage_failed are picked up by the retry loop. triage_clarify must NOT enter the loop — it signals a human-input requirement, not a transient error.
+
+intake_received       — request landed; waiting for the next triage run.
+triage_pending        — acquired by the triage service; triage_started_at is set.
+triage_clarify        — BLOCKED: needs coordinator action before re-entering the queue (also where reject-all of proposed tasks lands).
+triage_proposal       — triage wrote ≥1 draft dispatch_task (accepted_at IS NULL); dispatcher must accept/edit/add. First pass only.
+triage_failed         — retries exhausted; auto-retry after review/reset.
+triaged               — legacy: pre-task single-step accept; moves to open.
+open                  — ≥1 accepted dispatch_task; work queued or in flight. Mid-life proposals stay here. Auto-closes when every accepted task is done/cancelled and no proposals remain.
+closed                — all linked tasks resolved; call closed out.
+scheduled             — LEGACY, do not write: pre-cutover fieldwork state; backfilled to open + dispatch_task.
+awaiting_redispatch   — LEGACY, do not write: pre-cutover; backfilled to open + needs_expertise task.
+en_route              — LEGACY, do not write: pre-cutover; en route is now dispatch_task.status.
+arrived               — LEGACY, do not write: pre-cutover; arrived is now dispatch_task.status.';
+
 COMMIT;
 
 -- ── Rollback ─────────────────────────────────────────────────────────────────

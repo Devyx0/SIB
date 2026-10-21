@@ -10,23 +10,48 @@ from backend.domain.task_status_machine import (
     transition_task,
 )
 
-_ALLOWED: list[tuple[str, str]] = [
-    (src, tgt) for src, targets in _TRANSITIONS.items() for tgt in targets
-]
+# Independent oracle, written from the spec (not derived from _TRANSITIONS):
+#   queued → scheduled → en_route → arrived → working → done | needs_expertise | return_visit
+#   scheduled → queued (unassign); cancelled reachable before field work and
+#   from needs_expertise / return_visit (abandon so the call can auto-close).
+_EXPECTED_STATUSES: frozenset[str] = frozenset({
+    "queued", "scheduled", "en_route", "arrived", "working", "done",
+    "needs_expertise", "return_visit", "cancelled",
+})
 
-_FORBIDDEN: list[tuple[str, str]] = [
+_EXPECTED_EDGES: frozenset[tuple[str, str]] = frozenset({
+    ("queued", "scheduled"),
+    ("queued", "cancelled"),
+    ("scheduled", "queued"),
+    ("scheduled", "en_route"),
+    ("scheduled", "cancelled"),
+    ("en_route", "arrived"),
+    ("arrived", "working"),
+    ("working", "done"),
+    ("working", "needs_expertise"),
+    ("working", "return_visit"),
+    ("needs_expertise", "cancelled"),
+    ("return_visit", "cancelled"),
+})
+
+_ALLOWED: list[tuple[str, str]] = sorted(_EXPECTED_EDGES)
+
+_FORBIDDEN: list[tuple[str, str]] = sorted(
     (src, tgt)
-    for src in ALL_TASK_STATUSES
-    for tgt in ALL_TASK_STATUSES
-    if tgt not in _TRANSITIONS.get(src, frozenset())
-]
+    for src in _EXPECTED_STATUSES
+    for tgt in _EXPECTED_STATUSES
+    if (src, tgt) not in _EXPECTED_EDGES
+)
 
 
 def test_all_statuses_match_spec():
-    assert ALL_TASK_STATUSES == frozenset({
-        "queued", "scheduled", "en_route", "arrived", "working", "done",
-        "needs_expertise", "return_visit", "cancelled",
-    })
+    assert ALL_TASK_STATUSES == _EXPECTED_STATUSES
+
+
+def test_transition_table_matches_oracle():
+    """A wrong/extra/missing edge in the implementation fails here."""
+    actual = {(s, t) for s, targets in _TRANSITIONS.items() for t in targets}
+    assert actual == _EXPECTED_EDGES
 
 
 @pytest.mark.parametrize("current,target", _ALLOWED)
