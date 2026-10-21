@@ -328,6 +328,18 @@ describe('Portfolio', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/portfolio/batiments/100');
   });
 
+  it('shows the global search on the sectors page only', async () => {
+    wrap('/portfolio');
+    expect(screen.getByTestId('portfolio-global-search')).toBeTruthy();
+    expect(screen.getByTestId('all-units-link')).toBeTruthy();
+  });
+
+  it('has no global search on an inner page', async () => {
+    wrap('/portfolio/batiments/100');
+    expect(await screen.findAllByTestId('unit-row')).not.toHaveLength(0);
+    expect(screen.queryByTestId('portfolio-global-search')).toBeNull();
+  });
+
   it('moves through search results with the arrow keys', async () => {
     const user = userEvent.setup();
     wrap('/portfolio');

@@ -92,6 +92,30 @@
 
 /* Page header scale, sized around the 38px title. The turnover window
    reuses .eyebrow and .chip at their base sizes. */
+/* Sectors page: global search with « Tous les logements » under it, on the right. */
+.headerTools {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  flex: 0 1 360px;
+  min-width: 260px;
+}
+
+/* The title side gives way first (the subtitle wraps), so the search stays
+   beside it on laptop widths instead of dropping to the next line. */
+.header:has(.headerTools) > div:first-child {
+  flex: 1 1 300px;
+  min-width: 0;
+}
+
+@media (max-width: 639px) {
+  .headerTools {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+}
+
 .header .eyebrow {
   margin-bottom: 4px;
   font-size: 12.5px;

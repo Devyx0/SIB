@@ -100,9 +100,12 @@ function SectorsView({ lang }: { lang: Lang }) {
         subtitle={t(lang, 'Choisissez un secteur pour voir ses projets, bâtiments et logements.',
                           'Pick a sector to browse its projects, buildings and units.')}
         search={
-          <Link className={styles.btn} to={unitsPath()} data-testid="all-units-link">
-            {t(lang, 'Tous les logements', 'All units')}
-          </Link>
+          <div className={styles.headerTools}>
+            <PortfolioSearch lang={lang} />
+            <Link className={styles.btn} to={unitsPath()} data-testid="all-units-link">
+              {t(lang, 'Tous les logements', 'All units')}
+            </Link>
+          </div>
         }
       />
       {data && data.length > 0 && (
@@ -640,7 +643,6 @@ function UnitView({ lang }: { lang: Lang }) {
 export default function Portfolio({ lang = 'fr' }: { lang?: Lang }) {
   return (
     <div className={styles.page}>
-      <PortfolioSearch lang={lang} />
       <Routes>
         <Route index element={<SectorsView lang={lang} />} />
         <Route path="logements" element={<UnitsListView lang={lang} />} />

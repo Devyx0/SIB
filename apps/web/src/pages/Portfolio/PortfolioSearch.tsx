@@ -177,8 +177,9 @@ export default function PortfolioSearch({ lang }: { lang: Lang }) {
         type="search"
         className={styles.input}
         value={text}
-        placeholder={t(lang, 'Rechercher : adresse, logement, locataire, code de peinture…',
-                             'Search: address, unit, tenant, paint code…')}
+        placeholder={t(lang, 'Adresse, logement, locataire…', 'Address, unit, tenant…')}
+        title={t(lang, 'Adresse, logement, locataire, code de peinture…',
+                       'Address, unit, tenant, paint code…')}
         aria-label={t(lang, 'Rechercher dans le portfolio', 'Search the portfolio')}
         role="combobox"
         aria-expanded={showList}
