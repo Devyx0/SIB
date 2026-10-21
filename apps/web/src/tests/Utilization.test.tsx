@@ -90,7 +90,7 @@ describe('Utilization', () => {
     expect(screen.getByTestId('util-row-24')).toBeTruthy();
   });
 
-  it('shows customer star rating and expands reviews', async () => {
+  it('shows customer star rating and opens the reviews modal', async () => {
     vi.mocked(fetchUtilization).mockResolvedValue({
       ...body,
       rows: [{
@@ -116,16 +116,18 @@ describe('Utilization', () => {
     expect(btn).toHaveTextContent('4,5');
     expect(btn).toHaveTextContent('2 avis');
     expect(screen.getByTestId('kpi-rating')).toHaveTextContent('4,5');
-    expect(screen.queryByTestId('util-reviews-24')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
 
     fireEvent.click(btn);
-    const reviews = screen.getByTestId('util-reviews-24');
+    const reviews = screen.getByRole('dialog');
+    expect(reviews).toHaveTextContent('Test Tech');
+    expect(reviews).toHaveTextContent('2 avis');
     expect(reviews).toHaveTextContent('Très professionnel');
     expect(reviews).toHaveTextContent('Résolu : non');
     expect(within(reviews).getAllByRole('listitem')).toHaveLength(2);
 
-    fireEvent.click(btn);
-    expect(screen.queryByTestId('util-reviews-24')).toBeNull();
+    fireEvent.click(within(reviews).getByLabelText('Fermer'));
+    expect(screen.queryByRole('dialog')).toBeNull();
 
     // Team-wide panel from the KPI tile, with technician names.
     fireEvent.click(screen.getByTestId('kpi-rating'));
@@ -137,7 +139,7 @@ describe('Utilization', () => {
     expect(screen.queryByTestId('util-all-reviews')).toBeNull();
   });
 
-  it('previews the 3 newest reviews and opens the rest in a scroll box', async () => {
+  it('opens every review in the modal, newest first, without an inline list', async () => {
     const reviews = [1, 2, 3, 4, 5].map((n) => ({
       survey_id: n, request_id: 100 + n, submitted_at: `2026-10-1${n}T14:00:00Z`,
       rating: 4, polite: true, problem_solved: true,
@@ -148,39 +150,20 @@ describe('Utilization', () => {
       rows: [{ ...body.rows[0], avg_rating: 4, rating_count: 5, reviews }],
     });
     wrap(<Utilization lang="fr" />);
-    fireEvent.click(await screen.findByTestId('util-rating-24'));
+    const btn = await screen.findByTestId('util-rating-24');
+    fireEvent.click(btn);
 
-    const list = screen.getByTestId('util-review-list-24');
-    const items = within(list).getAllByRole('listitem');
-    expect(items).toHaveLength(3);
-    expect(items[0]).toHaveTextContent('Avis 5'); // newest first
-    expect(list).not.toHaveTextContent('Avis 2');
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('5 avis');
+    const all = within(dialog).getAllByRole('listitem');
+    expect(all).toHaveLength(5);
+    expect(all[0]).toHaveTextContent('Avis 5');
+    expect(all[4]).toHaveTextContent('Avis 1');
+    // Nothing is listed in the table itself.
+    expect(within(screen.getByTestId('util-table')).queryByText('Avis 5')).toBeNull();
 
-    const more = screen.getByTestId('util-reviews-more-24');
-    expect(more).toHaveTextContent('Voir les 2 autres');
-    fireEvent.click(more);
-    expect(within(list).getAllByRole('listitem')).toHaveLength(5);
-    expect(list.className).toMatch(/reviewListScroll/);
-    expect(more).toHaveTextContent('Afficher moins');
-
-    fireEvent.click(more);
-    expect(within(list).getAllByRole('listitem')).toHaveLength(3);
-  });
-
-  it('has no "more" button with 3 reviews or fewer', async () => {
-    vi.mocked(fetchUtilization).mockResolvedValue({
-      ...body,
-      rows: [{
-        ...body.rows[0], avg_rating: 5, rating_count: 1,
-        reviews: [{
-          survey_id: 1, request_id: 101, submitted_at: '2026-10-18T14:00:00Z',
-          rating: 5, polite: true, problem_solved: true, comments: null, building_address: null,
-        }],
-      }],
-    });
-    wrap(<Utilization lang="fr" />);
-    fireEvent.click(await screen.findByTestId('util-rating-24'));
-    expect(screen.queryByTestId('util-reviews-more-24')).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('shows "Aucun avis" when a technician has no reviews', async () => {

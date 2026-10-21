@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchUtilization } from '../../api/client';
 import type { UtilizationResponse } from '../../api/schema.d.ts';
@@ -6,12 +6,11 @@ import { closeoutOutcomeLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import styles from './Utilization.module.css';
 import Select from '../../components/Select';
+import ReviewsDialog from './ReviewsDialog';
 
 type Row = UtilizationResponse['rows'][number];
 type OutcomeKey = keyof Row['outcome_mix'];
 type Review = Row['reviews'][number];
-/** Reviews shown per technician before « Voir les N autres ». */
-const REVIEW_PREVIEW = 3;
 type SortKey ='name' | 'assigned' | 'closed' | 'rate' | 'planned' | 'visit' | 'rating';
 
 const OUTCOMES: Array<{ key: OutcomeKey; short: readonly [string, string]; cls: string }> = [
@@ -89,6 +88,9 @@ function ReviewItem({ lang, review, technician }: { lang: Lang; review: Review; 
   );
 }
 
+const newestFirst = (reviews: Review[]) =>
+  [...reviews].sort((a, b) => b.submitted_at.localeCompare(a.submitted_at));
+
 const closeRate = (r: Row) => (r.calls_assigned > 0 ? r.calls_closed / r.calls_assigned : 0);
 const outcomeTotal = (r: Row) => OUTCOMES.reduce((n, o) => n + r.outcome_mix[o.key], 0);
 
@@ -98,33 +100,9 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('assigned');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
   const [showAllReviews, setShowAllReviews] = useState(false);
-  // Technicians whose expanded row shows every review, not just the latest few.
-  const [allFor, setAllFor] = useState<Set<number>>(() => new Set());
-
-  function toggleReviews(id: number) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-    // Reopening a row starts back at the short list.
-    setAllFor((prev) => {
-      if (!prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-  }
-
-  function toggleAllFor(id: number) {
-    setAllFor((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
+  // Technician whose reviews are open in the modal.
+  const [dialogFor, setDialogFor] = useState<number | null>(null);
 
   const { data, isError, isLoading } = useQuery({
     queryKey: ['utilization', start, end],
@@ -187,6 +165,8 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
   }, [data]);
 
   // Every review in the range across the team, newest first.
+  const dialogRow = dialogFor == null ? undefined : data?.rows.find((r) => r.employee_id === dialogFor);
+
   const allReviews = useMemo(
     () => (data?.rows ?? [])
       .flatMap((r) => r.reviews.map((review) => ({ review, technician: r.nom_employe })))
@@ -429,14 +409,8 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                     {rows.map((r) => {
                       const rate = closeRate(r);
                       const oTotal = outcomeTotal(r);
-                      const open = expanded.has(r.employee_id) && r.reviews.length > 0;
-                      const newestFirst = [...r.reviews].sort((a, b) => b.submitted_at.localeCompare(a.submitted_at));
-                      const showAll = allFor.has(r.employee_id);
-                      const shownReviews = showAll ? newestFirst : newestFirst.slice(0, REVIEW_PREVIEW);
-                      const hiddenCount = newestFirst.length - REVIEW_PREVIEW;
                       return (
-                        <Fragment key={r.employee_id}>
-                        <tr data-testid={`util-row-${r.employee_id}`}>
+                        <tr key={r.employee_id} data-testid={`util-row-${r.employee_id}`}>
                           <th scope="row" className={styles.stickyCol}>
                             <div className={styles.person}>
                               <span className={styles.avatar} aria-hidden="true">{initials(r.nom_employe)}</span>
@@ -526,9 +500,8 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                               <button
                                 type="button"
                                 className={styles.ratingBtn}
-                                aria-expanded={open}
-                                aria-controls={`util-reviews-${r.employee_id}`}
-                                onClick={() => toggleReviews(r.employee_id)}
+                                aria-haspopup="dialog"
+                                onClick={() => setDialogFor(r.employee_id)}
                                 data-testid={`util-rating-${r.employee_id}`}
                               >
                                 {r.avg_rating != null ? (
@@ -542,40 +515,12 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                                 )}
                                 <span className={styles.ratingCount}>
                                   {r.reviews.length} {t(lang, 'avis', r.reviews.length === 1 ? 'review' : 'reviews')}
-                                  {' '}{open ? '▴' : '▾'}
+                                  {' '}›
                                 </span>
                               </button>
                             )}
                           </td>
                         </tr>
-                        {open && (
-                          <tr className={styles.reviewsRow} id={`util-reviews-${r.employee_id}`}
-                            data-testid={`util-reviews-${r.employee_id}`}>
-                            <td colSpan={5}>
-                              <ul className={`${styles.reviewList} ${showAll ? styles.reviewListScroll : ''}`}
-                                aria-label={t(lang, `Avis pour ${r.nom_employe}`, `Reviews for ${r.nom_employe}`)}
-                                data-testid={`util-review-list-${r.employee_id}`}>
-                                {shownReviews.map((rv) => <ReviewItem key={rv.survey_id} lang={lang} review={rv} />)}
-                              </ul>
-                              {hiddenCount > 0 && (
-                                <button
-                                  type="button"
-                                  className={styles.moreBtn}
-                                  aria-expanded={showAll}
-                                  onClick={() => toggleAllFor(r.employee_id)}
-                                  data-testid={`util-reviews-more-${r.employee_id}`}
-                                >
-                                  {showAll
-                                    ? t(lang, 'Afficher moins ▴', 'Show less ▴')
-                                    : hiddenCount === 1
-                                      ? t(lang, 'Voir 1 autre avis ▾', 'Show 1 more review ▾')
-                                      : t(lang, `Voir les ${hiddenCount} autres ▾`, `Show ${hiddenCount} more ▾`)}
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        )}
-                        </Fragment>
                       );
                     })}
                   </tbody>
@@ -600,6 +545,34 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
           </>
         )}
       </div>
+
+      {dialogRow && (
+        <ReviewsDialog
+          lang={lang}
+          technician={dialogRow.nom_employe}
+          onClose={() => setDialogFor(null)}
+          summary={
+            <>
+              {dialogRow.avg_rating != null && (
+                <>
+                  <Stars value={dialogRow.avg_rating}
+                    label={t(lang, `${fmtRating(dialogRow.avg_rating, lang)} sur 5`, `${fmtRating(dialogRow.avg_rating, lang)} out of 5`)} />
+                  <strong>{fmtRating(dialogRow.avg_rating, lang)}</strong>
+                </>
+              )}
+              <span>
+                {dialogRow.reviews.length} {t(lang, 'avis', dialogRow.reviews.length === 1 ? 'review' : 'reviews')}
+                {dialogRow.territoire ? ` · ${dialogRow.territoire}` : ''}
+              </span>
+            </>
+          }
+        >
+          <ul className={styles.reviewList} data-testid="reviews-dialog-list">
+            {newestFirst(dialogRow.reviews).map((rv) =>
+              <ReviewItem key={rv.survey_id} lang={lang} review={rv} />)}
+          </ul>
+        </ReviewsDialog>
+      )}
     </div>
   );
 }

@@ -713,14 +713,6 @@
   white-space: nowrap;
 }
 
-/* Expanded reviews row (outside the zebra / hover treatment) */
-.table tbody tr.reviewsRow > td,
-.table tbody tr.reviewsRow:hover > td {
-  background: var(--navy-50);
-  border-left: none;
-  padding: 12px 18px 16px;
-}
-
 .reviewList {
   display: flex;
   flex-direction: column;
@@ -731,31 +723,33 @@
   max-width: 820px;
 }
 
-/* Full list for one technician: capped like the team panel, scrolls inside. */
-.reviewListScroll {
-  max-height: 45vh;
+/* Per-technician reviews modal: wider than a form dialog; the list scrolls. */
+/* Element-qualified to win over FormDialog's .dialog width whatever the CSS order. */
+section.reviewsDialog {
+  width: min(720px, 100%);
+}
+
+.reviewsDialogSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--color-neutral-700);
+}
+
+.reviewsDialogBody {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-right: 6px;
+  padding: 16px 20px 20px;
+  background: var(--color-bg-alt);
 }
 
-.moreBtn {
-  margin-top: 10px;
-  min-height: 32px;
-  padding: 4px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--navy-800);
-  cursor: pointer;
-}
-
-.moreBtn:hover {
-  background: var(--navy-50);
-  border-color: var(--navy-300);
+.reviewsDialogBody .reviewList {
+  max-width: none;
 }
 
 .review {
