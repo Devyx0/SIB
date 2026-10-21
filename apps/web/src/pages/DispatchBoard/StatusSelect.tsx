@@ -8,7 +8,7 @@ interface Props {
   lang: Lang;
   value: string[];
   onChange: (v: string[]) => void;
-  /** Limit checkboxes (triage vs tasks). Default: all filterable statuses. */
+  /** Checkboxes to offer, in order (triage call statuses vs task statuses). Default: all filterable call statuses. */
   allowedStatuses?: readonly string[];
 }
 
@@ -29,9 +29,7 @@ export default function StatusSelect({ lang, value, onChange, allowedStatuses }:
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popId = useId();
   const selected = uiStatuses(value);
-  const options = (allowedStatuses?.length
-    ? FILTER_STATUS_VALUES.filter((s) => allowedStatuses.includes(s))
-    : FILTER_STATUS_VALUES);
+  const options: readonly string[] = allowedStatuses?.length ? allowedStatuses : FILTER_STATUS_VALUES;
 
   useEffect(() => {
     if (!open) return;

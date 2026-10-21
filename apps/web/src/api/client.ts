@@ -1,4 +1,4 @@
-import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse } from './schema.d.ts';
+import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse, TaskOut, TaskListResponse, TaskCloseoutOut } from './schema.d.ts';
 export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse };
 import { supabase } from '../lib/supabase';
 
@@ -145,12 +145,51 @@ export function fetchUtilization(start_date: string, end_date: string): Promise<
 
 export interface Justification { text: string; input_method: 'voice' | 'typed'; }
 
-export function goEnRoute(id: number, body: { current_status: string; current_start_date: string | null; lat: number | null; lng: number | null }): Promise<RequestDetail> {
-  return apiPost(`/api/v1/requests/${id}/en-route`, body);
+// ── Tasks (fieldwork: assignee, due date, visits) ────────────────────────────
+
+export interface TaskListParams {
+  // Optional as a pair; the range applies to due_at's local day.
+  start_date?: string;
+  end_date?: string;
+  status?: string[];
+  assigned_employee_id?: number;
 }
 
-export function markArrived(id: number, body: { current_status: string; lat: number | null; lng: number | null }): Promise<RequestDetail> {
-  return apiPost(`/api/v1/requests/${id}/arrived`, body);
+export function fetchTasks(params: TaskListParams): Promise<TaskListResponse> {
+  const q = new URLSearchParams();
+  if (params.start_date) q.set('start_date', params.start_date);
+  if (params.end_date) q.set('end_date', params.end_date);
+  params.status?.forEach((s) => q.append('status', s));
+  if (params.assigned_employee_id != null) q.set('assigned_employee_id', String(params.assigned_employee_id));
+  return apiFetch<TaskListResponse>(`/api/v1/tasks?${q.toString()}`);
+}
+
+export function createTask(body: {
+  request_id: number;
+  description: string;
+  due_at: string | null;
+  assigned_employee_id: number | null;
+  justification: Justification;
+}): Promise<TaskOut> {
+  return apiPost('/api/v1/tasks', body);
+}
+
+/** null unassigns (scheduled → queued). */
+export function assignTask(taskId: number, body: { assigned_employee_id: number | null; justification: Justification }): Promise<TaskOut> {
+  return apiPost(`/api/v1/tasks/${taskId}/assign`, body);
+}
+
+/** null clears the date. */
+export function scheduleTask(taskId: number, body: { due_at: string | null; justification: Justification }): Promise<TaskOut> {
+  return apiPost(`/api/v1/tasks/${taskId}/schedule`, body);
+}
+
+export function taskEnRoute(taskId: number, body: { current_status: string; lat: number | null; lng: number | null }): Promise<TaskOut> {
+  return apiPost(`/api/v1/tasks/${taskId}/en-route`, body);
+}
+
+export function taskArrived(taskId: number, body: { current_status: string; lat: number | null; lng: number | null }): Promise<TaskOut> {
+  return apiPost(`/api/v1/tasks/${taskId}/arrived`, body);
 }
 
 // Raw image body — the mime travels in Content-Type (no multipart).
@@ -179,20 +218,12 @@ export interface CloseoutBody {
   lng: number | null;
 }
 
-export function closeoutRequest(id: number, body: CloseoutBody): Promise<RequestDetail> {
-  return apiPost(`/api/v1/requests/${id}/closeout`, body);
+export function closeoutTask(taskId: number, body: CloseoutBody): Promise<TaskCloseoutOut> {
+  return apiPost(`/api/v1/tasks/${taskId}/closeout`, body);
 }
 
 export function fetchPhotoUrl(requestId: number, attachmentId: number): Promise<{ url: string }> {
   return apiFetch(`/api/v1/requests/${requestId}/photos/${attachmentId}`);
-}
-
-export function dispatchAssign(id: number, body: { employee_id: number | null; current_assigned_employee_id: number | null; current_start_date: string | null; current_urgency_tier: string | null; justification?: Justification }): Promise<RequestDetail> {
-  return apiPost(`/api/v1/requests/${id}/assign`, body);
-}
-
-export function dispatchReschedule(id: number, body: { start_date: string; current_start_date: string | null; current_assigned_employee_id: number | null; current_urgency_tier: string | null; justification?: Justification }): Promise<RequestDetail> {
-  return apiPost(`/api/v1/requests/${id}/reschedule`, body);
 }
 
 export function dispatchSetUrgency(id: number, body: { urgency_tier: string | null; current_urgency_tier: string | null; current_assigned_employee_id: number | null; current_start_date: string | null; justification?: Justification; weather_evaluation_id?: number | null }): Promise<RequestDetail> {

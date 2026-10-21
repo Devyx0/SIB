@@ -14,12 +14,12 @@ import {
 } from '../../components/RequestSections';
 import HistoryTimeline from '../../components/HistoryTimeline';
 import type { MeResponse } from '../../api/schema.d.ts';
-import { roleLabel, statusLabel, timeEstimateLabel, sourceCalendarLabel, t } from '../../i18n';
+import { statusLabel, timeEstimateLabel, sourceCalendarLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import { googleMapsUrl } from '../../lib/maps';
 import { urgencyLabel, urgencyOptions } from '../../lib/urgencyLevels';
 import styles from './DetailPanel.module.css';
-import Select from '../../components/Select';
+import TaskEditor from './TaskEditor';
 
 
 function formatCost(amount: number | string, lang: Lang): string {
@@ -42,6 +42,8 @@ const BAND_FR: Record<string, string> = {
   critical: 'critique', emergency: 'urgence', priority: 'priorité', normal: 'normal',
 };
 const LOC_FR: Record<string, string> = { quebec: 'Québec', levis: 'Lévis' };
+// Calls where a technician suggestion helps pick who gets the next task.
+const SUGGEST_STATUSES = new Set(['triaged', 'open', 'awaiting_redispatch']);
 
 export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = 'fr', me }: Props) {
   const [polling, setPolling] = useState(false);
@@ -51,13 +53,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
   const qc = useQueryClient();
   const isEditor = !!(me?.roles.includes('coordinator') || me?.roles.includes('director'));
   const isClosed = data?.status === 'closed';
-  const isEnRoute = data?.status === 'en_route';
-  const EN_ROUTE_MSG = t(lang,
-    "Appel en cours — le technicien doit d'abord clôturer",
-    'Call in progress — the technician must close it out first');
-  const ASSIGNEE_EN_ROUTE_MSG = t(lang,
-    'Technicien déjà en route — clôturer d\'abord',
-    'Technician already en route — close out first');
 
   const { data: employees } = useQuery({
     queryKey: ['employees'],
@@ -69,29 +64,19 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
   const { data: techSuggestions } = useQuery({
     queryKey: ['technician-suggestions', requestId, lang],
     queryFn: () => fetchTechnicianSuggestions(requestId, lang === 'en' ? 'en' : 'fr'),
-    enabled: isEditor && (data?.status === 'triaged' || data?.status === 'awaiting_redispatch'),
+    enabled: isEditor && SUGGEST_STATUSES.has(data?.status ?? ''),
     staleTime: 60 * 1000,
   });
-
-  const assignableEmployees = (employees ?? []).filter(
-    (e) => e.role === 'technician' || e.role === 'contractor'
-  );
 
   const [staleMsg, setStaleMsg] = useState<string | null>(null);
   const [followUpDate, setFollowUpDate] = useState<string | null>(null);
   const [nextSteps, setNextSteps] = useState<string | null>(null);
   const [cost, setCost] = useState<string | null>(null);
   const [logText, setLogText] = useState('');
-  const [rescheduleDate, setRescheduleDate] = useState<string | null>(null);
-  const [assignEmpId, setAssignEmpId] = useState<number | null>(null);
+  const [suggestedEmpId, setSuggestedEmpId] = useState<number | null>(null);
   // undefined = untouched; null = « Aucune »
   const [urgencyDraft, setUrgencyDraft] = useState<string | null | undefined>(undefined);
   const weatherEnabled = !!me?.weather_escalation_enabled;
-
-  // Sync controlled select with server data when data first loads or request changes
-  useEffect(() => {
-    if (data) setAssignEmpId(data.assigned_employee_id ?? null);
-  }, [data?.request_id, data?.assigned_employee_id]);
 
   // Poll while triage is in progress; stop after 3 minutes with retry option
   useEffect(() => {
@@ -149,7 +134,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
       setFollowUpDate(null);
       setNextSteps(null);
       setCost(null);
-      setRescheduleDate(null);
       setUrgencyDraft(undefined);
       setLogText('');
     } catch (err) {
@@ -158,15 +142,8 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
         qc.invalidateQueries({ queryKey: ['requests'] });
         qc.invalidateQueries({ queryKey: ['request', requestId] });
         setTimeout(() => setStaleMsg(null), 3000);
-      } else if (err instanceof ApiError && err.code === 'REQUEST_EN_ROUTE') {
-        // The refetched status becomes en_route, which also disables the control.
-        setStaleMsg(EN_ROUTE_MSG);
-        qc.invalidateQueries({ queryKey: ['requests'] });
-        qc.invalidateQueries({ queryKey: ['request', requestId] });
-      } else if (err instanceof ApiError && err.code === 'ASSIGNEE_EN_ROUTE') {
-        setStaleMsg(ASSIGNEE_EN_ROUTE_MSG);
-        qc.invalidateQueries({ queryKey: ['employees'] });
-        if (data) setAssignEmpId(data.assigned_employee_id ?? null);
+      } else if (err instanceof ApiError) {
+        setStaleMsg(err.message);
       }
     }
   }
@@ -185,10 +162,8 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
   }
 
   const NONE = t(lang, 'Aucun', 'None');
-  const employeeName = (id: number | null) =>
-    id == null
-      ? t(lang, 'Non assigné', 'Unassigned')
-      : (employees ?? []).find((e) => e.employee_id === id)?.nom_employe ?? `#${id}`;
+  const employeeName = (id: number) =>
+    (employees ?? []).find((e) => e.employee_id === id)?.nom_employe ?? `#${id}`;
   const clip = (v: string | null | undefined) => (v && v.length > 60 ? `${v.slice(0, 57)}…` : v || NONE);
 
   // ── Staged edits: everything is saved together with « Enregistrer » ──
@@ -198,14 +173,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
   type Pending = { key: keyof DispatchFields; label: string; before: string; after: string; value: unknown };
   const pending: Pending[] = [];
   if (data) {
-    if (assignEmpId !== (data.assigned_employee_id ?? null)) {
-      pending.push({ key: 'assigned_employee_id', label: t(lang, 'Assignation', 'Assignment'),
-        before: data.assigned_employee_name ?? employeeName(data.assigned_employee_id), after: employeeName(assignEmpId), value: assignEmpId });
-    }
-    if (rescheduleDate && rescheduleDate !== data.start_date) {
-      pending.push({ key: 'start_date', label: t(lang, 'Date de répartition', 'Schedule date'),
-        before: data.start_date ?? NONE, after: rescheduleDate, value: rescheduleDate });
-    }
     if (urgencyDraft !== undefined && urgencyDraft !== (data.urgency_tier ?? null)) {
       pending.push({ key: 'urgency_tier', label: t(lang, 'Urgence', 'Urgency'),
         before: urgencyLabel(lang, data.urgency_tier), after: urgencyLabel(lang, urgencyDraft), value: urgencyDraft });
@@ -228,8 +195,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
   const effectiveUrgency = urgencyDraft !== undefined ? urgencyDraft : (data?.urgency_tier ?? null);
 
   function discardEdits() {
-    setAssignEmpId(data?.assigned_employee_id ?? null);
-    setRescheduleDate(null);
     setUrgencyDraft(undefined);
     setFollowUpDate(null);
     setNextSteps(null);
@@ -271,14 +236,10 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
   const requestCloseRef = useRef(requestClose);
   requestCloseRef.current = requestClose;
 
-
-  // Detect ineligible (coordinator/director) current assignee for item 8
-  const currentAssigneeInAll = data?.assigned_employee_id != null
-    ? (employees ?? []).find((e) => e.employee_id === data.assigned_employee_id)
-    : null;
-  const isIneligibleAssignee = currentAssigneeInAll != null
-    && currentAssigneeInAll.role !== 'technician'
-    && currentAssigneeInAll.role !== 'contractor';
+  // Who works the call now: assignees of its accepted tasks (the call-level field is legacy).
+  const taskAssignees = [...new Set((data?.tasks ?? [])
+    .filter((x) => x.accepted_at != null && x.assigned_employee_id != null)
+    .map((x) => x.assigned_employee_id!))];
 
   const accessText = data ? ((data.raw_caller_body?.entry_permission ?? data.entry_permission) || '—') : '—';
   const animalsText = data ? ((data.raw_caller_body?.animals ?? data.animals) || '—') : '—';
@@ -513,7 +474,11 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                     <h3 className={styles.cardTitle}>{t(lang, 'Planification', 'Planning')}</h3>
                     <dl className={styles.facts}>
                       <dt>{t(lang, 'Employé', 'Employee')}</dt>
-                      <dd>{data.assigned_employee_name ?? '—'}</dd>
+                      <dd>
+                        {taskAssignees.length
+                          ? taskAssignees.map(employeeName).join(', ')
+                          : (data.assigned_employee_name ?? '—')}
+                      </dd>
                       <dt>{t(lang, 'Sous-traitant', 'Subcontractor')}</dt>
                       <dd>{data.subcontractor_name ?? '—'}</dd>
                       <dt>{t(lang, 'Estimation', 'Est. time')}</dt>
@@ -600,6 +565,21 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
               </div>
 
                 {isEditor && (
+                  <section className={`${styles.card} ${styles.actionsCard}`}>
+                    <h3 className={styles.cardTitle}>{t(lang, 'Tâches', 'Tasks')}</h3>
+                    <TaskEditor
+                      lang={lang}
+                      requestId={requestId}
+                      callStatus={data.status}
+                      tasks={data.tasks ?? []}
+                      employees={employees ?? []}
+                      suggestedEmployeeId={suggestedEmpId}
+                      onError={setStaleMsg}
+                    />
+                  </section>
+                )}
+
+                {isEditor && (
                   <section className={`${styles.card} ${styles.actionsCard}`} data-testid="edit-controls">
                     <h3 className={styles.cardTitle}>
                       {t(lang, 'Actions répartiteur', 'Dispatch actions')}
@@ -613,7 +593,7 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
 
                     <div className={styles.actionsGrid}>
                       {/* Post-triage suggestions — pre-fill assign only */}
-                      {(data.status === 'triaged' || data.status === 'awaiting_redispatch')
+                      {SUGGEST_STATUSES.has(data.status)
                         && (techSuggestions?.suggestions?.length ?? 0) > 0 && (
                         <div className={styles.suggestBlock} data-testid="tech-suggestions">
                           <label className={styles.editLabel}>
@@ -625,9 +605,9 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                                 <button
                                   type="button"
                                   className={styles.suggestBtn}
-                                  disabled={isClosed || isEnRoute}
+                                  disabled={isClosed}
                                   data-testid={`tech-suggest-${s.employee_id}`}
-                                  onClick={() => setAssignEmpId(s.employee_id)}
+                                  onClick={() => setSuggestedEmpId(s.employee_id)}
                                 >
                                   <span className={styles.suggestName}>
                                     {s.initials ? `${s.initials} — ` : ''}{s.name}
@@ -644,58 +624,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                           </ul>
                         </div>
                       )}
-
-                      {/* Assign — locked while the technician is en route */}
-                      <div className={`${styles.editField} ${changedKeys.has('assigned_employee_id') ? styles.editFieldChanged : ''}`}>
-                        <label className={styles.editLabel}>{t(lang, 'Assigné à', 'Assigned to')}</label>
-                        <Select
-                          className={styles.editInput}
-                          value={String(assignEmpId ?? '')}
-                          disabled={isClosed || isEnRoute}
-                          data-testid="assign-select"
-                          onChange={(e) => {
-                            const empId = e.target.value === '' ? null : Number(e.target.value);
-                            setAssignEmpId(empId);
-                          }}
-                        >
-                          <option value="">— {t(lang, 'Non assigné', 'Unassigned')} —</option>
-                          {isIneligibleAssignee && currentAssigneeInAll && (
-                            <option value={String(data.assigned_employee_id)} disabled>
-                              {currentAssigneeInAll.nom_employe} ({roleLabel(lang, currentAssigneeInAll.role)})
-                            </option>
-                          )}
-                          {assignableEmployees.map((e) => (
-                            <option
-                              key={e.employee_id}
-                              value={e.employee_id}
-                              disabled={e.is_en_route}
-                            >
-                              {e.nom_employe} ({roleLabel(lang, e.role)})
-                              {e.is_en_route
-                                ? ` — ${t(lang, 'en route', 'en route')}`
-                                : ''}
-                            </option>
-                          ))}
-                        </Select>
-                        {isEnRoute && (
-                          <p className={styles.closedNotice} data-testid="en-route-notice">
-                            {EN_ROUTE_MSG}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Reschedule */}
-                      <div className={`${styles.editField} ${changedKeys.has('start_date') ? styles.editFieldChanged : ''}`}>
-                        <label className={styles.editLabel}>{t(lang, 'Date de répartition', 'Schedule date')}</label>
-                        <input
-                          type="date"
-                          className={styles.editInput}
-                          value={rescheduleDate ?? data.start_date ?? ''}
-                          disabled={isClosed}
-                          onChange={(e) => setRescheduleDate(e.target.value)}
-                          data-testid="reschedule-input"
-                        />
-                      </div>
 
                       {/* Urgency */}
                       <div className={`${styles.editField} ${changedKeys.has('urgency_tier') ? styles.editFieldChanged : ''}`}>

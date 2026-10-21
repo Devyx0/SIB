@@ -59,7 +59,7 @@ SortKey = Literal[
 StatusValue = Literal[
     "intake_received", "triage_pending", "triaged", "scheduled",
     "awaiting_redispatch", "triage_clarify", "triage_proposal", "triage_failed",
-    "en_route", "arrived", "closed",
+    "en_route", "arrived", "open", "closed",
 ]
 
 
@@ -81,6 +81,7 @@ class RescheduleBody(BaseModel):
 
 class VisitEntry(BaseModel):
     visit_id: int
+    task_id: Optional[int] = None
     employee_id: int
     employee_name: Optional[str] = None
     en_route_at: datetime

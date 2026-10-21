@@ -60,6 +60,31 @@ describe('FilterBar', () => {
     expect(screen.queryByText('En triage')).toBeNull();
   });
 
+  it('triage offers call statuses incl. Proposition, never Ouvert or task statuses', async () => {
+    render(<FilterBar {...triageProps} />);
+    await userEvent.click(screen.getByTestId('status-select'));
+    expect(screen.getByLabelText('Proposition')).toBeTruthy();
+    expect(screen.queryByLabelText('Ouvert')).toBeNull();
+    expect(screen.queryByLabelText('À planifier')).toBeNull();
+  });
+
+  it('tasks offers task statuses, not call statuses', async () => {
+    render(<FilterBar {...defaultProps} />);
+    await userEvent.click(screen.getByTestId('status-select'));
+    for (const label of ['À planifier', 'Planifié', 'En route', 'Arrivé', 'Au travail', 'Terminé',
+      'Expertise requise', 'Retour requis', 'Annulé']) {
+      expect(screen.getByLabelText(label)).toBeTruthy();
+    }
+    expect(screen.queryByLabelText('Reçu')).toBeNull();
+    expect(screen.queryByLabelText('Trié')).toBeNull();
+  });
+
+  it('counts tasks and hides the source filter when asked', () => {
+    render(<FilterBar {...defaultProps} total={3} countUnit="task" showSourceFilter={false} />);
+    expect(screen.getByText(/3 tâches/)).toBeTruthy();
+    expect(screen.queryByLabelText('Source')).toBeNull();
+  });
+
   it('checking a status in the dropdown calls onStatus', async () => {
     const onStatus = vi.fn();
     render(<FilterBar {...triageProps} status={['triaged']} onStatus={onStatus} />);

@@ -190,6 +190,17 @@ def test_list_tasks_date_range_filters_on_due_at(ac, db_conn, open_request_id):
     assert outside["task_id"] not in ids and unscheduled["task_id"] not in ids
 
 
+def test_list_tasks_carry_call_context(ac, db_conn, open_request_id):
+    t = _accepted(db_conn, open_request_id, "ctx", assigned_employee_id=_TECH)
+    items = ac(_coord()).get("/api/v1/tasks", params={"assigned_employee_id": _TECH}).json()["items"]
+    row = next(i for i in items if i["task_id"] == t["task_id"])
+    assert row["request_title"] == "Appel tâches"
+    assert row["request_status"] == "open"
+    assert row["sector_id"] == 1
+    assert row["building_address"] is not None
+    assert row["assigned_employee_name"] is not None
+
+
 def test_list_tasks_dates_must_come_together(ac):
     r = ac(_coord()).get("/api/v1/tasks", params={"start_date": "2026-10-01"})
     assert r.status_code == 422

@@ -11,7 +11,61 @@ export type StatusValue =
   | 'triage_failed'
   | 'en_route'
   | 'arrived'
+  | 'open'
   | 'closed';
+
+export type TaskStatus =
+  | 'queued'
+  | 'scheduled'
+  | 'en_route'
+  | 'arrived'
+  | 'working'
+  | 'done'
+  | 'needs_expertise'
+  | 'return_visit'
+  | 'cancelled';
+
+export interface TaskOut {
+  task_id: number;
+  request_id: number;
+  description: string;
+  status: TaskStatus;
+  assigned_employee_id: number | null;
+  vendor_id: number | null;
+  subcontractor_name: string | null;
+  due_at: string | null;
+  urgency_tier: string | null;
+  source: string;
+  /** null = AI proposal, not yet accepted by a dispatcher. */
+  accepted_at: string | null;
+  parent_task_id: number | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** GET /tasks row: the task plus list context from its call. */
+export interface TaskListItem extends TaskOut {
+  assigned_employee_name: string | null;
+  request_title: string | null;
+  request_status: string | null;
+  request_asnu: string | null;
+  request_urgency_tier: string | null;
+  sector_id: number | null;
+  territoire: string | null;
+  building_address: string | null;
+  unit_label: string | null;
+}
+
+export interface TaskListResponse {
+  total: number;
+  items: TaskListItem[];
+}
+
+export interface TaskCloseoutOut extends TaskOut {
+  follow_up_task: TaskOut | null;
+  request_status: string;
+}
 
 export type SortKey =
   | 'start_date'
@@ -77,6 +131,7 @@ export interface ListRow {
 
 export interface VisitEntry {
   visit_id: number;
+  task_id?: number | null;
   employee_id: number;
   employee_name: string | null;
   en_route_at: string;
@@ -138,6 +193,8 @@ export interface RequestDetail extends ListRow {
   /** Coordinator / director only, like justification_log. */
   status_history?: StatusChange[];
   visits: VisitEntry[];
+  /** Proposals (accepted_at null) are dispatcher-only. */
+  tasks?: TaskOut[];
   /** Photos attached when the call was created. */
   intake_photo_ids?: number[];
   caller_name: string | null;

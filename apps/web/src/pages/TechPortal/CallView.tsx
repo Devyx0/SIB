@@ -1,16 +1,18 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRequest } from '../../hooks/useRequest';
-import { goEnRoute, markArrived, ApiError, GENERIC_ERROR_FR } from '../../api/client';
-import type { MeResponse, RequestDetail } from '../../api/schema.d.ts';
+import { taskEnRoute, taskArrived, ApiError, GENERIC_ERROR_FR } from '../../api/client';
+import type { MeResponse, RequestDetail, TaskOut } from '../../api/schema.d.ts';
 import type { Lang } from '../../i18n';
 import { t, statusLabel, timeEstimateLabel } from '../../i18n';
 import { formatEntryDate } from '../../components/HistoryTimeline';
 import { IntakePhotos } from '../../components/RequestSections';
 import { urgencyLabel } from '../../lib/urgencyLevels';
+import { dueDay } from '../../lib/taskDates';
 import TechHeader from './TechHeader';
 import { elapsedLabel } from './elapsed';
+import { pickMyTask, taskIdParam } from './myTask';
 import styles from './TechPortal.module.css';
 
 interface Props {
@@ -46,31 +48,42 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
   const { id } = useParams();
   const requestId = Number(id);
   const { data: req, isPending, isError } = useRequest(Number.isFinite(requestId) ? requestId : null);
+  const [search] = useSearchParams();
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const isAssignedToMe = me != null && req != null && req.assigned_employee_id === me.employee_id;
-  const inProgress = req?.status === 'en_route' || req?.status === 'arrived';
-  const canGoEnRoute = isAssignedToMe && req != null && req.status !== 'closed' && !inProgress;
-  const canMarkArrived = isAssignedToMe && req?.status === 'en_route';
-  const canCloseout = isAssignedToMe && req?.status === 'arrived';
+  const task = pickMyTask(req, me?.employee_id, taskIdParam(search));
+  const status = task?.status ?? req?.status;
+  const canGoEnRoute = req?.status !== 'closed' && task?.status === 'scheduled';
+  const canMarkArrived = task?.status === 'en_route';
+  const canCloseout = task?.status === 'arrived' || task?.status === 'working';
   const noContact = req != null && !req.caller_phone && !req.caller_email;
+  const openVisit = task
+    ? (req?.visits ?? []).find((v) => v.task_id === task.task_id && !v.closeout_at)
+    : undefined;
+
+  // Show the new task status at once; the refetch brings the visit (elapsed time).
+  function applyTask(updated: TaskOut) {
+    qc.setQueryData<RequestDetail>(['request', requestId], (prev) => prev && {
+      ...prev,
+      tasks: (prev.tasks ?? []).map((x) => (x.task_id === updated.task_id ? updated : x)),
+    });
+    qc.invalidateQueries({ queryKey: ['request', requestId] });
+    qc.invalidateQueries({ queryKey: ['tasks'] });
+  }
 
   async function handleEnRoute() {
-    if (!req) return;
+    if (!task) return;
     setBusy(true);
     setActionError(null);
     const pos = await getPosition();
     try {
-      const updated = await goEnRoute(req.request_id, {
-        current_status: req.status,
-        current_start_date: req.start_date,
+      applyTask(await taskEnRoute(task.task_id, {
+        current_status: task.status,
         lat: pos?.lat ?? null,
         lng: pos?.lng ?? null,
-      });
-      qc.setQueryData(['request', req.request_id], updated);
-      qc.invalidateQueries({ queryKey: ['requests'] });
+      }));
     } catch (e) {
       if (e instanceof ApiError) {
         const d = e.details as { open_request_title?: string | null } | null;
@@ -84,18 +97,16 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
   }
 
   async function handleArrived() {
-    if (!req) return;
+    if (!task) return;
     setBusy(true);
     setActionError(null);
     const pos = await getPosition();
     try {
-      const updated = await markArrived(req.request_id, {
-        current_status: req.status,
+      applyTask(await taskArrived(task.task_id, {
+        current_status: task.status,
         lat: pos?.lat ?? null,
         lng: pos?.lng ?? null,
-      });
-      qc.setQueryData(['request', req.request_id], updated);
-      qc.invalidateQueries({ queryKey: ['requests'] });
+      }));
     } catch (e) {
       setActionError(e instanceof ApiError ? e.message : GENERIC_ERROR_FR);
     } finally {
@@ -129,9 +140,11 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
         {req && (
           <>
             <div className={styles.callRowTop}>
-              <span className={styles.callDate}>{req.start_date ?? t(lang, 'Sans date', 'No date')}</span>
-              <span className={styles.statusBadge} data-status={req.status}>
-                {statusLabel(lang, req.status)}
+              <span className={styles.callDate}>
+                {(task ? dueDay(task.due_at) : req.start_date) ?? t(lang, 'Sans date', 'No date')}
+              </span>
+              <span className={styles.statusBadge} data-status={status}>
+                {statusLabel(lang, status!)}
               </span>
               {req.urgency_tier && req.urgency_tier !== 'none' && (
                 <span className={styles.urgencyBadge}>{urgencyLabel(lang, req.urgency_tier)}</span>
@@ -161,23 +174,30 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
               </dl>
             )}
 
-            {req.status === 'en_route' && (
+            {task && (
+              <section className={styles.card} data-testid="my-task">
+                <h2 className={styles.cardTitle}>{t(lang, 'Ma tâche', 'My task')}</h2>
+                <p className={styles.preWrap}>{task.description}</p>
+              </section>
+            )}
+
+            {task?.status === 'en_route' && (
               <div className={styles.openCallBannerCard}>
                 {t(lang, 'En route', 'En route')}
-                {elapsedLabel(req.en_route_at) && (
-                  <> {t(lang, 'depuis', 'for')} {elapsedLabel(req.en_route_at)}</>
+                {elapsedLabel(openVisit?.en_route_at ?? null) && (
+                  <> {t(lang, 'depuis', 'for')} {elapsedLabel(openVisit!.en_route_at)}</>
                 )}
               </div>
             )}
-            {req.status === 'arrived' && (
+            {(task?.status === 'arrived' || task?.status === 'working') && (
               <div className={styles.openCallBannerCard} data-status="arrived">
                 {t(lang, 'Arrivé', 'Arrived')}
-                {elapsedLabel(req.arrived_at) && (
-                  <> {t(lang, 'depuis', 'for')} {elapsedLabel(req.arrived_at)}</>
+                {elapsedLabel(openVisit?.arrived_at ?? null) && (
+                  <> {t(lang, 'depuis', 'for')} {elapsedLabel(openVisit!.arrived_at)}</>
                 )}
               </div>
             )}
-            {req.status === 'en_route' && isAssignedToMe && noContact && (
+            {task?.status === 'en_route' && noContact && (
               <p className={styles.warning} data-testid="no-contact-warning">
                 {t(lang, 'Aucun contact pour aviser le locataire', 'No contact to notify the tenant')}
               </p>
@@ -207,7 +227,7 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
             )}
             {canCloseout && (
               <Link
-                to={`/tech/appels/${req.request_id}/cloture`}
+                to={`/tech/appels/${req.request_id}/cloture?task=${task!.task_id}`}
                 className={`${styles.enRouteBtn} ${styles.btnLink}`}
                 data-testid="closeout-btn"
               >

@@ -17,7 +17,7 @@ vi.mock('../lib/supabase', () => ({
 const mocks = vi.hoisted(() => ({
   fetchRequest: vi.fn(),
   uploadPhoto: vi.fn(),
-  closeoutRequest: vi.fn(),
+  closeoutTask: vi.fn(),
 }));
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -26,18 +26,27 @@ vi.mock('../api/client', async (importOriginal) => {
     ...actual,
     fetchRequest: mocks.fetchRequest,
     uploadPhoto: mocks.uploadPhoto,
-    closeoutRequest: mocks.closeoutRequest,
+    closeoutTask: mocks.closeoutTask,
   };
 });
 
 const ME = { employee_id: 24, nom_employe: 'Martin Poirier', roles: ['technician'] };
 
+function task(id: number, extra: Record<string, unknown> = {}) {
+  return {
+    task_id: id, request_id: 5, description: `Tâche ${id}`, status: 'arrived',
+    assigned_employee_id: 24, accepted_at: '2026-10-19T12:00:00Z', due_at: null,
+    ...extra,
+  };
+}
+
 const REQ = {
   request_id: 5,
   raw_title: 'Fuite évier',
-  status: 'en_route',
+  status: 'open',
   start_date: '2026-10-19',
-  assigned_employee_id: 24,
+  assigned_employee_id: null,
+  tasks: [task(50)],
   followup_log: [],
 } as never;
 
@@ -48,11 +57,11 @@ const LABELS = [
   "Call pas du tout fait, besoin d'une expertise / envoyer à dispatch",
 ];
 
-function wrap() {
+function wrap(entry = '/tech/appels/5/cloture?task=50') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/tech/appels/5/cloture']}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route
             path="/tech/appels/:id/cloture"
@@ -78,7 +87,7 @@ function setComment(text: string) {
 beforeEach(() => {
   mocks.fetchRequest.mockReset().mockResolvedValue(REQ);
   mocks.uploadPhoto.mockReset().mockResolvedValue({ attachment_id: 91 });
-  mocks.closeoutRequest.mockReset().mockResolvedValue({ ...(REQ as object), status: 'closed' });
+  mocks.closeoutTask.mockReset().mockResolvedValue({ ...task(50), status: 'done', follow_up_task: null, request_status: 'closed' });
   URL.createObjectURL = vi.fn(() => 'blob:mock');
 });
 
@@ -169,13 +178,42 @@ describe('CloseoutForm', () => {
       expect((screen.getByTestId('closeout-submit') as HTMLButtonElement).disabled).toBe(false)
     );
     fireEvent.click(screen.getByTestId('closeout-submit'));
-    await waitFor(() => expect(mocks.closeoutRequest).toHaveBeenCalledWith(5, expect.objectContaining({
+    await waitFor(() => expect(mocks.closeoutTask).toHaveBeenCalledWith(50, expect.objectContaining({
       outcome: 'partial_expertise',
       urgent: true,
       attachment_ids: [91],
-      current_status: 'en_route',
+      current_status: 'arrived',
       next_date: null,
     })));
     await waitFor(() => expect(screen.getByText('LISTE-TECH')).toBeTruthy());
+  });
+
+  it('closes out the task named in the URL, not another of mine', async () => {
+    mocks.fetchRequest.mockResolvedValue({
+      ...(REQ as object), tasks: [task(50), task(51, { status: 'working', description: 'Peinture' })],
+    });
+    wrap('/tech/appels/5/cloture?task=51');
+    await waitFor(() => expect(screen.getByTestId('closeout-task').textContent).toBe('Peinture'));
+    fireEvent.click(screen.getByText(LABELS[0]));
+    addPhoto();
+    await waitFor(() => expect(mocks.uploadPhoto).toHaveBeenCalled());
+    setComment('Travail terminé, tout est réparé.');
+    await waitFor(() =>
+      expect((screen.getByTestId('closeout-submit') as HTMLButtonElement).disabled).toBe(false)
+    );
+    fireEvent.click(screen.getByTestId('closeout-submit'));
+    await waitFor(() => expect(mocks.closeoutTask).toHaveBeenCalledWith(51, expect.objectContaining({
+      outcome: 'complete',
+      current_status: 'working',
+    })));
+  });
+
+  it('cannot submit when no task on the call is mine', async () => {
+    mocks.fetchRequest.mockResolvedValue({ ...(REQ as object), tasks: [task(50, { assigned_employee_id: 99 })] });
+    wrap('/tech/appels/5/cloture');
+    await waitFor(() => expect(screen.getByTestId('closeout-no-task')).toBeTruthy());
+    fireEvent.click(screen.getByText(LABELS[0]));
+    setComment('Travail terminé, tout est réparé.');
+    expect((screen.getByTestId('closeout-submit') as HTMLButtonElement).disabled).toBe(true);
   });
 });

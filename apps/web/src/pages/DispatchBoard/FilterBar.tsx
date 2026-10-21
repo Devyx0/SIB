@@ -44,6 +44,10 @@ interface Props {
   /** True when any filter differs from the page defaults. */
   hasActiveFilters?: boolean;
   onReset?: () => void;
+  /** What `total` counts. */
+  countUnit?: 'call' | 'task';
+  /** Tasks carry no source calendar. */
+  showSourceFilter?: boolean;
 }
 
 export default function FilterBar({
@@ -65,6 +69,8 @@ export default function FilterBar({
   onRedispatch = () => {},
   hasActiveFilters = false,
   onReset,
+  countUnit = 'call',
+  showSourceFilter = true,
 }: Props) {
   const showDates = mode === 'tasks';
   const statusOptions = statusesForMode(mode);
@@ -130,9 +136,9 @@ export default function FilterBar({
     { value: 'false', label: t(lang, 'Sans sous-traitant', 'No subcontractor') },
   ];
 
-  const countLabel = total === 1
-    ? `1 ${t(lang, 'appel', 'call')}`
-    : `${total} ${t(lang, 'appels', 'calls')}`;
+  const countLabel = countUnit === 'task'
+    ? (total === 1 ? `1 ${t(lang, 'tâche', 'task')}` : `${total} ${t(lang, 'tâches', 'tasks')}`)
+    : (total === 1 ? `1 ${t(lang, 'appel', 'call')}` : `${total} ${t(lang, 'appels', 'calls')}`);
 
   // Quick ranges end today (America/Toronto, like the board's default) and
   // count today as one of the days: « 7 derniers jours » = today + 6 before.
@@ -412,19 +418,21 @@ export default function FilterBar({
           </div>
         )}
 
-        <div className={styles.fieldGroup}>
-          <label className={styles.label} htmlFor="board-source">{t(lang, 'Source', 'Source')}</label>
-          <Select
-            id="board-source"
-            className={`${styles.input} ${sourceCalendar ? styles.inputActive : ''}`}
-            value={sourceCalendar}
-            onChange={(e) => onSourceCalendar(e.target.value)}
-          >
-            {SOURCE_OPTS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </Select>
-        </div>
+        {showSourceFilter && (
+          <div className={styles.fieldGroup}>
+            <label className={styles.label} htmlFor="board-source">{t(lang, 'Source', 'Source')}</label>
+            <Select
+              id="board-source"
+              className={`${styles.input} ${sourceCalendar ? styles.inputActive : ''}`}
+              value={sourceCalendar}
+              onChange={(e) => onSourceCalendar(e.target.value)}
+            >
+              {SOURCE_OPTS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </Select>
+          </div>
+        )}
 
         <div className={styles.fieldGroup}>
           <label className={styles.label} htmlFor="board-subcontractor">

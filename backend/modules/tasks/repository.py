@@ -189,20 +189,46 @@ def list_accepted_tasks(
     assigned_employee_id: int | None = None,
     timezone: str = "UTC",
 ) -> list[dict]:
-    """Accepted tasks (accepted_at IS NOT NULL) only; date range applies to due_at's local day."""
-    where = ["accepted_at IS NOT NULL"]
+    """Accepted tasks (accepted_at IS NOT NULL) only; date range applies to due_at's local day.
+
+    Rows also carry list context from the call (title, address, unit, sector,
+    call status) and the assignee's name — no case-scoped PII.
+    """
+    where = ["t.accepted_at IS NOT NULL"]
     params: dict[str, Any] = {}
     if start_date is not None and end_date is not None:
-        where.append("(due_at AT TIME ZONE %(tz)s)::date BETWEEN %(start)s AND %(end)s")
+        where.append("(t.due_at AT TIME ZONE %(tz)s)::date BETWEEN %(start)s AND %(end)s")
         params.update(tz=timezone, start=start_date, end=end_date)
     if statuses:
-        where.append("status::text = ANY(%(statuses)s)")
+        where.append("t.status::text = ANY(%(statuses)s)")
         params["statuses"] = list(statuses)
     if assigned_employee_id is not None:
-        where.append("assigned_employee_id = %(assignee)s")
+        where.append("t.assigned_employee_id = %(assignee)s")
         params["assignee"] = assigned_employee_id
     rows = conn.execute(
-        f"{_TASK_SELECT} WHERE {' AND '.join(where)} ORDER BY due_at NULLS LAST, task_id",
+        f"""
+        SELECT t.task_id, t.request_id, t.description, t.status::text AS status,
+               t.assigned_employee_id, t.vendor_id, t.subcontractor_name, t.due_at,
+               t.urgency_tier, t.source, t.accepted_at, t.parent_task_id, t.sort_order,
+               t.created_at, t.updated_at,
+               e.nom_employe       AS assigned_employee_name,
+               mr.raw_title        AS request_title,
+               mr.status::text     AS request_status,
+               mr.asnu             AS request_asnu,
+               mr.urgency_tier     AS request_urgency_tier,
+               mr.sector_id,
+               s.territoire,
+               b.adresse           AS building_address,
+               COALESCE(mr.unit_label, u.numero_appartement) AS unit_label
+        FROM dispatch_task t
+        JOIN maintenance_request mr ON mr.request_id = t.request_id
+        LEFT JOIN employee e ON e.employee_id = t.assigned_employee_id
+        LEFT JOIN building b ON b.building_id = mr.building_id
+        LEFT JOIN sector   s ON s.sector_id   = mr.sector_id
+        LEFT JOIN unit     u ON u.unit_id     = mr.unit_id
+        WHERE {' AND '.join(where)}
+        ORDER BY t.due_at NULLS LAST, t.task_id
+        """,
         params,
     ).fetchall()
     return [dict(r) for r in rows]

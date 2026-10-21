@@ -2,7 +2,8 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import RequestTable from '../pages/DispatchBoard/RequestTable';
-import type { ListRow } from '../api/schema.d.ts';
+import TaskTable, { sortTasks } from '../pages/DispatchBoard/TaskTable';
+import type { ListRow, TaskListItem } from '../api/schema.d.ts';
 
 function makeRow(overrides: Partial<ListRow> = {}): ListRow {
   return {
@@ -193,5 +194,62 @@ describe('awaiting_redispatch status pill', () => {
     );
     const tag = screen.getByText('À redispatcher');
     expect(tag.getAttribute('data-status')).toBe('awaiting_redispatch');
+  });
+});
+
+function makeTask(overrides: Partial<TaskListItem> = {}): TaskListItem {
+  return {
+    task_id: 1, request_id: 10, description: 'Plomberie', status: 'scheduled',
+    assigned_employee_id: 14, vendor_id: null, subcontractor_name: null,
+    due_at: '2026-09-10T12:00:00-04:00', urgency_tier: null, source: 'dispatcher',
+    accepted_at: '2026-09-01T12:00:00Z', parent_task_id: null, sort_order: 0,
+    created_at: '2026-09-01T12:00:00Z', updated_at: '2026-09-01T12:00:00Z',
+    assigned_employee_name: 'Jean Tech', request_title: 'Fuite', request_status: 'open',
+    request_asnu: null, request_urgency_tier: 'URGENT', sector_id: 1, territoire: 'Québec',
+    building_address: '1 rue Test', unit_label: '3',
+    ...overrides,
+  };
+}
+
+describe('TaskTable', () => {
+  const props = {
+    selectedTaskId: null, sortBy: 'due_at', sortDir: 'asc' as const,
+    onSort: vi.fn(), onSelect: vi.fn(), isLoading: false, isError: false,
+  };
+
+  it('renders a task row with its call, task status and the call urgency fallback', () => {
+    render(<TaskTable {...props} rows={[makeTask()]} />);
+    const row = screen.getByTestId('task-row');
+    expect(row.textContent).toContain('Plomberie');
+    expect(row.textContent).toContain('#10 Fuite');
+    expect(row.textContent).toContain('1 rue Test, app. 3');
+    expect(row.textContent).toContain('Jean Tech');
+    expect(row.textContent).toContain('Planifié');
+    expect(row.textContent).toMatch(/urgent/i);
+    expect(screen.getByTestId('day-header').textContent).toMatch(/1 tâche/);
+  });
+
+  it('marks needs_expertise tasks as escalated', () => {
+    render(<TaskTable {...props} rows={[makeTask({ status: 'needs_expertise' })]} />);
+    expect(screen.getByTestId('task-row').getAttribute('data-escalated')).toBe('true');
+    expect(screen.getByText('Expertise requise')).toBeTruthy();
+  });
+
+  it('calls onSelect with the task row', async () => {
+    const onSelect = vi.fn();
+    const t = makeTask();
+    render(<TaskTable {...props} rows={[t]} onSelect={onSelect} />);
+    await userEvent.click(screen.getByTestId('task-row'));
+    expect(onSelect).toHaveBeenCalledWith(t);
+  });
+
+  it('sortTasks keeps missing values last in both directions', () => {
+    const rows = [
+      makeTask({ task_id: 1, due_at: null }),
+      makeTask({ task_id: 2, due_at: '2026-09-12T12:00:00Z' }),
+      makeTask({ task_id: 3, due_at: '2026-09-11T12:00:00Z' }),
+    ];
+    expect(sortTasks(rows, 'due_at', 'asc').map((r) => r.task_id)).toEqual([3, 2, 1]);
+    expect(sortTasks(rows, 'due_at', 'desc').map((r) => r.task_id)).toEqual([2, 3, 1]);
   });
 });

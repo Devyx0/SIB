@@ -50,7 +50,7 @@ const OPTIONAL_COLS: ColDef[] = [
   { key: 'next_steps',            fr: 'Prochaines étapes',  en: 'Next steps',    sortable: false },
 ];
 
-function UrgencyTag({ tier, lang = 'fr' }: { tier: string | null; lang?: Lang }) {
+export function UrgencyTag({ tier, lang = 'fr' }: { tier: string | null; lang?: Lang }) {
   if (tier === 'URGENT') {
     return <span className={styles.tagAJD}>{urgencyLabel(lang, 'URGENT')}</span>;
   }
@@ -60,7 +60,7 @@ function UrgencyTag({ tier, lang = 'fr' }: { tier: string | null; lang?: Lang })
   return <span className={styles.muted}>—</span>;
 }
 
-function StatusTag({ status, lang = 'fr' }: { status: string; lang?: Lang }) {
+export function StatusTag({ status, lang = 'fr' }: { status: string; lang?: Lang }) {
   // en_route highlighted (calendar "X"); awaiting_redispatch = expertise queue.
   return <span className={styles.tagStatus} data-status={status}>{statusLabel(lang, status)}</span>;
 }

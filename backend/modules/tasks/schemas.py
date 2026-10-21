@@ -46,9 +46,22 @@ class TaskOut(BaseModel):
     updated_at: datetime
 
 
+class TaskListItem(TaskOut):
+    """GET /tasks row: the task plus list context from its call."""
+    assigned_employee_name: Optional[str] = None
+    request_title: Optional[str] = None
+    request_status: Optional[str] = None
+    request_asnu: Optional[str] = None
+    request_urgency_tier: Optional[str] = None
+    sector_id: Optional[int] = None
+    territoire: Optional[str] = None
+    building_address: Optional[str] = None
+    unit_label: Optional[str] = None
+
+
 class TaskListResponse(BaseModel):
     total: int
-    items: list[TaskOut]
+    items: list[TaskListItem]
 
 
 class CreateTaskBody(BaseModel):

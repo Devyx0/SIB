@@ -41,8 +41,8 @@ _INTERNAL_TECH: frozenset[str] = frozenset({
     "other_notes",
 })
 
-# Case-scoped personal data — null unless coordinator/director OR the directly-
-# assigned employee.  Covers both contact fields and tenant-identifying text.
+# Case-scoped personal data — null unless coordinator/director OR an assigned
+# employee (see _ASSIGNED_SQL).  Covers both contact fields and tenant-identifying text.
 #
 # Technician/contractor ALWAYS receive (regardless of assignment):
 #   request_id, start_date, asnu, urgency_tier, urgency_raw, raw_title,
@@ -63,16 +63,29 @@ _CASE_SCOPED_PII: frozenset[str] = frozenset({
 })
 
 
+# Assigned = on an accepted task of the call, or the legacy call-level assignee
+# (no longer written, kept so pre-task history stays visible).
+_ASSIGNED_SQL = """(
+    mr.assigned_employee_id = %(emp_id)s
+    OR EXISTS (
+        SELECT 1 FROM dispatch_task dt
+        WHERE dt.request_id = mr.request_id
+          AND dt.assigned_employee_id = %(emp_id)s
+          AND dt.accepted_at IS NOT NULL
+    )
+)"""
+
+
 def _scope(user: CurrentUser) -> tuple[str, dict[str, Any]]:
     """Return (scope_sql_fragment, params) to append to any WHERE clause."""
     if user.roles & {"director", "coordinator"}:
         return "", {}
     if "technician" in user.roles:
-        # Exact match of tech_scoped RLS: directly assigned OR sector buildings
-        # OR explicitly assigned buildings via employee_building_assignment.
+        # Assigned (see _ASSIGNED_SQL) OR sector buildings OR explicitly
+        # assigned buildings via employee_building_assignment.
         return (
-            """AND (
-                mr.assigned_employee_id = %(emp_id)s
+            f"""AND (
+                {_ASSIGNED_SQL}
                 OR mr.building_id IN (
                     SELECT b2.building_id FROM building b2
                     JOIN employee e2 ON b2.sector_id = e2.sector_id
@@ -85,15 +98,23 @@ def _scope(user: CurrentUser) -> tuple[str, dict[str, Any]]:
             {"emp_id": user.employee_id},
         )
     if "contractor" in user.roles:
-        return "AND mr.assigned_employee_id = %(emp_id)s", {"emp_id": user.employee_id}
+        return f"AND {_ASSIGNED_SQL}", {"emp_id": user.employee_id}
     return "AND FALSE", {}
 
 
-def _case_pii_visible(user: CurrentUser, row: dict) -> bool:
+def _is_assigned(conn, user: CurrentUser, row: dict) -> bool:
+    """Same rule as _ASSIGNED_SQL, for one already-loaded request row."""
+    return (
+        row.get("assigned_employee_id") == user.employee_id
+        or task_repo.is_assignee_on_request(conn, row["request_id"], user.employee_id)
+    )
+
+
+def _case_pii_visible(conn, user: CurrentUser, row: dict) -> bool:
     """True when the user may see case-scoped PII for this row."""
     if user.roles & {"director", "coordinator"}:
         return True
-    return row.get("assigned_employee_id") == user.employee_id
+    return _is_assigned(conn, user, row)
 
 
 def list_requests(conn, params, user: CurrentUser) -> ListResponse:
@@ -157,7 +178,7 @@ def get_request(conn, request_id: int, user: CurrentUser) -> RequestDetail:
         row["justification_log"] = []
         for field in _INTERNAL_TECH:
             row[field] = None
-        if not _case_pii_visible(user, row):
+        if not _case_pii_visible(conn, user, row):
             for field in _CASE_SCOPED_PII:
                 row[field] = None
     else:
@@ -564,7 +585,7 @@ def action_add_log(conn, request_id: int, body: AddLogBody, user: CurrentUser) -
     # Lock the request row to confirm it exists.
     row = _lock_or_404(conn, request_id)
     is_coord = bool(user.roles & {"coordinator", "director"})
-    if not is_coord and row["assigned_employee_id"] != user.employee_id:
+    if not is_coord and not _is_assigned(conn, user, row):
         raise PermissionDenied("Seul l'employé assigné peut ajouter une note")
 
     # Resolve initials from the employee's name

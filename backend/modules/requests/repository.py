@@ -575,7 +575,7 @@ def list_intake_photo_ids(conn, request_id: int) -> list[int]:
 def list_visits(conn, request_id: int) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT v.visit_id, v.employee_id, e.nom_employe AS employee_name,
+        SELECT v.visit_id, v.task_id, v.employee_id, e.nom_employe AS employee_name,
                v.en_route_at, v.arrived_at, v.closeout_at,
                v.travel_minutes, v.on_site_minutes, v.duration_minutes,
                v.outcome::text AS outcome,

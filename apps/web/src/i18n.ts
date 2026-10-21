@@ -69,7 +69,15 @@ export function statusLabel(lang: Lang, status: string): string {
     triage_failed:       ['Triage échoué',    'Triage failed'],
     en_route:            ['En route',         'En route'],
     arrived:             ['Arrivé',           'Arrived'],
+    open:                ['Ouvert',           'Open'],
     closed:              ['Fermé',            'Closed'],
+    // dispatch_task-only statuses (scheduled / en_route / arrived shared above)
+    queued:              ['À planifier',      'Queued'],
+    working:             ['Au travail',       'Working'],
+    done:                ['Terminé',          'Done'],
+    needs_expertise:     ['Expertise requise', 'Needs expertise'],
+    return_visit:        ['Retour requis',    'Return visit'],
+    cancelled:           ['Annulé',           'Cancelled'],
   };
   const pair = map[status];
   return pair ? pair[lang === 'fr' ? 0 : 1] : status;

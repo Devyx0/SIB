@@ -23,7 +23,7 @@ from backend.modules.requests import repository as request_repo
 from . import repository as repo
 from .schemas import (
     ArrivedBody, AssignTaskBody, CloseoutBody, CloseoutOut, CreateTaskBody, EnRouteBody,
-    ScheduleTaskBody, TaskListResponse, TaskOut,
+    ScheduleTaskBody, TaskListItem, TaskListResponse, TaskOut,
 )
 
 _FOLLOW_UP_DAYS = 14
@@ -119,7 +119,7 @@ def list_tasks(
         conn, start_date=start_date, end_date=end_date, statuses=statuses,
         assigned_employee_id=assigned_employee_id, timezone=settings.TIMEZONE,
     )
-    return TaskListResponse(total=len(rows), items=[TaskOut(**r) for r in rows])
+    return TaskListResponse(total=len(rows), items=[TaskListItem(**r) for r in rows])
 
 
 def create_task(conn, body: CreateTaskBody, user: CurrentUser) -> TaskOut:
