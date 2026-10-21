@@ -206,14 +206,101 @@ describe('DetailPanel', () => {
     expect(screen.queryByTestId('task-redispatch-5')).toBeNull();
   });
 
-  it('no new task while the AI proposal is pending; proposals are listed read-only', () => {
-    const req = { ...MOCK_REQUEST, status: 'triage_proposal', tasks: [task(9, { accepted_at: null, description: 'Proposé par IA' })] };
-    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+  const COORD = { employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse;
+  const proposalsReq = (status = 'triage_proposal', extra: Record<string, unknown>[] = []) => ({
+    ...MOCK_REQUEST, status,
+    tasks: [
+      task(9, { accepted_at: null, source: 'ai_recommended', description: 'Proposé par IA' }),
+      task(10, { accepted_at: null, source: 'ai_recommended', description: 'Autre proposition' }),
+      ...extra,
+    ],
+  });
+
+  it('no new task while the AI proposal is pending; proposals are listed with accept/reject', () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
-    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
     expect((screen.getByTestId('new-task-desc') as HTMLTextAreaElement).disabled).toBe(true);
-    expect(screen.getByTestId('task-proposals').textContent).toContain('Proposé par IA');
+    expect((screen.getByTestId('proposal-desc-9') as HTMLTextAreaElement).value).toBe('Proposé par IA');
+    expect(screen.getByTestId('proposal-accept-9')).toBeTruthy();
+    expect(screen.getByTestId('proposal-reject-9')).toBeTruthy();
+    expect(screen.getByTestId('proposals-add-hint')).toBeTruthy();
     expect(screen.queryByTestId('task-assign-9')).toBeNull();
+  });
+
+  it('accepts a proposal as written', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    const accept = vi.spyOn(client, 'acceptTask').mockResolvedValue(task(9) as never);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
+    await userEvent.click(screen.getByTestId('proposal-accept-9'));
+    await waitFor(() => expect(accept).toHaveBeenCalledWith(9, {}));
+  });
+
+  it('accepts a re-worded proposal with the edited description', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    const accept = vi.spyOn(client, 'acceptTask').mockResolvedValue(task(9) as never);
+    const acceptAll = vi.spyOn(client, 'acceptAllTasks');
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
+    fireEvent.change(screen.getByTestId('proposal-desc-9'), { target: { value: 'Réparer le robinet' } });
+    expect((screen.getByTestId('proposals-accept-all') as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(screen.getByTestId('proposal-accept-9'));
+    await waitFor(() => expect(accept).toHaveBeenCalledWith(9, { description: 'Réparer le robinet' }));
+    expect(acceptAll).not.toHaveBeenCalled();
+  });
+
+  it('rejects one proposal', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    const reject = vi.spyOn(client, 'rejectTask').mockResolvedValue(undefined);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
+    await userEvent.click(screen.getByTestId('proposal-reject-10'));
+    await waitFor(() => expect(reject).toHaveBeenCalledWith(10));
+  });
+
+  it('accept all calls the request endpoint', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    const acceptAll = vi.spyOn(client, 'acceptAllTasks').mockResolvedValue([]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
+    await userEvent.click(screen.getByTestId('proposals-accept-all'));
+    await waitFor(() => expect(acceptAll).toHaveBeenCalledWith(1));
+  });
+
+  it('reject all warns that the call returns to clarification, and only runs when confirmed', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    const rejectAll = vi.spyOn(client, 'rejectAllTasks').mockResolvedValue({ request_id: 1, status: 'triage_clarify', rejected: 2 });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
+    await userEvent.click(screen.getByTestId('proposals-reject-all'));
+    expect(confirm.mock.calls[0][0]).toMatch(/clarification/);
+    expect(rejectAll).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByTestId('proposals-reject-all'));
+    await waitFor(() => expect(rejectAll).toHaveBeenCalledWith(1));
+    confirm.mockRestore();
+  });
+
+  it('proposals on an open call: no clarify warning, add form stays enabled', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq('open', [task(7)]), isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
+    expect((screen.getByTestId('new-task-desc') as HTMLTextAreaElement).disabled).toBe(false);
+    expect(screen.queryByTestId('proposals-add-hint')).toBeNull();
+    await userEvent.click(screen.getByTestId('proposals-reject-all'));
+    expect(confirm.mock.calls[0][0]).not.toMatch(/clarification/);
+    confirm.mockRestore();
+  });
+
+  it('shows the API error when accepting fails', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    vi.spyOn(client, 'acceptTask').mockRejectedValue(new ApiError('CONFLICT', 'Task is already accepted'));
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
+    await userEvent.click(screen.getByTestId('proposal-accept-9'));
+    await waitFor(() => expect(screen.getByText('Task is already accepted')).toBeTruthy());
   });
 
   it('renders both Estimation (time bucket) and Coût estimé (cost) rows', () => {

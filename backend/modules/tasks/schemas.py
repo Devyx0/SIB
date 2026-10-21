@@ -87,6 +87,27 @@ class CreateTaskBody(BaseModel):
         return _localize(v)
 
 
+class AcceptTaskBody(BaseModel):
+    """Optional edit of an AI proposal's wording while accepting it."""
+    description: Optional[str] = Field(default=None, max_length=2000)
+
+    @field_validator("description")
+    @classmethod
+    def _not_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            raise ValueError("description must not be blank")
+        return v
+
+
+class RejectAllOut(BaseModel):
+    request_id: int
+    status: str      # the call after the rejection (triage_clarify when nothing was accepted)
+    rejected: int
+
+
 class AssignTaskBody(BaseModel):
     # None unassigns (scheduled → queued).
     assigned_employee_id: Optional[int] = None

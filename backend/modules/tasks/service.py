@@ -22,8 +22,8 @@ from backend.modules.requests import repository as request_repo
 
 from . import repository as repo
 from .schemas import (
-    ArrivedBody, AssignTaskBody, CloseoutBody, CloseoutOut, CreateTaskBody, EnRouteBody,
-    ScheduleTaskBody, TaskListItem, TaskListResponse, TaskOut,
+    AcceptTaskBody, ArrivedBody, AssignTaskBody, CloseoutBody, CloseoutOut, CreateTaskBody, EnRouteBody,
+    ScheduleTaskBody, TaskListItem, TaskListResponse, TaskOut, RejectAllOut,
 )
 
 _FOLLOW_UP_DAYS = 14
@@ -183,6 +183,97 @@ def assign_task(conn, task_id: int, body: AssignTaskBody, user: CurrentUser) -> 
 def schedule_task(conn, task_id: int, body: ScheduleTaskBody, user: CurrentUser) -> TaskOut:
     task = _get_editable(conn, task_id)
     return _apply(conn, task, user, body.justification, "task_schedule", due_at=body.due_at)
+
+
+# ── AI proposals: accept / reject ──────────────────────────────────────────────
+
+def _lock_call_for_proposals(conn, request_id: int) -> dict:
+    req = request_repo.lock_request(conn, request_id)
+    if req is None:
+        raise NotFoundError(f"Request {request_id} not found")
+    if req["status"] == "closed":
+        raise RequestClosedError()
+    # Proposals live on triage_proposal calls and on open calls that got late ones (addition).
+    if req["status"] not in ("triage_proposal", "open"):
+        raise ConflictError(f"Call is {req['status']} — no proposals to decide")
+    return req
+
+
+def _set_request_status(conn, req: dict, target: str, user: CurrentUser) -> None:
+    transition(req["status"], target)
+    request_repo.update_field(conn, req["request_id"], "status", target)
+    request_repo.write_provenance(
+        conn, target_table="maintenance_request", target_pk=str(req["request_id"]),
+        target_column="status", employee_id=user.employee_id,
+        previous_value=req["status"], new_value=target,
+    )
+    req["status"] = target
+
+
+def _accept_rows(conn, req: dict, rows: list[dict], user: CurrentUser,
+                 description: str | None = None) -> list[TaskOut]:
+    out = []
+    for row in rows:
+        new_desc = description if description and description != row["description"] else None
+        task = repo.accept_task(conn, row["task_id"], new_desc)
+        if new_desc is not None:
+            _provenance(conn, row["task_id"], "description", user, row["description"], new_desc)
+        _provenance(conn, row["task_id"], "accepted_at", user, None, task["accepted_at"])
+        out.append(TaskOut(**task))
+    if req["status"] == "triage_proposal" and rows:
+        _set_request_status(conn, req, "open", user)
+    return out
+
+
+def accept_task(conn, task_id: int, body: AcceptTaskBody, user: CurrentUser) -> TaskOut:
+    """Accept one AI proposal (optionally re-worded). First accept opens a triage_proposal call."""
+    task = repo.get_task(conn, task_id)
+    if task is None:
+        raise NotFoundError(f"Task {task_id} not found")
+    req = _lock_call_for_proposals(conn, task["request_id"])
+    rows = repo.lock_proposals(conn, task["request_id"], task_id)
+    if not rows:
+        raise ConflictError("Task is already accepted")
+    return _accept_rows(conn, req, rows, user, body.description)[0]
+
+
+def accept_all(conn, request_id: int, user: CurrentUser) -> list[TaskOut]:
+    req = _lock_call_for_proposals(conn, request_id)
+    rows = repo.lock_proposals(conn, request_id)
+    if not rows:
+        raise ConflictError("No AI proposals to accept")
+    return _accept_rows(conn, req, rows, user)
+
+
+def _reject_rows(conn, req: dict, rows: list[dict], user: CurrentUser) -> None:
+    for row in rows:
+        repo.delete_proposal(conn, row["task_id"])
+        _provenance(conn, row["task_id"], "description", user, row["description"], None)
+    # Nothing accepted and nothing left to decide → the dispatcher's verdict is
+    # « the AI got it wrong »: back to clarify, never an empty proposal.
+    if req["status"] == "triage_proposal" and repo.count_tasks(conn, req["request_id"]) == 0:
+        _set_request_status(conn, req, "triage_clarify", user)
+
+
+def reject_task(conn, task_id: int, user: CurrentUser) -> None:
+    """Delete one AI proposal. Accepted tasks are never deleted."""
+    task = repo.get_task(conn, task_id)
+    if task is None:
+        raise NotFoundError(f"Task {task_id} not found")
+    req = _lock_call_for_proposals(conn, task["request_id"])
+    rows = repo.lock_proposals(conn, task["request_id"], task_id)
+    if not rows:
+        raise ConflictError("An accepted task cannot be rejected")
+    _reject_rows(conn, req, rows, user)
+
+
+def reject_all(conn, request_id: int, user: CurrentUser) -> RejectAllOut:
+    req = _lock_call_for_proposals(conn, request_id)
+    rows = repo.lock_proposals(conn, request_id)
+    if not rows:
+        raise ConflictError("No AI proposals to reject")
+    _reject_rows(conn, req, rows, user)
+    return RejectAllOut(request_id=request_id, status=req["status"], rejected=len(rows))
 
 
 # ── Fieldwork: en route → arrived → closeout ───────────────────────────────────

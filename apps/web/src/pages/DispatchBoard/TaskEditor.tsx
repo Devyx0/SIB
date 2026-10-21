@@ -1,7 +1,9 @@
 /** Call detail: the call's tasks (assign / schedule) and « Nouvelle tâche ». */
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ApiError, assignTask, createTask, scheduleTask } from '../../api/client';
+import {
+  ApiError, acceptAllTasks, acceptTask, assignTask, createTask, rejectAllTasks, rejectTask, scheduleTask,
+} from '../../api/client';
 import type { EmployeeLookup, TaskOut } from '../../api/schema.d.ts';
 import { useJustify, type JustifyRequest } from '../../components/Justification';
 import { roleLabel, statusLabel, t, type Lang } from '../../i18n';
@@ -43,6 +45,8 @@ export default function TaskEditor({
   const [newDay, setNewDay] = useState('');
   const [parent, setParent] = useState<TaskOut | null>(null);
   const [busy, setBusy] = useState(false);
+  // Re-worded proposals, keyed by task id; untouched proposals are accepted as written.
+  const [wording, setWording] = useState<Record<number, string>>({});
 
   useEffect(() => {
     if (suggestedEmployeeId != null) setNewAssignee(suggestedEmployeeId);
@@ -96,6 +100,40 @@ export default function TaskEditor({
     } finally {
       setBusy(false);
     }
+  }
+
+  // Accepting / rejecting AI proposals needs no justification: the dispatcher
+  // is confirming or discarding a draft, not overriding a decision.
+  async function decideProposals(fn: () => Promise<unknown>) {
+    setBusy(true);
+    try {
+      await fn();
+      await refresh();
+    } catch (err) {
+      report(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const proposalText = (p: TaskOut) => wording[p.task_id] ?? p.description;
+  const anyReworded = proposals.some((p) => proposalText(p).trim() !== p.description);
+
+  function acceptProposal(p: TaskOut) {
+    const text = proposalText(p).trim();
+    if (!text) return;
+    return decideProposals(() => acceptTask(p.task_id, text !== p.description ? { description: text } : {}));
+  }
+
+  function rejectAllProposals() {
+    // With nothing accepted yet, this sends the call back to clarify.
+    const backToClarify = accepted.length === 0;
+    const msg = backToClarify
+      ? t(lang, "Rejeter toutes les propositions renvoie l'appel en clarification. Continuer ?",
+        'Rejecting every proposal sends the call back to clarification. Continue?')
+      : t(lang, 'Rejeter toutes les propositions ?', 'Reject all proposals?');
+    if (!window.confirm(msg)) return;
+    return decideProposals(() => rejectAllTasks(requestId));
   }
 
   async function saveTask(task: TaskOut) {
@@ -248,10 +286,65 @@ export default function TaskEditor({
         );
       })}
 
-      {proposals.length > 0 && (
+      {proposals.length > 0 && !isClosed && (
         <div className={styles.editField} data-testid="task-proposals">
           <span className={styles.editLabel}>{t(lang, 'Propositions IA (à accepter)', 'AI proposals (to accept)')}</span>
-          {proposals.map((p) => <p key={p.task_id} className={styles.prose}>{p.description}</p>)}
+          {proposals.map((p) => (
+            <div key={p.task_id} className={styles.editField} data-testid={`proposal-${p.task_id}`}>
+              <textarea
+                className={styles.editTextarea}
+                value={proposalText(p)}
+                rows={2}
+                disabled={busy}
+                aria-label={t(lang, 'Proposition IA', 'AI proposal')}
+                data-testid={`proposal-desc-${p.task_id}`}
+                onChange={(e) => setWording((prev) => ({ ...prev, [p.task_id]: e.target.value }))}
+              />
+              <button
+                type="button"
+                className={styles.applyBtn}
+                disabled={busy || !proposalText(p).trim()}
+                onClick={() => acceptProposal(p)}
+                data-testid={`proposal-accept-${p.task_id}`}
+              >
+                {t(lang, 'Accepter', 'Accept')}
+              </button>
+              <button
+                type="button"
+                className={styles.discardBtn}
+                disabled={busy}
+                onClick={() => decideProposals(() => rejectTask(p.task_id))}
+                data-testid={`proposal-reject-${p.task_id}`}
+              >
+                {t(lang, 'Rejeter', 'Reject')}
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className={styles.applyBtn}
+            disabled={busy || anyReworded}
+            title={anyReworded ? t(lang, 'Acceptez les propositions modifiées une à une', 'Accept edited proposals one by one') : undefined}
+            onClick={() => decideProposals(() => acceptAllTasks(requestId))}
+            data-testid="proposals-accept-all"
+          >
+            {t(lang, 'Tout accepter', 'Accept all')}
+          </button>
+          <button
+            type="button"
+            className={styles.discardBtn}
+            disabled={busy}
+            onClick={rejectAllProposals}
+            data-testid="proposals-reject-all"
+          >
+            {t(lang, 'Tout rejeter', 'Reject all')}
+          </button>
+          {callStatus === 'triage_proposal' && (
+            <p className={styles.closedNotice} data-testid="proposals-add-hint">
+              {t(lang, 'Acceptez une proposition pour pouvoir ajouter vos propres tâches.',
+                'Accept a proposal to be able to add your own tasks.')}
+            </p>
+          )}
         </div>
       )}
 

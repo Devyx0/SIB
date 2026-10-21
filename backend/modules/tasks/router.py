@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query, Response
 
 from backend.core.db import get_db_conn
 from backend.core.exceptions import ValidationFailed
@@ -13,7 +13,7 @@ from backend.core.security import CurrentUser
 
 from . import service
 from .schemas import (
-    ArrivedBody, AssignTaskBody, CloseoutBody, CloseoutOut, CreateTaskBody, EnRouteBody,
+    AcceptTaskBody, ArrivedBody, AssignTaskBody, CloseoutBody, CloseoutOut, CreateTaskBody, EnRouteBody,
     ScheduleTaskBody, TaskListResponse, TaskOut, TaskStatusValue,
 )
 
@@ -62,6 +62,20 @@ def task_list(
 @router.post("", operation_id="task_create", response_model=TaskOut)
 def task_create(body: CreateTaskBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> TaskOut:
     return service.create_task(conn, body, user)
+
+
+@router.post("/{task_id}/accept", operation_id="task_accept", response_model=TaskOut)
+def task_accept(
+    task_id: int, body: AcceptTaskBody = Body(default_factory=AcceptTaskBody),
+    user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn),
+) -> TaskOut:
+    return service.accept_task(conn, task_id, body, user)
+
+
+@router.delete("/{task_id}", operation_id="task_reject", status_code=204)
+def task_reject(task_id: int, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> Response:
+    service.reject_task(conn, task_id, user)
+    return Response(status_code=204)
 
 
 @router.post("/{task_id}/assign", operation_id="task_assign", response_model=TaskOut)

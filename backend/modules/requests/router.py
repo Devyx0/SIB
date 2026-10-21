@@ -13,6 +13,8 @@ from backend.core.security import CurrentUser
 
 from . import repository as repo
 from . import service
+from backend.modules.tasks import service as task_service
+from backend.modules.tasks.schemas import RejectAllOut, TaskOut
 from .schemas import (
     AddLogBody,
     AssignBody,
@@ -198,6 +200,22 @@ def request_trigger_triage(
     service.action_trigger_triage(conn, request_id)
     background_tasks.add_task(_run_triage_background, request_id, body.lang)
     return {"request_id": request_id, "status": "triage_pending"}
+
+
+@router.post("/{request_id}/tasks/accept-all", operation_id="request_tasks_accept_all",
+             response_model=list[TaskOut])
+def request_tasks_accept_all(
+    request_id: int, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn),
+) -> list[TaskOut]:
+    return task_service.accept_all(conn, request_id, user)
+
+
+@router.post("/{request_id}/tasks/reject-all", operation_id="request_tasks_reject_all",
+             response_model=RejectAllOut)
+def request_tasks_reject_all(
+    request_id: int, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn),
+) -> RejectAllOut:
+    return task_service.reject_all(conn, request_id, user)
 
 
 @router.get(

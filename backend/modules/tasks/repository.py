@@ -154,6 +154,44 @@ def lock_accepted_task(conn, task_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+def lock_proposals(conn, request_id: int, task_id: int | None = None) -> list[dict]:
+    """SELECT … FOR UPDATE the call's un-accepted proposals (one task, or all)."""
+    rows = conn.execute(
+        f"{_TASK_SELECT} WHERE request_id = %(request_id)s AND accepted_at IS NULL "
+        "AND (%(task_id)s::int IS NULL OR task_id = %(task_id)s) "
+        "ORDER BY sort_order, task_id FOR UPDATE",
+        {"request_id": request_id, "task_id": task_id},
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def accept_task(conn, task_id: int, description: str | None = None) -> dict:
+    conn.execute(
+        """
+        UPDATE dispatch_task
+        SET accepted_at = now(), description = COALESCE(%(description)s, description),
+            updated_at = now()
+        WHERE task_id = %(task_id)s AND accepted_at IS NULL
+        """,
+        {"task_id": task_id, "description": description},
+    )
+    return get_task(conn, task_id)
+
+
+def delete_proposal(conn, task_id: int) -> None:
+    """Hard-delete an un-accepted proposal (an accepted task is never deleted)."""
+    conn.execute(
+        "DELETE FROM dispatch_task WHERE task_id = %(task_id)s AND accepted_at IS NULL",
+        {"task_id": task_id},
+    )
+
+
+def count_tasks(conn, request_id: int) -> int:
+    return conn.execute(
+        "SELECT count(*) AS n FROM dispatch_task WHERE request_id = %(r)s", {"r": request_id},
+    ).fetchone()["n"]
+
+
 def is_assignee_on_request(conn, request_id: int, employee_id: int) -> bool:
     """True if the employee is assigned to any accepted task of the call."""
     row = conn.execute(

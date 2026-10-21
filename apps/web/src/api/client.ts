@@ -175,6 +175,25 @@ export function createTask(body: {
   return apiPost('/api/v1/tasks', body);
 }
 
+/** Accept an AI proposal; `description` re-words it. The first accept opens the call. */
+export function acceptTask(taskId: number, body: { description?: string } = {}): Promise<TaskOut> {
+  return apiPost(`/api/v1/tasks/${taskId}/accept`, body);
+}
+
+/** Reject (delete) an AI proposal. Accepted tasks are refused (409). */
+export function rejectTask(taskId: number): Promise<void> {
+  return apiDelete(`/api/v1/tasks/${taskId}`);
+}
+
+export function acceptAllTasks(requestId: number): Promise<TaskOut[]> {
+  return apiPost(`/api/v1/requests/${requestId}/tasks/accept-all`, {});
+}
+
+/** With nothing accepted, the call goes back to `triage_clarify`. */
+export function rejectAllTasks(requestId: number): Promise<{ request_id: number; status: string; rejected: number }> {
+  return apiPost(`/api/v1/requests/${requestId}/tasks/reject-all`, {});
+}
+
 /** null unassigns (scheduled → queued). */
 export function assignTask(taskId: number, body: { assigned_employee_id: number | null; justification: Justification }): Promise<TaskOut> {
   return apiPost(`/api/v1/tasks/${taskId}/assign`, body);
