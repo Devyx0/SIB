@@ -35,6 +35,11 @@ OUTPUT_SCHEMA = {
     "vendor_id": "int | null",
     "synergy_request_ids": "list[int]",
     "other_notes": "str | null",
+    "recommended_tasks": (
+        "list[{description: str, suggested_trade?: str, urgency_tier?: URGENT|Intermédiaire|Faible|null, "
+        "vendor_id?: int|null, subcontractor_name?: str|null, notes?: str|null}] "
+        "— ≥1 required when verdict is single"
+    ),
 }
 
 _FINANCIAL_TERMS = re.compile(
@@ -107,6 +112,39 @@ def _vendor_kind(name: str) -> str | None:
     return "other"
 
 
+_TASK_TEXT_KEYS = ("description", "suggested_trade", "notes")
+
+
+def _recommended_tasks(parsed: dict) -> list:
+    """The raw recommended_tasks value as a list (anything else counts as none)."""
+    tasks = parsed.get("recommended_tasks")
+    return tasks if isinstance(tasks, list) else []
+
+
+def _check_recommended_tasks(parsed: dict) -> str | None:
+    """Shape check; returns a rejection detail or None. Absent/null is legal here
+    (only `single` requires tasks — gate 7)."""
+    raw = parsed.get("recommended_tasks")
+    if raw is None:
+        return None
+    if not isinstance(raw, list):
+        return "recommended_tasks must be a list"
+    for i, t in enumerate(raw):
+        if not isinstance(t, dict):
+            return f"recommended_tasks[{i}] must be an object"
+        desc = t.get("description")
+        if not isinstance(desc, str) or not desc.strip():
+            return f"recommended_tasks[{i}].description is required"
+        for key in ("suggested_trade", "subcontractor_name", "notes"):
+            v = t.get(key)
+            if v is not None and not isinstance(v, str):
+                return f"recommended_tasks[{i}].{key} must be a string or null"
+        vid = t.get("vendor_id")
+        if vid is not None and (not isinstance(vid, int) or isinstance(vid, bool)):
+            return f"recommended_tasks[{i}].vendor_id must be an integer or null"
+    return None
+
+
 def _text_fields(parsed: dict) -> list[str]:
     out = []
     for key in ("title", "entry_permission", "other_notes"):
@@ -116,6 +154,9 @@ def _text_fields(parsed: dict) -> list[str]:
     for p in parsed.get("problems", []):
         if isinstance(p, str):
             out.append(p)
+    for t in _recommended_tasks(parsed):
+        if isinstance(t, dict):
+            out.extend(t[k] for k in _TASK_TEXT_KEYS if isinstance(t.get(k), str))
     return out
 
 
@@ -147,6 +188,9 @@ def validate(
     # Gate 1 — no assignee field (rule 20/37)
     if any("assign" in k.lower() for k in parsed):
         return "rejected_no_assignee_field", "Response contains an assignee field"
+    for t in _recommended_tasks(parsed):
+        if isinstance(t, dict) and any("assign" in k.lower() for k in t):
+            return "rejected_no_assignee_field", "recommended_tasks entry contains an assignee field"
 
     urgency = parsed.get("urgency_tier")
     if urgency not in _URGENCY_VALUES:
@@ -154,6 +198,17 @@ def validate(
             "rejected_invalid_urgency",
             f"urgency_tier must be URGENT, Intermédiaire, Faible, or null, got {urgency!r}",
         )
+
+    bad_tasks = _check_recommended_tasks(parsed)
+    if bad_tasks:
+        return "rejected_invalid_recommended_tasks", bad_tasks
+    for i, t in enumerate(_recommended_tasks(parsed)):
+        t_urgency = t.get("urgency_tier")
+        if t_urgency not in _URGENCY_VALUES:
+            return (
+                "rejected_invalid_urgency",
+                f"recommended_tasks[{i}].urgency_tier must be URGENT, Intermédiaire, Faible, or null, got {t_urgency!r}",
+            )
 
     text_fields = _text_fields(parsed)
 
@@ -253,6 +308,8 @@ def validate(
     if verdict == "single":
         if parsed.get("duplicate_of_request_id") is not None or parsed.get("addition_to_request_id") is not None:
             return "rejected_invalid_verdict_refs", "single verdict must not set duplicate/addition refs"
+        if not _recommended_tasks(parsed):
+            return "rejected_missing_recommended_tasks", "single verdict requires at least one recommended task"
     elif verdict == "duplicate":
         ref_id = parsed.get("duplicate_of_request_id")
         if not isinstance(ref_id, int):
@@ -283,6 +340,16 @@ def validate(
     else:
         return "rejected_invalid_verdict", f"verdict must be single|duplicate|addition, got {verdict!r}"
 
+    # Gate 7b — task vendor_ids must exist (a bad FK would abort the write path)
+    if conn is not None:
+        vendor_ids = [
+            t["vendor_id"] for t in _recommended_tasks(parsed) if t.get("vendor_id") is not None
+        ]
+        if vendor_ids:
+            ok, detail = _check_vendors_exist(conn, vendor_ids)
+            if not ok:
+                return "rejected_invalid_recommended_tasks", detail
+
     # Gate 8 — synergy / peer refs must not cite §4.2 mechanically excluded titles
     if conn is not None:
         cite_ids: list[int] = []
@@ -299,6 +366,23 @@ def validate(
                 return "rejected_excluded_candidate", detail
 
     return "accepted", None
+
+
+def _check_vendors_exist(conn, vendor_ids: list[int]) -> tuple[bool, str | None]:
+    uniq = list(dict.fromkeys(vendor_ids))
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT vendor_id FROM vendor_contact WHERE vendor_id = ANY(%s)", (uniq,),
+            )
+            rows = cur.fetchall()
+    except Exception as exc:
+        return False, f"DB lookup failed: {exc}"
+    found = {(r["vendor_id"] if isinstance(r, dict) else r[0]) for r in rows}
+    missing = [v for v in uniq if v not in found]
+    if missing:
+        return False, f"recommended_tasks vendor_id {missing!r} not found"
+    return True, None
 
 
 def _check_not_mechanically_excluded(conn, request_ids: list[int]) -> tuple[bool, str | None]:
@@ -414,6 +498,7 @@ if __name__ == "__main__":
         "time_estimate_bucket": "UNDER_30_MIN", "delegable_status": "YES",
         "report_status": "CAN_WAIT", "routing_rule": "A1", "subcontractor_name": None,
         "vendor_id": None, "synergy_request_ids": [], "other_notes": None,
+        "recommended_tasks": [{"description": "Réparer le robinet"}],
     }
 
     def chk(label, d, expected, conn=None, rid=1):
@@ -424,6 +509,7 @@ if __name__ == "__main__":
 
     chk("clean response",        _BASE, "accepted")
     chk("heating failure flag",  {**_BASE, "heating_failure": True}, "accepted")
+    chk("single without tasks",  {**_BASE, "recommended_tasks": []}, "rejected_missing_recommended_tasks")
     chk("assignee field",        {**_BASE, "assignee": "Jean Tremblay"}, "rejected_no_assignee_field")
     chk("currency in problems",  {**_BASE, "problems": ["Loyer 500$ impayé"]}, "rejected_financial_content_problems")
     # Gate 3 — financial terms

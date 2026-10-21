@@ -2,7 +2,8 @@
 Triage service — wires context_builder → system_prompt → Anthropic API → output_contract.
 
 Status machine:
-    intake_received → triage_pending → triage_proposal → triaged
+    intake_received → triage_pending → triage_proposal → open   (single + recommended_tasks[]: proposals written)
+                                    ↘ triaged           (duplicate / merged addition / no tasks)
                                     ↘ triage_clarify  (human input required, NO auto-retry)
                                     ↘ triage_failed   (API/gate failure, auto-retry ok)
 
@@ -36,6 +37,7 @@ from .system_prompt import DOCUMENTS_HASH, build_system_prompt
 
 _MODEL = os.getenv("TRIAGE_MODEL", "claude-sonnet-4-6")
 _MAX_RETRIES = 3
+_MAX_TOKENS = 2048  # call fields + recommended_tasks[] outgrow 1024
 _ABANDONED_MINUTES = 10
 
 
@@ -300,8 +302,44 @@ def _write_triage_provenance(cur, request_id: int, parsed: dict,
 _EXCLUSIVE_ROUTING = frozenset({"A1", "A2", "A3", "A3b", "A4"})
 
 
-def _merge_addition_into_peer(cur, request_id: int, peer_id: int, parsed: dict) -> None:
-    """Append this call's problems onto the open peer, then close this request as merged."""
+def _write_proposal_tasks(cur, request_id: int, tasks: list[dict]) -> None:
+    """Insert AI proposals (accepted_at NULL, source ai_recommended) under a call.
+
+    Raw cursor SQL rather than tasks.repository.insert_task: triage runs on a
+    psycopg2 connection, the repository needs psycopg3. No assignee, no due date
+    (rule 37) — the dispatcher decides both on accept. Earlier un-accepted AI
+    proposals for the call are replaced so a re-triage never stacks duplicates.
+    """
+    cur.execute(
+        "DELETE FROM dispatch_task "
+        "WHERE request_id = %s AND source = 'ai_recommended' AND accepted_at IS NULL",
+        (request_id,),
+    )
+    cur.execute(
+        "SELECT COALESCE(MAX(sort_order) + 1, 0) FROM dispatch_task WHERE request_id = %s",
+        (request_id,),
+    )
+    base = cur.fetchone()[0]
+    for i, t in enumerate(tasks):
+        description = t["description"].strip()
+        if (t.get("notes") or "").strip():
+            description += "\n" + t["notes"].strip()
+        cur.execute(
+            """
+            INSERT INTO dispatch_task
+                (request_id, description, urgency_tier, vendor_id,
+                 subcontractor_name, source, accepted_at, sort_order)
+            VALUES (%s, %s, %s, %s, %s, 'ai_recommended', NULL, %s)
+            """,
+            (request_id, description, t.get("urgency_tier"), t.get("vendor_id"),
+             t.get("subcontractor_name"), base + i),
+        )
+
+
+def _merge_addition_into_peer(cur, request_id: int, peer_id: int, parsed: dict) -> bool:
+    """Append this call's problems onto the open peer, then close this request as merged.
+
+    Returns False when the peer was not updated (missing or already closed)."""
     new_problems = parsed.get("problems") or []
     bullet = "\n".join(f"- {p}" for p in new_problems) if new_problems else None
     note = (
@@ -324,12 +362,14 @@ def _merge_addition_into_peer(cur, request_id: int, peer_id: int, parsed: dict) 
         """,
         (bullet or note, bullet or note, note, note, peer_id),
     )
+    peer_updated = cur.rowcount > 0
     # Child is kept for audit but closed so it isn't dispatched separately.
     merge_note = f"Fusionné dans l'appel ouvert #{peer_id} (ajout — même unité, problème différent)."
     if parsed.get("other_notes"):
         parsed["other_notes"] = f"{parsed['other_notes']}\n{merge_note}"
     else:
         parsed["other_notes"] = merge_note
+    return peer_updated
 
 
 def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> None:
@@ -345,10 +385,15 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
         parsed["addition_to_request_id"] = None
 
     merged = False
+    peer_updated = False
     add_id = parsed.get("addition_to_request_id")
     if parsed.get("verdict") == "addition" and isinstance(add_id, int):
-        _merge_addition_into_peer(cur, request_id, add_id, parsed)
+        peer_updated = _merge_addition_into_peer(cur, request_id, add_id, parsed)
         merged = True
+
+    # Tasks proposed for this call (single) or its peer (addition); never on a duplicate.
+    tasks = [t for t in (parsed.get("recommended_tasks") or []) if isinstance(t, dict)]
+    proposing = parsed.get("verdict") == "single" and bool(tasks)
 
     problems_text = None
     if parsed.get("problems"):
@@ -358,7 +403,7 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
     from .calendar_route import infer_source_calendar_from_cur
     cal = infer_source_calendar_from_cur(cur, request_id)
 
-    status = "closed" if merged else "triaged"
+    status = "closed" if merged else "triage_proposal" if proposing else "triaged"
     cur.execute(
         """
         UPDATE maintenance_request SET
@@ -415,6 +460,11 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
             request_id,
         )
         return
+    if proposing:
+        _write_proposal_tasks(cur, request_id, tasks)
+    elif merged and peer_updated and tasks:
+        # Mid-life proposals: the peer keeps its status (not bounced to triage_proposal).
+        _write_proposal_tasks(cur, add_id, tasks)
     if old_row is not None:
         _write_triage_provenance(cur, request_id, parsed, model_version, old_row)
 
@@ -593,7 +643,7 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
         try:
             response = client.messages.create(
                 model=model,
-                max_tokens=1024,
+                max_tokens=_MAX_TOKENS,
                 system=system_blocks,
                 messages=[{"role": "user", "content": user_message}],
             )

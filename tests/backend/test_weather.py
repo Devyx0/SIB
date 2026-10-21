@@ -489,6 +489,7 @@ _MODEL_JSON = {
     "time_estimate_bucket": "H1_TO_2H", "delegable_status": "NO",
     "report_status": "CANNOT_WAIT", "routing_rule": "A0", "subcontractor_name": None,
     "vendor_id": None, "synergy_request_ids": [], "other_notes": None,
+    "recommended_tasks": [{"description": "Diagnostiquer le chauffage"}],
 }
 
 
@@ -544,7 +545,7 @@ def test_triage_run_applies_weather_escalation(db_conn, mkreq, weather_on, esc_c
                 [rid],
             )
             status, urgency, notes = cur.fetchone()
-        assert status == "triaged"
+        assert status == "triage_proposal"
         assert urgency == "URGENT"
         assert "1864" in notes
         assert len(_eval_rows(db_conn, rid)) == 1
@@ -552,6 +553,7 @@ def test_triage_run_applies_weather_escalation(db_conn, mkreq, weather_on, esc_c
         db_conn.rollback()  # drop uncommitted weather rows before deleting the request
         if rid is not None:
             with c2.cursor() as cur:
+                cur.execute("DELETE FROM dispatch_task WHERE request_id = %s", [rid])
                 cur.execute("DELETE FROM triage_log WHERE request_id = %s", [rid])
                 cur.execute("DELETE FROM data_provenance WHERE target_table = 'maintenance_request' AND target_pk = %s", [str(rid)])
                 cur.execute("DELETE FROM maintenance_request WHERE request_id = %s", [rid])
