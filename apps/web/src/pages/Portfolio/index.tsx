@@ -410,9 +410,9 @@ function BuildingView({ lang }: { lang: Lang }) {
                 <th className={styles.hideNarrow}>{t(lang, 'Adresse', 'Address')}</th>
                 <th>{t(lang, 'Grandeur', 'Size')}</th>
                 <th>{t(lang, 'Locataire', 'Tenant')}</th>
-                <th className={`${styles.num} ${styles.fit}`}>{t(lang, 'Occupants', 'Occupants')}</th>
+                <th className={`${styles.num} ${styles.fit} ${styles.hideNarrow}`}>{t(lang, 'Occupants', 'Occupants')}</th>
                 <th>{t(lang, 'Bail', 'Lease')}</th>
-                <th className={styles.fit}><span className={styles.srOnly}>{t(lang, 'Actions', 'Actions')}</span></th>
+                <th className={`${styles.fit} ${styles.hideNarrow}`}><span className={styles.srOnly}>{t(lang, 'Actions', 'Actions')}</span></th>
               </tr>
             </thead>
             <tbody>
@@ -426,9 +426,9 @@ function BuildingView({ lang }: { lang: Lang }) {
                   <td>{u.tenant_names.length > 0
                     ? u.tenant_names.join(', ')
                     : <span className={styles.vacant}>{t(lang, 'Aucun locataire', 'No tenant')}</span>}</td>
-                  <td className={`${styles.num} ${styles.fit}`}>{u.occupant_count}</td>
+                  <td className={`${styles.num} ${styles.fit} ${styles.hideNarrow}`}>{u.occupant_count}</td>
                   <td className={styles.nowrap}>{u.lease_statut ?? (u.occupant_count > 0 ? t(lang, 'En cours', 'Current') : '—')}</td>
-                  <td className={`${styles.fit} ${styles.rowActions}`} onClick={(e) => e.stopPropagation()}
+                  <td className={`${styles.fit} ${styles.rowActions} ${styles.hideNarrow}`} onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}>
                     <Link to={portfolioPath.unit(u.unit_id)} className={styles.toolBtn}
                           aria-label={t(lang, `Voir le logement ${u.numero_appartement ?? ''}`, `View unit ${u.numero_appartement ?? ''}`)}

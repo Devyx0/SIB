@@ -1,6 +1,10 @@
+/* flex-shrink: 0 — the app's main area is a column flexbox that scrolls; the
+   page must grow with its content, not be squeezed to the screen height
+   (which shrank long tables like Tous les logements to a tiny inner scroller). */
 .page {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   min-height: 100%;
   padding: 24px 28px 36px;
 }
@@ -518,7 +522,11 @@ a.card:hover .arrow {
 
 /* ── Unit table ─────────────────────────────────────────────────────────── */
 
+/* position: relative anchors absolutely-positioned bits inside (the .srOnly
+   header label) so they can't escape the sideways scroller and widen the
+   whole page on phones. */
 .tableWrap {
+  position: relative;
   overflow-x: auto;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -616,9 +624,11 @@ a.card:hover .arrow {
   color: var(--color-neutral-700);
 }
 
+/* Label column capped so a long label (e.g. a paint zone · surface) can't
+   squeeze the value into a one-letter column. */
 .facts {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: fit-content(45%) minmax(0, 1fr);
   gap: 8px 14px;
   margin: 0;
   font-size: 13.5px;
@@ -1101,6 +1111,33 @@ a.card:hover .arrow {
 
 .filterField .search { flex: none; width: 260px; }
 
+/* Search + 4 dropdowns share the row evenly (search a bit wider), so they stay
+   on one line at laptop widths instead of wrapping by content width. */
+.filterGrid {
+  display: grid;
+  /* Recherche · Secteur · Projet · Grandeur · Fin de bail (short values get less). */
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.9fr);
+  gap: 10px 14px;
+  align-items: end;
+}
+
+.filterGrid .filterField { min-width: 0; }
+
+.filterGrid .filterField .search,
+.filterGrid .select {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Narrower windows: 3 + 2 rather than 4 + a lone one; phones: one per row. */
+@media (max-width: 1279px) {
+  .filterGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 639px) {
+  .filterGrid { grid-template-columns: minmax(0, 1fr); }
+}
+
 .filterLabel {
   font-size: 11.5px;
   font-weight: 600;
@@ -1257,4 +1294,10 @@ a.btn {
   /* Same street on most rows — drop it so the tenant column fits. */
   .hideNarrow { display: none; }
   .btnText { display: none; }
+  /* Tighter cells so the unit tables fit the phone without sideways scroll. */
+  .table thead th { padding: 9px 8px; letter-spacing: 0.02em; }
+  .table tbody td { padding: 10px 8px; }
+  /* Label above value: there is no room for two columns. */
+  .facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .facts dd + dt { margin-top: 8px; }
 }
