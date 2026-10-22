@@ -67,6 +67,31 @@ describe('Utilization', () => {
     expect(screen.queryByText(/8\s*[-–àa]\s*14|utilisation %|capacity/i)).toBeNull();
   });
 
+  it('phone sort menu picks the sort and the order', async () => {
+    vi.mocked(fetchUtilization).mockResolvedValue({
+      ...body,
+      rows: [body.rows[0], { ...body.rows[0], employee_id: 25, nom_employe: 'Alice Roy', calls_assigned: 9 }],
+    });
+    wrap(<Utilization lang="fr" />);
+    await screen.findByTestId('util-row-25');
+    fireEvent.click(screen.getByTestId('util-sort-btn'));
+    const menu = screen.getByTestId('util-sort-menu');
+    fireEvent.click(within(menu).getByRole('menuitemradio', { name: /Nom/ }));
+    expect(screen.queryByTestId('util-sort-menu')).toBeNull();
+    const names = () => screen.getAllByTestId(/^util-row-/).map((r) => r.getAttribute('data-testid'));
+    expect(names()).toEqual(['util-row-25', 'util-row-24']); // Alice before Test, A→Z
+    fireEvent.click(screen.getByTestId('util-sort-btn'));
+    fireEvent.click(within(screen.getByTestId('util-sort-menu')).getByRole('menuitemradio', { name: /Décroissant/ }));
+    expect(names()).toEqual(['util-row-24', 'util-row-25']);
+  });
+
+  it('phone period: the calendar button opens a range calendar', async () => {
+    wrap(<Utilization lang="fr" />);
+    await screen.findByTestId('util-table');
+    fireEvent.click(screen.getByTestId('util-cal-btn'));
+    expect(screen.getByTestId('range-calendar')).toBeTruthy();
+  });
+
   it('filters rows by employee name and sorts by a column', async () => {
     vi.mocked(fetchUtilization).mockResolvedValue({
       ...body,

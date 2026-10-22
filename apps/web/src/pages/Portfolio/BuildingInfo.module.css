@@ -3,10 +3,66 @@
   scroll-margin-top: 16px;
 }
 
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-bottom: 14px;
+}
+
 .title {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: 20px;
   letter-spacing: -0.01em;
+}
+
+/* Section jump links, with how many lines each part holds. */
+.jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.jumpLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--navy-800);
+  text-decoration: none;
+  transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+}
+
+.jumpLink:hover { background: var(--navy-50); border-color: var(--navy-300); }
+.jumpLink:focus-visible { outline: none; box-shadow: var(--ring); }
+
+.jumpCount {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--navy-100);
+  font-size: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.card { scroll-margin-top: 16px; }
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 /* One card per row: Characteristics, then Paint, then the fiche and documents. */
@@ -19,7 +75,7 @@
 
 .card {
   min-width: 0;
-  padding: 14px 16px 16px;
+  padding: 16px 20px 18px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--r-lg);
@@ -33,7 +89,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
 }
 
 .cardTitle {
@@ -47,7 +103,7 @@
 
 .hint {
   margin: 3px 0 0;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--color-neutral-600);
 }
 
@@ -196,67 +252,174 @@ textarea.input { resize: vertical; line-height: 1.45; }
 
 /* ── Characteristics ───────────────────────────────────────────────────── */
 
-.facts {
+/* Three themed columns (systems, access, building); amenities as chips below. */
+.groups {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px 28px;
+}
+
+.group {
+  min-width: 0;
+}
+
+.group + .group {
+  padding-left: 28px;
+  border-left: 1px solid var(--color-divider);
+}
+
+.groupTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--navy-800);
+}
+
+.groupIcon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-md);
+  background: var(--navy-50);
+  border: 1px solid var(--navy-100);
+  color: var(--navy-700);
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   margin: 0;
 }
 
+.fact {
+  padding: 8px 0;
+}
+
+.fact + .fact { border-top: 1px dashed var(--color-divider); }
+
 .fact dt {
-  font-size: 12px;
-  color: var(--color-neutral-600);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .fact dd {
   margin: 2px 0 0;
   font-size: 13.5px;
-  color: var(--color-text);
+  color: var(--color-neutral-700);
   overflow-wrap: anywhere;
   white-space: pre-line;
 }
 
-/* ── Paint ─────────────────────────────────────────────────────────────── */
+.amenities {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-divider);
+}
 
-.paintList {
+.amenityList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.paintRow {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 8px 0;
+/* Icon and colour together, so yes / no never rests on colour alone. */
+.amenity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 600;
+  border: 1px solid;
 }
 
-.paintRow + .paintRow { border-top: 1px solid var(--color-divider); }
-
-.paintMain {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+.amenityYes {
+  background: var(--color-success-t);
+  border-color: var(--color-success-border);
+  color: var(--color-success);
 }
 
-.paintWhere {
-  font-size: 12px;
+.amenityNo {
+  background: var(--color-bg-alt);
+  border-color: var(--color-divider);
   color: var(--color-neutral-600);
 }
 
-.paintProduct {
-  font-size: 13.5px;
+/* ── Paint ─────────────────────────────────────────────────────────────── */
+
+/* Grouped by zone; each row reads surface → product → maker. */
+.paintGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.paintZone {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--navy-800);
+}
+
+.paintCount {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--navy-100);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.paintList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-divider);
+}
+
+.paintRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 0.8fr) auto;
+  align-items: center;
+  gap: 4px 16px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.paintWhere {
+  font-size: 14px;
   font-weight: 600;
   color: var(--color-text);
   overflow-wrap: anywhere;
 }
 
-.paintMaker {
-  font-size: 12.5px;
-  color: var(--color-neutral-700);
+.paintProduct {
+  font-size: 14px;
+  color: var(--color-neutral-800);
+  overflow-wrap: anywhere;
 }
+
+.paintMaker {
+  font-size: 13px;
+  color: var(--color-neutral-600);
+}
+
+.paintRow .paintForm { grid-column: 1 / -1; margin-bottom: 0; }
 
 .paintForm {
   flex: 1;
@@ -311,16 +474,16 @@ textarea.input { resize: vertical; line-height: 1.45; }
 }
 
 .ficheRow dt {
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--color-neutral-700);
+  color: var(--color-text);
   overflow-wrap: anywhere;
 }
 
 .ficheRow dd {
   margin: 0;
   font-size: 13.5px;
-  color: var(--color-text);
+  color: var(--color-neutral-700);
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
@@ -385,15 +548,23 @@ textarea.input { resize: vertical; line-height: 1.45; }
 
 @media (max-width: 1023px) {
   .fiche { grid-template-columns: 1fr; }
+  .groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .group:nth-child(odd) { padding-left: 0; border-left: none; }
 }
 
 @media (max-width: 639px) {
   .formGrid,
-  .facts,
+  .groups,
   .paintForm,
   .docForm { grid-template-columns: 1fr; }
   .ficheRow { grid-template-columns: minmax(0, 1fr) auto; }
   .ficheRow dd { grid-column: 1; }
-  .ficheRow .rowTools { grid-column: 2; grid-row: 1; }
+  .ficheRow .rowTools { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
   .rowTools { opacity: 1; }
+  .card { padding: 14px 14px 16px; }
+  .group + .group { padding: 12px 0 0; border-left: none; border-top: 1px solid var(--color-divider); }
+  .paintRow { grid-template-columns: minmax(0, 1fr) auto; row-gap: 1px; }
+  .paintWhere, .paintProduct, .paintMaker { grid-column: 1; }
+  .paintRow .rowTools { grid-column: 2; grid-row: 1 / span 3; }
+  .paintMaker:empty { display: none; }
 }

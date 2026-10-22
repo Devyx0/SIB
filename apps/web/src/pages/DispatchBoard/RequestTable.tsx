@@ -116,7 +116,7 @@ export default function RequestTable({
       const msg = errorMsg ?? t(lang, 'Erreur lors du chargement.', 'Loading error.');
       return (
         <tr>
-          <td colSpan={colCount} className={styles.emptyState}>{msg}</td>
+          <td colSpan={colCount} className={styles.emptyState}><div className={styles.emptyInner}>{msg}</div></td>
         </tr>
       );
     }
@@ -125,14 +125,16 @@ export default function RequestTable({
       return (
         <tr>
           <td colSpan={colCount} className={styles.emptyState}>
-            <span className={styles.emptyTitle}>
-              {t(lang, 'Aucun appel dans cette plage.', 'No calls in this range.')}
-            </span>
-            <span className={styles.emptyHint}>
-              {t(lang,
-                'Élargissez la période ou retirez des filtres pour voir plus de résultats.',
-                'Widen the period or remove filters to see more results.')}
-            </span>
+            <div className={styles.emptyInner}>
+              <span className={styles.emptyTitle}>
+                {t(lang, 'Aucun appel dans cette plage.', 'No calls in this range.')}
+              </span>
+              <span className={styles.emptyHint}>
+                {t(lang,
+                  'Élargissez la période ou retirez des filtres pour voir plus de résultats.',
+                  'Widen the period or remove filters to see more results.')}
+              </span>
+            </div>
           </td>
         </tr>
       );

@@ -12,7 +12,7 @@ import Select from '../../components/Select';
 import { t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import { diff, errorText, isEmptyPatch } from './editing';
-import { matches } from './format';
+import { matches, sentenceCase } from './format';
 import { LinkOutIcon, PencilIcon, PlusIcon, TrashIcon } from './icons';
 import styles from './BuildingInfo.module.css';
 
@@ -41,6 +41,62 @@ const REFERENCE_FIELDS: { key: Ref; fr: string; en: string; kind: FieldKind }[] 
   { key: 'dogs_allowed', fr: 'Chiens permis', en: 'Dogs allowed', kind: 'bool' },
 ];
 
+/** How the read view groups the characteristics. Amenities show as yes / no chips. */
+const GROUPS: { id: string; fr: string; en: string; icon: React.ReactNode; keys: Ref[] }[] = [
+  { id: 'systems', fr: 'Systèmes', en: 'Systems', icon: <SystemsIcon />,
+    keys: ['chauffage', 'chauffage_details', 'chauffe_eau', 'systeme_incendie'] },
+  { id: 'access', fr: 'Accès', en: 'Access', icon: <KeyIcon />,
+    keys: ['boite_a_cle_ext', 'boite_a_cle_int', 'ascenseur', 'internet'] },
+  { id: 'building', fr: 'Bâtiment', en: 'Building', icon: <BuildingIcon />,
+    keys: ['property_type', 'building_structure', 'furnished'] },
+];
+const AMENITIES: Ref[] = ['piscine', 'sauna', 'gym', 'dogs_allowed'];
+
+/** « yes » / « no » / « N/A » typed into text fields read like the yes / no ones. */
+function readable(v: string, lang: Lang) {
+  const k = v.trim().toLowerCase();
+  if (k === 'yes' || k === 'oui') return t(lang, 'Oui', 'Yes');
+  if (k === 'no' || k === 'non') return t(lang, 'Non', 'No');
+  if (k === 'n/a' || k === 'na' || k === '-') return null;
+  return v;
+}
+
+function SystemsIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor"
+         strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 2.5c2 2.6 4.5 5 4.5 8.2a4.5 4.5 0 0 1-9 0c0-3.2 2.5-5.6 4.5-8.2z" />
+    </svg>
+  );
+}
+
+function KeyIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor"
+         strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="7" cy="12.5" r="3.5" /><path d="M9.5 10l7-7M14 5.5l2 2M12 7.5l1.5 1.5" />
+    </svg>
+  );
+}
+
+function BuildingIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor"
+         strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 17.5V3.5h8v14M12 8h4v9.5M2.5 17.5h15M7 6.5h2M7 9.5h2M7 12.5h2" />
+    </svg>
+  );
+}
+
+function YesNoIcon({ yes }: { yes: boolean }) {
+  return (
+    <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor"
+         strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      {yes ? <path d="M4.5 10.5l3.5 3.5 7.5-8" /> : <path d="M6 6l8 8M14 6l-8 8" />}
+    </svg>
+  );
+}
+
 const PAINT_FIELDS: { key: keyof PaintSpecFields; fr: string; en: string }[] = [
   { key: 'zone', fr: 'Zone', en: 'Area' },
   { key: 'surface_label', fr: 'Surface', en: 'Surface' },
@@ -56,6 +112,7 @@ const EMPTY_PAINT: PaintSpecFields = {
 function yesNo(v: boolean | null | undefined, lang: Lang) {
   return v == null ? null : v ? t(lang, 'Oui', 'Yes') : t(lang, 'Non', 'No');
 }
+
 
 /** Refreshes everything that shows building info after a save. */
 function useRefresh(buildingId: number) {
@@ -134,11 +191,24 @@ function Characteristics({ building, lang }: { building: PortfolioBuildingDetail
   const [draft, setDraft] = useState<BuildingReference>(building.reference);
   useEffect(() => { if (!editing) setDraft(building.reference); }, [building.reference, editing]);
 
-  const filled = REFERENCE_FIELDS.filter((f) => building.reference[f.key] != null && building.reference[f.key] !== '');
-  const show = (f: typeof REFERENCE_FIELDS[number]) => {
-    const v = building.reference[f.key];
-    return f.kind === 'bool' ? yesNo(v as boolean | null, lang) : String(v);
+  const ref = building.reference;
+  const field = (key: Ref) => REFERENCE_FIELDS.find((f) => f.key === key)!;
+  const show = (key: Ref): string | null => {
+    const v = ref[key];
+    if (v == null || v === '') return null;
+    if (key === 'ascenseur') {
+      // « Oui · 2 ascenseurs » — the count rides along with the yes.
+      const n = ref.nb_elevateurs;
+      const yn = yesNo(v as boolean, lang);
+      return v && n ? `${yn} · ${n} ${t(lang, n > 1 ? 'ascenseurs' : 'ascenseur', n > 1 ? 'elevators' : 'elevator')}` : yn;
+    }
+    return field(key).kind === 'bool' ? yesNo(v as boolean, lang) : readable(String(v), lang);
   };
+  const groups = GROUPS
+    .map((g) => ({ ...g, rows: g.keys.map((k) => ({ key: k, value: show(k) })).filter((r) => r.value) }))
+    .filter((g) => g.rows.length > 0);
+  const amenities = AMENITIES.filter((k) => ref[k] != null);
+  const filled = groups.length > 0 || amenities.length > 0;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -150,7 +220,7 @@ function Characteristics({ building, lang }: { building: PortfolioBuildingDetail
   const set = (key: Ref, value: string | number | boolean | null) => setDraft((d) => ({ ...d, [key]: value }));
 
   return (
-    <section className={styles.card} data-testid="building-characteristics">
+    <section id="bi-characteristics" className={styles.card} data-testid="building-characteristics">
       <CardHead
         title={t(lang, 'Caractéristiques', 'Characteristics')}
         action={!editing && (
@@ -189,15 +259,43 @@ function Characteristics({ building, lang }: { building: PortfolioBuildingDetail
           {error && <p className={styles.error} role="alert">{error}</p>}
           <Actions lang={lang} busy={busy} onCancel={() => setEditing(false)} />
         </form>
-      ) : filled.length > 0 ? (
-        <dl className={styles.facts}>
-          {filled.map((f) => (
-            <div key={f.key} className={styles.fact}>
-              <dt>{t(lang, f.fr, f.en)}</dt>
-              <dd>{show(f)}</dd>
+      ) : filled ? (
+        <>
+          <div className={styles.groups}>
+            {groups.map((g) => (
+              <div key={g.id} className={styles.group} data-testid={`char-group-${g.id}`}>
+                <h4 className={styles.groupTitle}><span className={styles.groupIcon}>{g.icon}</span>{t(lang, g.fr, g.en)}</h4>
+                <dl className={styles.facts}>
+                  {g.rows.map((r) => (
+                    <div key={r.key} className={styles.fact}>
+                      <dt>{t(lang, field(r.key).fr, field(r.key).en)}</dt>
+                      <dd>{r.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            ))}
+          </div>
+          {amenities.length > 0 && (
+            <div className={styles.amenities}>
+              <h4 className={styles.groupTitle}>{t(lang, 'Commodités', 'Amenities')}</h4>
+              <ul className={styles.amenityList}>
+                {amenities.map((k) => {
+                  const yes = ref[k] === true;
+                  const label = t(lang, field(k).fr, field(k).en);
+                  return (
+                    <li key={k} className={`${styles.amenity} ${yes ? styles.amenityYes : styles.amenityNo}`}
+                        data-testid={`amenity-${k}`}>
+                      <YesNoIcon yes={yes} />
+                      {label}
+                      <span className={styles.srOnly}> : {yes ? t(lang, 'oui', 'yes') : t(lang, 'non', 'no')}</span>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-          ))}
-        </dl>
+          )}
+        </>
       ) : (
         <p className={styles.empty}>{t(lang, 'Aucune caractéristique saisie.', 'No characteristics yet.')}</p>
       )}
@@ -233,6 +331,11 @@ function Paint({ building, lang }: { building: PortfolioBuildingDetail; lang: La
   const { busy, error, setError, run } = useSave(lang);
   const [editing, setEditing] = useState<number | 'new' | null>(null);
   const specs = building.paint_specs;
+  // Grouped by zone, zones in the order they first appear.
+  const zones = [...specs.reduce((m, s) => {
+    const z = s.zone?.trim() ?? '';
+    return m.set(z, [...(m.get(z) ?? []), s]);
+  }, new Map<string, PaintSpec[]>())];
 
   const start = (id: number | 'new') => { setError(null); setEditing(id); };
   const fields = (s: PaintSpec): PaintSpecFields => ({
@@ -255,7 +358,7 @@ function Paint({ building, lang }: { building: PortfolioBuildingDetail; lang: La
   }
 
   return (
-    <section className={styles.card} data-testid="building-paint">
+    <section id="bi-paint" className={styles.card} data-testid="building-paint">
       <CardHead
         title={t(lang, 'Peinture', 'Paint')}
         hint={t(lang, 'Codes et produits par zone (charte de peinture).', 'Codes and products by area (paint chart).')}
@@ -272,35 +375,41 @@ function Paint({ building, lang }: { building: PortfolioBuildingDetail; lang: La
       {specs.length === 0 && editing !== 'new' ? (
         <p className={styles.empty}>{t(lang, 'Aucune spécification de peinture.', 'No paint specification.')}</p>
       ) : (
-        <ul className={styles.paintList}>
-          {specs.map((s) => (
-            <li key={s.paint_spec_id} className={styles.paintRow} data-testid="paint-row">
-              {editing === s.paint_spec_id ? (
-                <PaintRowForm initial={fields(s)} lang={lang} busy={busy} error={error}
-                              onSave={(d) => saveEdit(s, d)} onCancel={() => setEditing(null)} />
-              ) : (
-                <>
-                  <div className={styles.paintMain}>
-                    <span className={styles.paintWhere}>
-                      {[s.zone, s.surface_label].filter(Boolean).join(' · ') || '—'}
-                    </span>
-                    <span className={styles.paintProduct}>
-                      {[s.product_interior, s.product_exterior].filter(Boolean).join(' / ') || '—'}
-                    </span>
-                    {s.manufacturer && <span className={styles.paintMaker}>{s.manufacturer}</span>}
-                  </div>
-                  <div className={styles.rowTools}>
-                    <IconButton label={t(lang, 'Modifier', 'Edit')} onClick={() => start(s.paint_spec_id)}
-                                testId="edit-paint"><PencilIcon /></IconButton>
-                    <IconButton label={t(lang, 'Supprimer', 'Delete')} onClick={() => remove(s)} danger>
-                      <TrashIcon />
-                    </IconButton>
-                  </div>
-                </>
-              )}
-            </li>
+        <div className={styles.paintGroups}>
+          {zones.map(([zone, rows]) => (
+            <section key={zone} className={styles.paintGroup}>
+              <h4 className={styles.paintZone}>
+                {zone ? sentenceCase(zone) : t(lang, 'Sans zone', 'No area')}
+                <span className={styles.paintCount}>{rows.length}</span>
+              </h4>
+              <ul className={styles.paintList}>
+                {rows.map((s) => (
+                  <li key={s.paint_spec_id} className={styles.paintRow} data-testid="paint-row">
+                    {editing === s.paint_spec_id ? (
+                      <PaintRowForm initial={fields(s)} lang={lang} busy={busy} error={error}
+                                    onSave={(d) => saveEdit(s, d)} onCancel={() => setEditing(null)} />
+                    ) : (
+                      <>
+                        <span className={styles.paintWhere}>{s.surface_label || '—'}</span>
+                        <span className={styles.paintProduct}>
+                          {[s.product_interior, s.product_exterior].filter(Boolean).join(' / ') || '—'}
+                        </span>
+                        <span className={styles.paintMaker}>{s.manufacturer ?? ''}</span>
+                        <div className={styles.rowTools}>
+                          <IconButton label={t(lang, 'Modifier', 'Edit')} onClick={() => start(s.paint_spec_id)}
+                                      testId="edit-paint"><PencilIcon /></IconButton>
+                          <IconButton label={t(lang, 'Supprimer', 'Delete')} onClick={() => remove(s)} danger>
+                            <TrashIcon />
+                          </IconButton>
+                        </div>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
       )}
       {error && editing === null && <p className={styles.error} role="alert">{error}</p>}
     </section>
@@ -357,7 +466,7 @@ function Fiche({ building, lang }: { building: PortfolioBuildingDetail; lang: La
   }
 
   return (
-    <section className={`${styles.card} ${styles.cardWide}`} data-testid="building-fiche">
+    <section id="bi-fiche" className={`${styles.card} ${styles.cardWide}`} data-testid="building-fiche">
       <CardHead
         title={t(lang, 'Fiche technique', 'Technical sheet')}
         hint={t(lang, 'Accès, emplacements, codes et notes du bâtiment.', 'Access, locations, codes and notes.')}
@@ -439,7 +548,7 @@ function Documents({ building, lang }: { building: PortfolioBuildingDetail; lang
   }
 
   return (
-    <section className={`${styles.card} ${styles.cardWide}`} data-testid="building-documents">
+    <section id="bi-documents" className={`${styles.card} ${styles.cardWide}`} data-testid="building-documents">
       <CardHead
         title={t(lang, 'Documents', 'Documents')}
         hint={t(lang, 'Plans, contrats et autres fichiers (liens).', 'Plans, contracts and other files (links).')}
@@ -499,7 +608,26 @@ export default function BuildingInfo({ building, lang }: { building: PortfolioBu
 
   return (
     <section id="fiche-technique" className={styles.wrap} aria-labelledby="building-info-title">
-      <h2 id="building-info-title" className={styles.title}>{t(lang, 'Informations du bâtiment', 'Building information')}</h2>
+      <div className={styles.titleRow}>
+        <h2 id="building-info-title" className={styles.title}>{t(lang, 'Informations du bâtiment', 'Building information')}</h2>
+        {/* Jump links: the page is long, the counts say what is in each part. */}
+        <nav className={styles.jump} aria-label={t(lang, 'Aller à une section', 'Jump to a section')} data-testid="building-info-nav">
+          {[
+            ['bi-characteristics', t(lang, 'Caractéristiques', 'Characteristics'), null],
+            ['bi-paint', t(lang, 'Peinture', 'Paint'), building.paint_specs.length],
+            ['bi-fiche', t(lang, 'Fiche technique', 'Technical sheet'), building.fiche.length],
+            ['bi-documents', t(lang, 'Documents', 'Documents'), building.documents.length],
+          ].map(([id, label, n]) => (
+            <a key={id as string} href={`#${id}`} className={styles.jumpLink}
+               onClick={(e) => {
+                 e.preventDefault();
+                 document.getElementById(id as string)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+               }}>
+              {label}{n != null && <span className={styles.jumpCount}>{n}</span>}
+            </a>
+          ))}
+        </nav>
+      </div>
       <div className={styles.grid}>
         <Characteristics building={building} lang={lang} />
         <Paint building={building} lang={lang} />

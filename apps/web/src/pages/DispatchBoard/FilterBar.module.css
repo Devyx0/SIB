@@ -37,9 +37,9 @@
 
 .input,
 .searchInput {
-  min-height: 38px;
+  min-height: 34px;
   font: inherit;
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--color-text);
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -50,7 +50,7 @@
 
 .input,
 .searchInput {
-  padding: 6px 12px;
+  padding: 5px 10px;
 }
 
 select.input,
@@ -107,8 +107,8 @@ select.input,
 .period {
   display: inline-flex;
   align-items: stretch;
-  min-height: 38px;
-  padding: 3px;
+  min-height: 34px;
+  padding: 2px;
   gap: 2px;
   border: 1px solid var(--color-border);
   border-radius: var(--r-md);
@@ -119,12 +119,12 @@ select.input,
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0 12px;
+  padding: 0 10px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   background: transparent;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--color-neutral-800);
   white-space: nowrap;
@@ -153,6 +153,11 @@ select.input,
 
 .customLabel {
   font-variant-numeric: tabular-nums;
+}
+
+/* Phones only: the calendar button has its own row there, so it says what it does. */
+.calHint {
+  display: none;
 }
 
 .calPopover {
@@ -564,6 +569,13 @@ select.input,
 }
 
 @media (max-width: 639px) {
+  /* Compact on desktop; fingers still get 40px fields on a phone. */
+  .input,
+  .searchInput,
+  .period {
+    min-height: 40px;
+  }
+
   .bar {
     margin: 10px 10px 0;
   }
@@ -592,13 +604,28 @@ select.input,
     flex-basis: 100%;
   }
 
+  /* Tout / 7 / 14 / 30 share one row; the calendar button gets its own
+     full-width row, so a picked range (« 01/11 → 20/11 ») never runs off
+     the screen. */
   .period {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     width: 100%;
   }
 
   .periodBtn {
-    flex: 1;
     justify-content: center;
+    min-height: 36px;
+    padding: 0 6px;
+    white-space: nowrap;
+  }
+
+  .calBtn {
+    grid-column: 1 / -1;
+  }
+
+  .calHint {
+    display: inline;
   }
 
   .divider {

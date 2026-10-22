@@ -75,24 +75,52 @@ describe('/tasks board', () => {
     expect(screen.getByText((c) => c.trim() === '1 tâche')).toBeTruthy();
   });
 
-  it('default date window reaches two weeks ahead (Faible AI due dates)', async () => {
+  it('opens on « Tout »: no date window, every task', async () => {
     wrap('tasks', '/tasks');
     await waitFor(() => expect(mocks.fetchTasks).toHaveBeenCalled());
-    const params = mocks.fetchTasks.mock.calls.find((c) => c[0].start_date)![0];
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
-    const end = new Date(`${today}T12:00:00`);
-    end.setDate(end.getDate() + 14);
-    const expectEnd = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
-    expect(params.end_date).toBe(expectEnd);
-    expect(params.end_date >= today).toBe(true);
+    for (const [p] of mocks.fetchTasks.mock.calls) expect(p.start_date).toBeFalsy();
+    expect(screen.getByTestId('quick-range-all').getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('the day strip narrows the due-date window to that day', async () => {
-    wrap('tasks', '/tasks?start_date=2026-09-01&end_date=2026-09-25&day=2026-09-10');
+  it('the period is the only date control (no separate day strip)', async () => {
+    wrap('tasks', '/tasks?start_date=2026-09-01&end_date=2026-09-25');
     await waitFor(() => expect(mocks.fetchTasks).toHaveBeenCalledWith(expect.objectContaining({
-      start_date: '2026-09-10', end_date: '2026-09-10',
+      start_date: '2026-09-01', end_date: '2026-09-25',
     })));
-    expect(screen.getByTestId('task-day-strip')).toBeTruthy();
+    expect(screen.getByTestId('custom-range-btn')).toBeTruthy();
+    expect(screen.queryByTestId('task-day-strip')).toBeNull();
+  });
+
+  it('« Tout » keeps undated tasks in their own group, not repeated in the table', async () => {
+    mocks.fetchTasks.mockImplementation(async () => ({
+      total: 2, items: [taskRow(1), taskRow(2, { status: 'queued', due_at: null })],
+    }));
+    wrap('tasks', '/tasks');
+    const group = await screen.findByTestId('unscheduled-group');
+    expect(within(group).getByText('Tâche 2')).toBeTruthy();
+    expect(screen.getAllByText('Tâche 2')).toHaveLength(1); // not repeated in the main table
+    for (const [p] of mocks.fetchTasks.mock.calls) expect(p.start_date).toBeFalsy();
+    expect(screen.getByTestId('quick-range-all').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('has no « Plus de colonnes » button (only triage has optional columns)', async () => {
+    wrap('tasks', '/tasks');
+    await waitFor(() => expect(mocks.fetchTasks).toHaveBeenCalled());
+    expect(screen.queryByTestId('cols-toggle')).toBeNull();
+  });
+
+  it('calendar rests the period control; back to Liste drops the week', async () => {
+    wrap('tasks', '/tasks');
+    await userEvent.click(await screen.findByTestId('tasks-view-calendar'));
+    await waitFor(() => expect(mocks.fetchTasks).toHaveBeenLastCalledWith(
+      expect.objectContaining({ start_date: expect.any(String), end_date: expect.any(String) })));
+    expect((screen.getByTestId('quick-range-7') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/flèches du calendrier/)).toBeTruthy();
+
+    await userEvent.click(screen.getByTestId('tasks-view-list'));
+    await waitFor(() => expect(mocks.fetchTasks.mock.lastCall![0].start_date).toBeFalsy());
+    expect(screen.getByTestId('quick-range-all').getAttribute('aria-pressed')).toBe('true');
+    expect((screen.getByTestId('quick-range-7') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('undated queued tasks show in « Sans date »', async () => {

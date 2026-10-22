@@ -36,3 +36,11 @@ export function plural(n: number, lang: Lang, fr: [string, string], en: [string,
   const [one, many] = lang === 'fr' ? fr : en;
   return `${n.toLocaleString(locale(lang))} ${n === 1 ? one : many}`;
 }
+
+/** « AIRS COMMUNS SS » → « Airs communs SS »: words without a vowel are
+ *  abbreviations (SS = sous-sol) and stay in capitals. */
+export function sentenceCase(v: string) {
+  const words = v.toLowerCase().split(' ').map((w) => (/[aeiouyàâéèêëîïôûù]/i.test(w) ? w : w.toUpperCase()));
+  const out = words.join(' ');
+  return out.charAt(0).toUpperCase() + out.slice(1);
+}

@@ -6,7 +6,7 @@ import type { PortfolioSearchResult } from '../../api/client';
 import { t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import { norm } from './format';
-import { portfolioPath } from './shared';
+import { portfolioPath } from './paths';
 import styles from './PortfolioSearch.module.css';
 
 // One search box for the whole portfolio: units, buildings, projects, current
@@ -177,7 +177,7 @@ export default function PortfolioSearch({ lang }: { lang: Lang }) {
         type="search"
         className={styles.input}
         value={text}
-        placeholder={t(lang, 'Adresse, logement, locataire…', 'Address, unit, tenant…')}
+        placeholder={t(lang, 'Rechercher…', 'Search…')}
         title={t(lang, 'Adresse, logement, locataire, code de peinture…',
                        'Address, unit, tenant, paint code…')}
         aria-label={t(lang, 'Rechercher dans le portfolio', 'Search the portfolio')}

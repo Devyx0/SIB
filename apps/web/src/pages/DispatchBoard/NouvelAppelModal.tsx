@@ -10,6 +10,7 @@ import type { Lang } from '../../i18n';
 import { shrinkImage } from '../../lib/shrinkImage';
 import { taxonomyElementOptions } from '../../lib/taxonomyElements';
 import styles from './NouvelAppelModal.module.css';
+import PhotoPicker, { type PickedPhoto } from '../../components/PhotoPicker';
 import Select from '../../components/Select';
 
 interface Props {
@@ -70,8 +71,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr', asPage = 
   const [problem, setProblem] = useState('');
   const [attention, setAttention] = useState('');
   // Photos of the problem (recommended): files + local previews.
-  const [photos, setPhotos] = useState<Array<{ file: File; url: string }>>([]);
-  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [photos, setPhotos] = useState<PickedPhoto[]>([]);
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -406,23 +406,6 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr', asPage = 
   }
 
   if (!open) return null;
-
-  const MAX_PHOTOS = 5;
-  function addPhotos(list: FileList | null) {
-    if (!list) return;
-    const picked = Array.from(list).filter((f) => f.type.startsWith('image/'));
-    setPhotos((prev) => [
-      ...prev,
-      ...picked.slice(0, MAX_PHOTOS - prev.length).map((file) => ({ file, url: URL.createObjectURL(file) })),
-    ]);
-    if (photoInputRef.current) photoInputRef.current.value = '';
-  }
-  function removePhoto(i: number) {
-    setPhotos((prev) => {
-      URL.revokeObjectURL(prev[i].url);
-      return prev.filter((_, j) => j !== i);
-    });
-  }
 
   // The unique number was picked from the list and filled in the address.
   const autoFilled = unitId != null && uniqueUnitNumber.trim() !== ''
@@ -860,45 +843,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr', asPage = 
                   'Aide le technicien à préparer sa visite. Jusqu’à 5 photos.',
                   'Helps the technician prepare. Up to 5 photos.')}
               </p>
-              <div className={styles.photoGrid} aria-labelledby="intake-photos-label">
-                {photos.map((p, i) => (
-                  <div key={p.url} className={styles.photoTile}>
-                    <img src={p.url} alt={t(lang, `Photo ${i + 1}`, `Photo ${i + 1}`)} />
-                    <button
-                      type="button"
-                      className={styles.photoRemove}
-                      onClick={() => removePhoto(i)}
-                      aria-label={t(lang, `Retirer la photo ${i + 1}`, `Remove photo ${i + 1}`)}
-                    >
-                      <svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                        <path d="M5 5l10 10M15 5L5 15" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-                {photos.length < MAX_PHOTOS && (
-                  <button
-                    type="button"
-                    className={styles.photoAdd}
-                    onClick={() => photoInputRef.current?.click()}
-                    data-testid="add-photo"
-                  >
-                    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" />
-                    </svg>
-                    <span>{photos.length ? t(lang, 'Ajouter', 'Add') : t(lang, 'Ajouter des photos', 'Add photos')}</span>
-                  </button>
-                )}
-              </div>
-              <input
-                ref={photoInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/*"
-                multiple
-                hidden
-                onChange={(e) => addPhotos(e.target.files)}
-                data-testid="photo-input"
-              />
+              <PhotoPicker lang={lang} photos={photos} onChange={setPhotos} labelledBy="intake-photos-label" />
             </div>
             <div className={`${styles.field} ${styles.attentionField}`}>
               <label htmlFor="attention" className={styles.label}>

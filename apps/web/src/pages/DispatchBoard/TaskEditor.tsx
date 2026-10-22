@@ -68,15 +68,47 @@ type ProposalDraft = {
 };
 
 function TechSuggestList({
-  lang, suggestions, disabled, onPick, testId,
+  lang, suggestions, disabled, onPick, testId, compact = false, selectedId = null,
 }: {
   lang: Lang;
   suggestions: TechnicianSuggestion[];
   disabled: boolean;
   onPick: (employeeId: number) => void;
   testId: string;
+  /** One line of chips (existing tasks); the full cards stay in « Nouvelle tâche ». */
+  compact?: boolean;
+  /** The task's current assignee: its chip shows as picked. */
+  selectedId?: number | null;
 }) {
   if (suggestions.length === 0) return null;
+  if (compact) {
+    return (
+      <div className={styles.suggestCompact} data-testid={testId}>
+        <span className={styles.suggestCompactLabel}>{t(lang, 'Suggéré :', 'Suggested:')}</span>
+        {suggestions.map((s) => {
+          const first = s.name.split(' ')[0];
+          const full = `${s.name}${s.is_en_route ? ` (${t(lang, 'en route', 'en route')})` : ''} — ${s.why}`;
+          return (
+            <button
+              key={s.employee_id}
+              type="button"
+              className={`${styles.suggestChip} ${selectedId === s.employee_id ? styles.suggestChipOn : ''}`}
+              disabled={disabled}
+              aria-pressed={selectedId === s.employee_id}
+              aria-label={t(lang, `Assigner à ${full}`, `Assign to ${full}`)}
+              title={full}
+              data-testid={`${testId}-${s.employee_id}`}
+              onClick={() => onPick(s.employee_id)}
+            >
+              <span className={styles.suggestChipInit}>{s.initials || first.slice(0, 2).toUpperCase()}</span>
+              {first}
+              {s.is_en_route && <span className={styles.suggestChipDot} aria-hidden="true" />}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
   return (
     <div className={styles.suggestBlock} data-testid={testId}>
       <label className={styles.editLabel}>
@@ -360,7 +392,7 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
   }
 
   return (
-    <div className={styles.actionsGrid} data-testid="tasks-section">
+    <div className={`${styles.actionsGrid} ${styles.tasksGrid}`} data-testid="tasks-section">
       {accepted.length === 0 && (
         <p className={styles.closedNotice} data-testid="no-tasks">
           {t(lang, 'Aucune tâche sur cet appel.', 'No tasks on this call.')}
@@ -373,7 +405,6 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
         const assignee = d.assignee !== undefined ? d.assignee : task.assigned_employee_id;
         const day = d.day !== undefined ? d.day : (dueDay(task.due_at) ?? '');
         const urgency = d.urgency !== undefined ? d.urgency : task.urgency_tier;
-        const sub = d.sub !== undefined ? d.sub : (task.subcontractor_name ?? '');
         const dirty = taskFieldChanges(task, d).length > 0;
         const setDraft = (patch: Draft) =>
           setDrafts((prev) => ({ ...prev, [task.task_id]: { ...prev[task.task_id], ...patch } }));
@@ -398,9 +429,11 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
             </Select>
             {editable && (
               <TechSuggestList
+                compact
                 lang={lang}
                 suggestions={suggestions}
                 disabled={busy}
+                selectedId={assignee ?? null}
                 testId={`task-suggest-${task.task_id}`}
                 onPick={(employeeId) => setDraft({ assignee: employeeId })}
               />
@@ -426,15 +459,6 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
                 <option key={String(value)} value={value ?? ''}>{label}</option>
               ))}
             </Select>
-            <label className={styles.editLabel}>{t(lang, 'Sous-traitant', 'Subcontractor')}</label>
-            <input
-              className={styles.editInput}
-              value={sub}
-              disabled={!editable || busy}
-              placeholder="—"
-              data-testid={`task-sub-${task.task_id}`}
-              onChange={(e) => setDraft({ sub: e.target.value || null })}
-            />
             {IN_PROGRESS.has(task.status) && (
               <p className={styles.closedNotice} data-testid={`task-locked-${task.task_id}`}>
                 {t(lang,
@@ -496,15 +520,6 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
                 data-testid={`proposal-desc-${p.task_id}`}
                 onChange={(e) => setProposal(p.task_id, { description: e.target.value })}
               />
-              <label className={styles.editLabel}>{t(lang, 'Sous-traitant', 'Subcontractor')}</label>
-              <input
-                className={styles.editInput}
-                value={v.subcontractor_name ?? ''}
-                disabled={busy}
-                placeholder="—"
-                data-testid={`proposal-sub-${p.task_id}`}
-                onChange={(e) => setProposal(p.task_id, { subcontractor_name: e.target.value || null })}
-              />
               <label className={styles.editLabel}>{t(lang, 'Urgence', 'Urgency')}</label>
               <Select
                 className={styles.editInput}
@@ -530,9 +545,11 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
                 {assigneeOptions(null)}
               </Select>
               <TechSuggestList
+                compact
                 lang={lang}
                 suggestions={suggestions}
                 disabled={busy}
+                selectedId={v.assignee ?? null}
                 testId={`proposal-suggest-${p.task_id}`}
                 onPick={(employeeId) => setProposal(p.task_id, { assignee: employeeId })}
               />

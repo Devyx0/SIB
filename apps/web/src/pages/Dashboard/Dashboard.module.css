@@ -128,7 +128,9 @@
   background: var(--color-accent-100);
 }
 
-.num {
+/* `.table .num` so it beats `.table td { text-align: left }` above. */
+.num,
+.table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -155,9 +157,25 @@
   font-weight: 600;
 }
 
-/* By territory: subtle dividers between the column names. */
-.territoryTable thead th + th {
+/* By territory: a line between every column, header to last row, so each
+   count sits clearly under its own heading. A tinted header and a frame
+   make it read as one grid. */
+.territoryTable {
+  border: 1px solid var(--color-divider);
+}
+
+.territoryTable th + th,
+.territoryTable td + td {
   border-left: 1px solid var(--color-divider);
+}
+
+.territoryTable thead th {
+  background: var(--color-bg-alt);
+  border-bottom-color: var(--color-border);
+}
+
+.territoryTable tbody tr:last-child td {
+  border-bottom: none;
 }
 
 @media (max-width: 639px) {

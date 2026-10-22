@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchUtilization } from '../../api/client';
 import type { UtilizationResponse } from '../../api/schema.d.ts';
@@ -6,6 +6,7 @@ import { closeoutOutcomeLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import styles from './Utilization.module.css';
 import Select from '../../components/Select';
+import RangeCalendar from '../../components/RangeCalendar';
 import ReviewsDialog from './ReviewsDialog';
 
 type Row = UtilizationResponse['rows'][number];
@@ -103,6 +104,22 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
   const [showAllReviews, setShowAllReviews] = useState(false);
   // Technician whose reviews are open in the modal.
   const [dialogFor, setDialogFor] = useState<number | null>(null);
+  // Phone: the period's calendar popover and the sort menu.
+  const [calOpen, setCalOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const calRef = useRef<HTMLDivElement>(null);
+  const sortRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!calOpen && !sortOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (calOpen && calRef.current && !calRef.current.contains(e.target as Node)) setCalOpen(false);
+      if (sortOpen && sortRef.current && !sortRef.current.contains(e.target as Node)) setSortOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setCalOpen(false); setSortOpen(false); } };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [calOpen, sortOpen]);
 
   const { data, isError, isLoading } = useQuery({
     queryKey: ['utilization', start, end],
@@ -212,6 +229,7 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
         </div>
 
         <div className={styles.controls}>
+          <div className={styles.periodRow} ref={calRef}>
           <div className={styles.presets} role="group" aria-label={t(lang, 'Période rapide', 'Quick range')}>
             {presets.map((p) => (
               <button
@@ -224,6 +242,33 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                 {p.label}
               </button>
             ))}
+            {/* Phone: the custom range opens a calendar instead of two date fields. */}
+            <button
+              type="button"
+              className={`${styles.preset} ${styles.calBtn} ${!activePreset ? styles.presetActive : ''}`}
+              aria-haspopup="dialog"
+              aria-expanded={calOpen}
+              aria-label={t(lang, `Période personnalisée : ${start} au ${end}`, `Custom range: ${start} to ${end}`)}
+              onClick={() => setCalOpen((o) => !o)}
+              data-testid="util-cal-btn"
+            >
+              <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4.5" width="14" height="12" rx="2" /><path d="M3 8.5h14M7 3v3M13 3v3" />
+              </svg>
+              {!activePreset && <span className={styles.calLabel}>{`${start.slice(8)}/${start.slice(5, 7)} → ${end.slice(8)}/${end.slice(5, 7)}`}</span>}
+            </button>
+          </div>
+          {calOpen && (
+            <div className={styles.calPopover} role="dialog" aria-label={t(lang, 'Période personnalisée', 'Custom range')}>
+              <RangeCalendar
+                lang={lang}
+                start={start}
+                end={end}
+                maxDays={92}
+                onChange={(a, b) => { setStart(a); setEnd(b); setCalOpen(false); }}
+              />
+            </div>
+          )}
           </div>
           <div className={styles.dateRange}>
             <label className={styles.srOnly} htmlFor="util-start">{t(lang, 'Du', 'From')}</label>
@@ -338,6 +383,54 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+                {/* Phone: one sort button beside the search; its menu has the options and the order. */}
+                <div className={styles.sortMenuWrap} ref={sortRef}>
+                  <button
+                    type="button"
+                    className={styles.sortIconBtn}
+                    aria-haspopup="menu"
+                    aria-expanded={sortOpen}
+                    aria-label={t(lang, 'Trier', 'Sort')}
+                    onClick={() => setSortOpen((o) => !o)}
+                    data-testid="util-sort-btn"
+                  >
+                    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M6 4v12M3 13l3 3 3-3M14 16V4M11 7l3-3 3 3" />
+                    </svg>
+                  </button>
+                  {sortOpen && (
+                    <div className={styles.sortMenu} role="menu" data-testid="util-sort-menu">
+                      <p className={styles.sortMenuLabel}>{t(lang, 'Trier par', 'Sort by')}</p>
+                      {SORT_OPTIONS.map((o) => (
+                        <button
+                          key={o.key}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={sortKey === o.key}
+                          className={`${styles.sortMenuItem} ${sortKey === o.key ? styles.sortMenuOn : ''}`}
+                          onClick={() => { changeSort(o.key); setSortOpen(false); }}
+                        >
+                          {o.label}
+                          {sortKey === o.key && <span aria-hidden="true">✓</span>}
+                        </button>
+                      ))}
+                      <div className={styles.sortMenuDir} role="group" aria-label={t(lang, 'Ordre', 'Order')}>
+                        {(['desc', 'asc'] as const).map((d) => (
+                          <button
+                            key={d}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={sortDir === d}
+                            className={`${styles.sortDirOpt} ${sortDir === d ? styles.sortDirOn : ''}`}
+                            onClick={() => { setSortDir(d); setSortOpen(false); }}
+                          >
+                            {d === 'desc' ? t(lang, '↓ Décroissant', '↓ Descending') : t(lang, '↑ Croissant', '↑ Ascending')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className={styles.sortControl}>
                   <label htmlFor="util-sort">{t(lang, 'Trier par', 'Sort by')}</label>
                   <Select
@@ -361,6 +454,16 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                   </button>
                 </div>
               </div>
+
+              {/* Phone: a compact colour key above the cards (the full one is below on desktop). */}
+              <ul className={styles.legendTop} aria-label={t(lang, 'Légende des résultats', 'Outcome legend')}>
+                {OUTCOMES.map((o) => (
+                  <li key={o.key} title={closeoutOutcomeLabel(lang, o.key)}>
+                    <span className={`${styles.dot} ${styles[o.cls]}`} aria-hidden="true" />
+                    {t(lang, o.short[0], o.short[1])}
+                  </li>
+                ))}
+              </ul>
 
               <div className={styles.tableWrap}>
                 <table className={styles.table} data-testid="util-table">
@@ -421,7 +524,7 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                             </div>
                           </th>
 
-                          <td>
+                          <td className={styles.cellCalls} data-label={t(lang, 'Appels', 'Calls')}>
                             <div className={styles.calls}>
                               <span className={styles.callsFig}>
                                 <span className={styles.big}>{r.calls_closed}</span>
@@ -438,7 +541,7 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                             </div>
                           </td>
 
-                          <td>
+                          <td className={styles.cellTime} data-label={t(lang, 'Temps', 'Time')}>
                             <div className={styles.time}>
                               <span className={styles.timeLabel}>{t(lang, 'Sur place', 'On site')}</span>
                               <div className={styles.timeBar}>
@@ -464,7 +567,7 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                             </div>
                           </td>
 
-                          <td>
+                          <td className={styles.cellOutcomes} data-label={t(lang, 'Résultats de clôture', 'Closeout outcomes')}>
                             {oTotal === 0 ? (
                               <span className={styles.muted}>{t(lang, 'Aucune clôture', 'No closeouts')}</span>
                             ) : (
@@ -493,7 +596,7 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                             )}
                           </td>
 
-                          <td>
+                          <td className={styles.cellRating} data-label={t(lang, 'Avis clients', 'Customer reviews')}>
                             {r.reviews.length === 0 ? (
                               <span className={styles.muted}>{t(lang, 'Aucun avis', 'No reviews')}</span>
                             ) : (

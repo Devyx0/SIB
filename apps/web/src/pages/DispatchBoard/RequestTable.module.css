@@ -1,5 +1,7 @@
 .wrap {
   overflow-x: auto;
+  /* Lets an empty-state message size itself to the visible width (cqw). */
+  container-type: inline-size;
   margin-top: 16px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -216,7 +218,7 @@
 }
 
 .emptyState {
-  padding: 56px 12px;
+  padding: 56px 0;
   text-align: center;
   color: var(--color-neutral-600);
   font-size: 14px;
@@ -233,6 +235,16 @@
 .emptyHint {
   display: block;
   font-size: 13px;
+}
+
+/* The table can be wider than the card (phones scroll it sideways): pin the
+   message to the card's visible width so it stays centred and readable. */
+.emptyInner {
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  width: 100cqw;
+  padding: 0 16px;
 }
 
 .dateCell {

@@ -51,6 +51,26 @@ describe('FilterBar', () => {
     vi.useRealTimers();
   });
 
+  it('triage shows the Période control with « Tout » active when no range is set', async () => {
+    const onDateRange = vi.fn();
+    render(<FilterBar {...triageProps} startDate="" endDate="" onDateRange={onDateRange} />);
+    expect(screen.getByTestId('quick-range-all').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('quick-range-7').getAttribute('aria-label')).toBe('7 derniers jours');
+    await userEvent.click(screen.getByTestId('quick-range-7'));
+    const [start, end] = onDateRange.mock.calls[0];
+    expect((Date.parse(end) - Date.parse(start)) / 86400000).toBe(6);
+    await userEvent.click(screen.getByTestId('quick-range-all'));
+    expect(onDateRange).toHaveBeenLastCalledWith('', '');
+  });
+
+  it('tasks also offers « Tout », inactive while a range is set', async () => {
+    const onDateRange = vi.fn();
+    render(<FilterBar {...defaultProps} onDateRange={onDateRange} />);
+    expect(screen.getByTestId('quick-range-all').getAttribute('aria-pressed')).toBe('false');
+    await userEvent.click(screen.getByTestId('quick-range-all'));
+    expect(onDateRange).toHaveBeenLastCalledWith('', '');
+  });
+
   it('status checkboxes live in a dropdown, hidden until opened', async () => {
     render(<FilterBar {...triageProps} />);
     expect(screen.queryByText('Reçu')).toBeNull();

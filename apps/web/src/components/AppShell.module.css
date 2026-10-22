@@ -97,23 +97,6 @@
   flex-shrink: 0;
 }
 
-.navDisabled,
-.navDisabled:hover {
-  color: var(--color-neutral-500);
-  background: transparent;
-  cursor: default;
-}
-
-/* The greyed overview items are still real links (mockup preview). */
-a.navDisabled {
-  cursor: pointer;
-}
-
-a.navDisabled:hover {
-  color: var(--color-neutral-700);
-  background: var(--color-bg-alt);
-}
-
 .navGroup {
   margin: 18px 12px 6px;
   font-size: 11px;
@@ -123,18 +106,9 @@ a.navDisabled:hover {
   color: var(--color-neutral-500);
 }
 
-.soonChip {
-  margin-left: auto;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--color-bg);
-  color: var(--color-neutral-600);
-}
-
-.burger {
+.topbar,
+.burger,
+.drawerClose {
   display: none;
 }
 
@@ -246,44 +220,120 @@ a.navDisabled:hover {
   }
 }
 
-/* Phone: sidebar becomes a slide-over behind a burger button. */
+/* Phone: a slim sticky top bar (menu button + logo); the sidebar becomes a
+   drawer with its own header and close button; the page itself scrolls, so
+   the browser's toolbars can tuck away instead of leaving dead bands. */
 @media (max-width: 639px) {
-  .sidebar {
-    transform: translateX(-100%);
-    width: min(280px, 86vw);
+  .shell {
+    flex-direction: column;
   }
-  .sidebarOpen {
-    transform: translateX(0);
-    box-shadow: var(--sh-pop);
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    height: 56px;
+    padding: 0 12px;
+    background: var(--color-surface);
+    border-top: 3px solid var(--charcoal);
+    border-bottom: 1px solid var(--color-border);
   }
+
   .burger {
     display: flex;
     align-items: center;
     justify-content: center;
-    position: fixed;
-    top: 10px;
-    left: 10px;
-    z-index: 11;
-    width: 44px;
-    height: 44px;
+    flex: none;
+    width: 40px;
+    height: 40px;
     padding: 0;
     border: 1px solid var(--color-border);
     border-radius: var(--r-md);
     background: var(--color-surface);
     color: var(--color-text);
-    box-shadow: var(--sh-raised);
+    cursor: pointer;
   }
+
+  .burger:focus-visible,
+  .drawerClose:focus-visible {
+    outline: none;
+    box-shadow: var(--ring);
+  }
+
+  .sidebar {
+    z-index: 20;
+    width: min(300px, 86vw);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.24s var(--ease-out), box-shadow 0.24s var(--ease-out), visibility 0s linear 0.24s;
+  }
+
+  .sidebarOpen {
+    transform: translateX(0);
+    visibility: visible;
+    box-shadow: var(--sh-pop);
+    transition: transform 0.24s var(--ease-out), box-shadow 0.24s var(--ease-out);
+  }
+
+  /* Drawer header: logo left, close button right. */
+  .brand {
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 12px 12px 18px;
+  }
+
+  .drawerClose {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--r-md);
+    background: var(--color-surface);
+    color: var(--color-neutral-700);
+    cursor: pointer;
+  }
+
+  .drawerClose:hover {
+    background: var(--navy-50);
+    color: var(--navy-800);
+  }
+
+  .navItem {
+    min-height: 44px;
+    font-size: 15px;
+  }
+
+  .bottom {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+
+  .langBtn,
+  .signOutBtn {
+    min-height: 44px;
+  }
+
   .overlay {
     display: block;
     position: fixed;
     inset: 0;
     background: var(--scrim);
-    z-index: 9;
+    z-index: 19;
     animation: fadeIn 0.2s var(--ease-out);
   }
+
   .main {
     margin-left: 0;
-    padding-top: 60px;
+    padding-top: 0;
+    height: auto;
+    min-height: calc(100dvh - 56px);
+    overflow: visible;
   }
 }
 

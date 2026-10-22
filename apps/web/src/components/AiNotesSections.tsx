@@ -10,6 +10,8 @@ interface Props {
   aiNextSteps?: string[] | null;
   /** When true, omit the outer card title (parent already has one). */
   embedded?: boolean;
+  /** Skip the « Résumé » bullets (the call popup's header already says it). */
+  hideSummary?: boolean;
   className?: string;
 }
 
@@ -29,9 +31,10 @@ function Section({ title, items, testId }: { title: string; items: string[]; tes
 
 /** Bullet Summary / Important notes / Next steps for AI triage output. */
 export default function AiNotesSections({
-  lang, problemSummary, otherNotes, aiImportantNotes, aiNextSteps, embedded, className,
+  lang, problemSummary, otherNotes, aiImportantNotes, aiNextSteps, embedded, className, hideSummary,
 }: Props) {
-  const sections = parseAiNotes(otherNotes, problemSummary, aiImportantNotes, aiNextSteps);
+  const parsed = parseAiNotes(otherNotes, problemSummary, aiImportantNotes, aiNextSteps);
+  const sections = hideSummary ? { ...parsed, summary: [] } : parsed;
   if (!hasAiNoteContent(sections)) return null;
 
   return (

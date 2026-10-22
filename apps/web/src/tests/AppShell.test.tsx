@@ -56,16 +56,15 @@ describe('AppShell side menu', () => {
     expect(screen.getByTestId('nav-triage')).toHaveTextContent('Triage');
     expect(screen.getByTestId('nav-tasks')).toHaveTextContent('Tâches');
     expect(screen.getByTestId('nav-nouvel-appel')).toHaveTextContent('Nouvel appel');
-    expect(screen.getByTestId('nav-apres-heures')).toHaveTextContent('Après les heures');
     expect(screen.getByText("Vue d'ensemble")).toBeTruthy();
     expect(screen.getByTestId('nav-tableau-bord')).toHaveTextContent('Tableau de bord');
     expect(screen.getByTestId('nav-utilisation')).toHaveTextContent('Utilisation');
   });
 
-  it('greys only Après les heures with a Bientôt chip', () => {
+  it('has no Après les heures item (not built yet)', () => {
     wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
-    expect(screen.getAllByText('Bientôt')).toHaveLength(1);
-    expect(screen.getByTestId('nav-apres-heures').closest('a')).toBeNull(); // not a link
+    expect(screen.queryByTestId('nav-apres-heures')).toBeNull();
+    expect(screen.queryByText('Après les heures')).toBeNull();
   });
 
   it('overview items are in-app nav links', () => {
@@ -92,6 +91,31 @@ describe('AppShell side menu', () => {
     expect(burger.getAttribute('aria-expanded')).toBe('true');
     await userEvent.keyboard('{Escape}');
     expect(burger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('the open drawer has its own close button that hands focus back to the menu button', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
+    const burger = screen.getByTestId('burger');
+    await userEvent.click(burger);
+    const close = screen.getByTestId('drawer-close');
+    expect(document.activeElement).toBe(close);
+    await userEvent.click(close);
+    expect(burger.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(burger);
+  });
+
+  it('opening another page starts it at the top', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
+    const main = document.querySelector('main')!;
+    main.scrollTop = 500;
+    scrollTo.mockClear();
+    await userEvent.click(screen.getByTestId('nav-portfolio'));
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0, behavior: 'instant' }));
+    expect(main.scrollTop).toBe(0);
+    scrollTo.mockRestore();
   });
 
   it('never shows a Milestone label', () => {

@@ -6,8 +6,10 @@ import {
   dispatchSave,
   triggerTriage,
 } from '../../api/client';
-import TriageFeedbackWidget from '../../components/TriageFeedbackWidget';
+import TriageFeedbackWidget, { type FeedbackHandle, type FeedbackState } from '../../components/TriageFeedbackWidget';
+import { parseAiNotes } from '../../lib/aiNotes';
 import AiNotesSections from '../../components/AiNotesSections';
+import StepsList from '../../components/StepsList';
 import { useJustify, type JustifyRequest } from '../../components/Justification';
 import type { DispatchFields, Justification } from '../../api/client';
 import {
@@ -73,6 +75,11 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [taskDirty, setTaskDirty] = useState(0);
   const taskEditorRef = useRef<TaskEditorHandle>(null);
+  // AI-summary feedback is saved by the footer's single « Enregistrer ».
+  const feedbackRef = useRef<FeedbackHandle>(null);
+  const [fb, setFb] = useState<FeedbackState>({ dirty: false, valid: true, dispatch: false });
+  /** Set when « Utile » is picked: save (and dispatch) as soon as the rating registers. */
+  const autoSaveRef = useRef(false);
   const okTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTaskDirty = useCallback((n: number) => {
     setTaskDirty((prev) => (prev === n ? prev : n));
@@ -207,22 +214,42 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
     }
   }
   const changedKeys = new Set(notePending.map((p) => p.key));
-  const pendingCount = notePending.length + taskDirty;
+  const pendingCount = notePending.length + taskDirty + (fb.dirty ? 1 : 0);
+  // A changed rating needs its 10-char reason before anything can be saved.
+  const fbBlocked = fb.dirty && !fb.valid;
+
+  // « Utile » = everything is fine: save all pending edits and dispatch now.
+  useEffect(() => {
+    if (!autoSaveRef.current || !fb.dirty) return;
+    autoSaveRef.current = false;
+    if (fb.valid) doSave();
+    // doSave reads this render's state; only a new rating should trigger it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fb]);
 
   function discardEdits() {
     setNextSteps(null);
     setCost(null);
     taskEditorRef.current?.discardDrafts();
     setTaskDirty(0);
+    feedbackRef.current?.reset();
   }
 
   function doSave() {
-    if (!data || pendingCount === 0) return;
+    if (!data || pendingCount === 0 || fbBlocked) return;
     const taskRows = taskEditorRef.current?.pendingRows() ?? [];
     const allChanges = [
       ...taskRows,
       ...notePending.map(({ label, before, after }) => ({ label, before, after })),
     ];
+    const saveFeedback = async () => {
+      if (fb.dirty) await feedbackRef.current?.save();
+    };
+    // Only the feedback changed: not a dispatcher decision, no justification.
+    if (allChanges.length === 0) {
+      void applyAndRefresh(async () => { await saveFeedback(); return null; });
+      return;
+    }
     const n = allChanges.length;
     decide(
       {
@@ -232,20 +259,24 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
       },
       async (justification) => {
         if (taskRows.length) await taskEditorRef.current?.commitDrafts(justification);
-        if (notePending.length === 0) return null;
-        const changes = Object.fromEntries(notePending.map((p) => [p.key, p.value])) as Partial<DispatchFields>;
-        return dispatchSave(requestId, {
-          current: {
-            assigned_employee_id: data.assigned_employee_id ?? null,
-            start_date: data.start_date ?? null,
-            urgency_tier: data.urgency_tier ?? null,
-            next_follow_up_date: data.next_follow_up_date ?? null,
-            next_steps: data.next_steps ?? null,
-            estimated_cost: data.estimated_cost != null ? Number(data.estimated_cost) : null,
-          },
-          changes,
-          justification,
-        });
+        let updated = null;
+        if (notePending.length) {
+          const changes = Object.fromEntries(notePending.map((p) => [p.key, p.value])) as Partial<DispatchFields>;
+          updated = await dispatchSave(requestId, {
+            current: {
+              assigned_employee_id: data.assigned_employee_id ?? null,
+              start_date: data.start_date ?? null,
+              urgency_tier: data.urgency_tier ?? null,
+              next_follow_up_date: data.next_follow_up_date ?? null,
+              next_steps: data.next_steps ?? null,
+              estimated_cost: data.estimated_cost != null ? Number(data.estimated_cost) : null,
+            },
+            changes,
+            justification,
+          });
+        }
+        await saveFeedback();
+        return updated;
       },
     );
   }
@@ -364,12 +395,18 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                     );
                   })()}
 
-                  {/* AI section — notes → reasoning (bottom) → feedback, coord/dir only */}
-                  {isEditor && data.triage_model_version && (
+                  {/* AI section — important notes, next steps, reasoning; coord/dir only.
+                      The summary bullets are left out (the header already says it)
+                      and the feedback moved to the footer beside « Enregistrer ». */}
+                  {isEditor && data.triage_model_version && (() => {
+                    const ai = parseAiNotes(data.other_notes, data.problem_summary, data.ai_important_notes, data.ai_next_steps);
+                    return ai.important.length + ai.next.length > 0 || !!data.ai_reasoning?.trim();
+                  })() && (
                     <section className={styles.card} data-testid="ai-section">
                       <h3 className={styles.cardTitle}>{t(lang, 'Résumé IA', 'AI summary')}</h3>
                       <AiNotesSections
                         embedded
+                        hideSummary
                         lang={lang}
                         problemSummary={data.problem_summary}
                         otherNotes={data.other_notes}
@@ -382,14 +419,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                           <p className={styles.prose}>{data.ai_reasoning.trim()}</p>
                         </div>
                       )}
-                      <TriageFeedbackWidget
-                        requestId={requestId}
-                        lang={lang}
-                        hasProposals={(data.tasks ?? []).some((x) => x.accepted_at == null)}
-                        onDispatchProposals={async () => {
-                          await taskEditorRef.current?.acceptProposals();
-                        }}
-                      />
                     </section>
                   )}
 
@@ -452,8 +481,9 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
 
                 {/* ── Right: reference facts + actions ──────────────── */}
                 <div className={styles.colSide}>
+                  {/* Where + who in one card: the caller sits under a thin divider. */}
                   <section className={styles.card}>
-                    <h3 className={styles.cardTitle}>{t(lang, 'Lieu', 'Location')}</h3>
+                    <h3 className={styles.cardTitle}>{t(lang, 'Lieu et appelant', 'Location & caller')}</h3>
                     <dl className={styles.facts}>
                       <dt>{t(lang, 'Immeuble', 'Building')}</dt>
                       <dd>
@@ -482,12 +512,8 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                       <dt>{t(lang, 'Animaux', 'Animals')}</dt>
                       <dd>{animalsText}</dd>
                     </dl>
-                  </section>
-
-                  <section className={styles.card}>
-                    <h3 className={styles.cardTitle}>{t(lang, 'Appelant', 'Caller')}</h3>
-                    <dl className={styles.facts}>
-                      <dt>{t(lang, 'Nom', 'Name')}</dt>
+                    <dl className={`${styles.facts} ${styles.factsSplit}`} aria-label={t(lang, 'Appelant', 'Caller')}>
+                      <dt>{t(lang, 'Appelant', 'Caller')}</dt>
                       <dd>{data.caller_name ?? '—'}</dd>
                       <dt>{t(lang, 'Téléphone', 'Phone')}</dt>
                       <dd data-testid="phone-display">
@@ -543,10 +569,58 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                       </dd>
                       <dt>{t(lang, 'Estimation', 'Est. time')}</dt>
                       <dd>{timeEstimateLabel(lang, data.time_estimate_bucket)}</dd>
-                      <dt>{t(lang, 'Coût estimé', 'Est. cost')}</dt>
-                      <dd>{data.estimated_cost != null ? formatCost(data.estimated_cost, lang) : '—'}</dd>
+                      {/* Editors set the cost in « Notes d'appel » below; show it once. */}
+                      {!isEditor && (
+                        <>
+                          <dt>{t(lang, 'Coût estimé', 'Est. cost')}</dt>
+                          <dd>{data.estimated_cost != null ? formatCost(data.estimated_cost, lang) : '—'}</dd>
+                        </>
+                      )}
                     </dl>
                   </section>
+
+                  {/* Call notes sit with the planning facts they belong to. */}
+                  {isEditor && (
+                    <section className={`${styles.card} ${styles.notesCard}`} data-testid="edit-controls">
+                      <h3 className={styles.cardTitle}>
+                        {t(lang, 'Notes d\'appel', 'Call notes')}
+                      </h3>
+
+                      {isClosed && (
+                        <p className={styles.closedNotice}>
+                          {t(lang, 'Demande fermée — notes non modifiables.', 'Closed — notes are read-only.')}
+                        </p>
+                      )}
+
+                      <div className={styles.actionsGrid}>
+                        <div className={`${styles.editField} ${changedKeys.has('next_steps') ? styles.editFieldChanged : ''}`}>
+                          <StepsList
+                            lang={lang}
+                            label={t(lang, 'Prochaines étapes', 'Next steps')}
+                            value={nextSteps ?? data.next_steps ?? ''}
+                            onChange={setNextSteps}
+                            disabled={isClosed}
+                            inputTestId="next-steps-input"
+                          />
+                        </div>
+
+                        <div className={`${styles.editField} ${changedKeys.has('estimated_cost') ? styles.editFieldChanged : ''}`}>
+                          <label className={styles.editLabel}>{t(lang, 'Coût estimé ($)', 'Est. cost ($)')}</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className={styles.editInput}
+                            value={cost ?? (data.estimated_cost != null ? String(data.estimated_cost) : '')}
+                            disabled={isClosed}
+                            onChange={(e) => setCost(e.target.value)}
+                            data-testid="cost-input"
+                          />
+                        </div>
+                      </div>
+
+                    </section>
+                  )}
                   {/* Weather summary — read-only; the evaluation runs at triage (or via the
                       weather-check endpoint) and the escalation is applied automatically. */}
                   {isEditor && weatherEnabled && data.weather_evaluation?.status === 'ok' && (() => {
@@ -641,76 +715,56 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                   </section>
                 )}
 
-                {isEditor && (
-                  <section className={`${styles.card} ${styles.actionsCard}`} data-testid="edit-controls">
-                    <h3 className={styles.cardTitle}>
-                      {t(lang, 'Notes d\'appel', 'Call notes')}
-                    </h3>
-
-                    {isClosed && (
-                      <p className={styles.closedNotice}>
-                        {t(lang, 'Demande fermée — notes non modifiables.', 'Closed — notes are read-only.')}
-                      </p>
-                    )}
-
-                    <div className={styles.actionsGrid}>
-                      <div className={`${styles.editField} ${changedKeys.has('next_steps') ? styles.editFieldChanged : ''}`}>
-                        <label className={styles.editLabel}>{t(lang, 'Prochaines étapes', 'Next steps')}</label>
-                        <textarea
-                          className={styles.editTextarea}
-                          value={nextSteps ?? data.next_steps ?? ''}
-                          disabled={isClosed}
-                          onChange={(e) => setNextSteps(e.target.value)}
-                          rows={2}
-                          data-testid="next-steps-input"
-                        />
-                      </div>
-
-                      <div className={`${styles.editField} ${changedKeys.has('estimated_cost') ? styles.editFieldChanged : ''}`}>
-                        <label className={styles.editLabel}>{t(lang, 'Coût estimé ($)', 'Est. cost ($)')}</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          className={styles.editInput}
-                          value={cost ?? (data.estimated_cost != null ? String(data.estimated_cost) : '')}
-                          disabled={isClosed}
-                          onChange={(e) => setCost(e.target.value)}
-                          data-testid="cost-input"
-                        />
-                      </div>
-                    </div>
-
-                    {!isClosed && (
-                      <div className={`${styles.saveBar} ${pendingCount ? styles.saveBarDirty : ''}`} data-testid="save-bar">
-                        <span className={styles.saveStatus} aria-live="polite">
-                          {pendingCount === 0
-                            ? t(lang, 'Aucune modification', 'No changes')
-                            : t(lang,
-                              `${pendingCount} modification${pendingCount > 1 ? 's' : ''} non enregistrée${pendingCount > 1 ? 's' : ''}`,
-                              `${pendingCount} unsaved change${pendingCount > 1 ? 's' : ''}`)}
-                        </span>
-                        {pendingCount > 0 && (
-                          <button type="button" className={styles.discardBtn} onClick={discardEdits}>
-                            {t(lang, 'Annuler les modifications', 'Discard changes')}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className={styles.saveBtn}
-                          disabled={pendingCount === 0}
-                          onClick={doSave}
-                          data-testid="save-btn"
-                        >
-                          {t(lang, 'Enregistrer', 'Save')}
-                        </button>
-                      </div>
-                    )}
-                  </section>
-                )}
               </>
             )}
           </div>
+
+          {data && isEditor && !isClosed && (
+            <footer className={`${styles.saveBar} ${pendingCount ? styles.saveBarDirty : ''}`} data-testid="save-bar">
+              {/* AI feedback lives beside « Enregistrer »: « Utile » saves and
+                  dispatches at once; the other two ask for a comment first. */}
+              <div className={styles.saveBarFeedback}>
+                <TriageFeedbackWidget
+                  ref={feedbackRef}
+                  variant="bar"
+                  standalone={false}
+                  onStateChange={setFb}
+                  onPick={(level, willSave) => { autoSaveRef.current = level === 'utile' && willSave; }}
+                  requestId={requestId}
+                  lang={lang}
+                  hasProposals={(data.tasks ?? []).some((x) => x.accepted_at == null)}
+                  onDispatchProposals={async () => {
+                    await taskEditorRef.current?.acceptProposals();
+                  }}
+                />
+              </div>
+              <span className={styles.saveStatus} aria-live="polite">
+                {fbBlocked
+                  ? t(lang, 'Retour IA : ajoutez un commentaire (10 car. min.)', 'AI feedback: add a comment (10 chars min.)')
+                  : pendingCount === 0
+                    ? t(lang, 'Aucune modification', 'No changes')
+                    : t(lang,
+                      `${pendingCount} modification${pendingCount > 1 ? 's' : ''} non enregistrée${pendingCount > 1 ? 's' : ''}`,
+                      `${pendingCount} unsaved change${pendingCount > 1 ? 's' : ''}`)}
+              </span>
+              {pendingCount > 0 && (
+                <button type="button" className={styles.discardBtn} onClick={discardEdits}>
+                  {t(lang, 'Annuler les modifications', 'Discard changes')}
+                </button>
+              )}
+              <button
+                type="button"
+                className={styles.saveBtn}
+                disabled={pendingCount === 0 || fbBlocked}
+                onClick={doSave}
+                data-testid="save-btn"
+              >
+                {fb.dirty && fb.dispatch
+                  ? t(lang, 'Enregistrer et dispatcher', 'Save and dispatch')
+                  : t(lang, 'Enregistrer', 'Save')}
+              </button>
+            </footer>
+          )}
         </section>
       </div>
     </>

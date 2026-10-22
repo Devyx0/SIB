@@ -101,7 +101,7 @@ const building: PortfolioBuildingDetail = {
   reference: {
     chauffage: 'Central Hot Water (Gas)', chauffage_details: null, chauffe_eau: null, systeme_incendie: null,
     boite_a_cle_ext: null, boite_a_cle_int: null, internet: null, furnished: null, building_structure: null,
-    property_type: null, ascenseur: false, nb_elevateurs: null, piscine: null, sauna: null, gym: null,
+    property_type: null, ascenseur: false, nb_elevateurs: null, piscine: false, sauna: null, gym: null,
     dogs_allowed: true,
   },
   fiche: [
@@ -118,7 +118,13 @@ const unit: PortfolioUnitDetail = {
   numero_appartement: '101', rue: '10, rue Cartier', grandeur: '4 1/2',
   building_adresse: '10 rue Cartier', web_building_name: 'Le Cartier',
   nom_unique_projet: 'Projet Cartier', territoire: 'Haute-Ville', unique_unit_number: '10-101',
-  paint_specs: [], paint_notes: [{ label: 'Code de peinture', value: 'SW 7005' }],
+  paint_specs: [
+    { paint_spec_id: 1, zone: 'AIRS COMMUNS', surface_label: 'Murs/Plafonds gris', product_interior: 'Property coq sw7649',
+      product_exterior: null, manufacturer: 'Sherwin William' },
+    { paint_spec_id: 2, zone: 'LOGEMENTS', surface_label: 'Portes/boiserie blanc', product_interior: 'Property coq sw7005',
+      product_exterior: null, manufacturer: 'Sherwin William' },
+  ],
+  paint_notes: [{ label: 'Code de peinture', value: 'SW 7005' }],
   lease: { lease_id: 5, debut_bail: '2026-07-01', fin_bail: '2027-06-30', statut: 'Régulier', langue_bail: 'Français' },
   tenants: [{
     tenant_id: 7, nom_complet: 'Ada Lovelace', telephone: '418-555-0199',
@@ -224,7 +230,9 @@ describe('Portfolio', () => {
 
     const rows = await screen.findAllByTestId('unit-row');
     expect(rows).toHaveLength(2);
-    expect(within(rows[0]).getByText('Ada Lovelace, Grace Hopper')).toBeTruthy();
+    // Two tenants: one per line, lettered A and B.
+    const names = within(rows[0]).getByTestId('tenant-names');
+    expect([...names.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['AAda Lovelace', 'BGrace Hopper']);
     expect(within(rows[1]).getByText('Aucun locataire')).toBeTruthy();
     await user.click(rows[0]);
     expect(screen.getByTestId('location')).toHaveTextContent('/portfolio/unites/1000');
@@ -251,9 +259,55 @@ describe('Portfolio', () => {
     expect(within(totals).getByText('95 %')).toBeTruthy(); // 95 of 100 occupied
     expect(within(totals).getByText('5 vacants')).toBeTruthy();
     const cards = screen.getAllByTestId('sector-card');
-    expect(cards.map((c) => c.querySelector('h2')?.textContent)).toEqual(['Haute-Ville', 'Lévis-Est', 'Inconnu']);
+    expect(cards.map((c) => c.querySelector('h3')?.textContent)).toEqual(['Haute-Ville', 'Lévis-Est', 'Inconnu']);
+    expect(screen.getByTestId('all-sectors-title')).toHaveTextContent('Tous les secteurs (3)');
     expect(within(cards[0]).queryByText(/%/)).toBeNull(); // occupancy only in the totals
-    expect(within(cards[1]).getByText('+2')).toBeTruthy(); // 5 projects, 3 shown
+    expect(within(cards[1]).getByText('+2 autres')).toBeTruthy(); // 5 projects, 3 shown
+  });
+
+  it('lease card leads with time left, then start / end dates and language', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 9, 22));
+    wrap('/portfolio/unites/1000');
+    const card = await screen.findByTestId('lease-card');
+    expect(within(card).getByTestId('lease-remaining')).toHaveTextContent('8 mois restants');
+    expect(within(card).getByText('Expire le 30 juin 2027')).toBeTruthy();
+    expect(within(card).getByTestId('lease-language')).toHaveTextContent('Français');
+    expect(within(card).queryByText('Régulier')).toBeNull();
+    expect(within(card).getByText('1 juillet 2026')).toBeTruthy();
+    expect(within(card).getByRole('progressbar')).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  it('on phones: a back link one level up and a home link to the sectors', async () => {
+    wrap('/portfolio/unites/1000');
+    const back = await screen.findByTestId('crumbs-back');
+    await within(back).findByText('10 rue Cartier');
+    expect(back.getAttribute('href')).toBe('/portfolio/batiments/100');
+    expect(screen.getByTestId('crumbs-home').getAttribute('href')).toBe('/portfolio');
+  });
+
+  it('on phones: « + » in the back/home row, view and edit beside the title', async () => {
+    const mm = window.matchMedia;
+    window.matchMedia = ((q: string) => ({
+      matches: true, media: q, addEventListener: () => {}, removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      wrap('/portfolio/batiments/100');
+      const add = await screen.findByTestId('add-unit');
+      expect(screen.getByTestId('crumbs-compact').contains(add)).toBe(true);
+      const header = screen.getByRole('heading', { level: 1 }).closest('header')!;
+      expect(header.contains(screen.getByTestId('edit-building'))).toBe(true);
+      expect(header.contains(screen.getByTestId('building-info-link'))).toBe(true);
+    } finally {
+      window.matchMedia = mm;
+    }
+  });
+
+  it('no back/home row on the sectors page itself', async () => {
+    wrap('/portfolio');
+    await screen.findAllByTestId('sector-card');
+    expect(screen.queryByTestId('crumbs-compact')).toBeNull();
   });
 
   it('breadcrumb links back up the hierarchy from a unit', async () => {
@@ -277,10 +331,39 @@ describe('Portfolio', () => {
     expect(within(rows[1]).queryByTestId('turnover-flag')).toBeNull();
   });
 
+  it('tenant rows show initials and labelled phone / email links', async () => {
+    wrap('/portfolio/unites/1000');
+    const rows = await screen.findAllByTestId('tenant-row');
+    const call = within(rows[0]).queryByRole('link', { name: /^Appeler/ });
+    const mail = within(rows[0]).queryByRole('link', { name: /^Écrire à/ });
+    expect(call ?? mail).toBeTruthy();
+    expect(call?.getAttribute('href') ?? mail?.getAttribute('href')).toMatch(/^(tel|mailto):/);
+  });
+
+  it('unit header lists size, occupants, a link to the building and the reference', async () => {
+    wrap('/portfolio/unites/1000');
+    await screen.findByTestId('level-summary');
+    expect(screen.getByTestId('fact-size')).toHaveTextContent('4 1/2');
+    expect(screen.getByTestId('fact-occupants')).toHaveTextContent('2 occupants');
+    expect(within(screen.getByTestId('fact-building')).getByRole('link')).toHaveAttribute('href', '/portfolio/batiments/100');
+    expect(screen.getByTestId('fact-ref')).toHaveTextContent('Réf. 10-101');
+  });
+
+  it('building header lists its facts and links to its project', async () => {
+    wrap('/portfolio/batiments/100');
+    await screen.findByTestId('level-summary');
+    expect(screen.getByTestId('fact-units')).toHaveTextContent('2 logements');
+    expect(within(screen.getByTestId('fact-project')).getByRole('link'))
+      .toHaveAttribute('href', '/portfolio/secteurs/1/projets/10');
+  });
+
   it('opens the turnover panel from the URL and closes it with Escape', async () => {
     const user = userEvent.setup();
     wrap('/portfolio/unites/1000?locataire=7');
     expect(await screen.findByTestId('turnover-dialog')).toBeTruthy();
+    const contacts = await screen.findByTestId('turnover-contacts');
+    expect(within(contacts).getByRole('link', { name: /^Appeler/ })).toHaveAttribute('href', 'tel:+14185550199');
+    expect(within(contacts).getByRole('link', { name: /^Écrire à/ })).toHaveAttribute('href', 'mailto:ada@example.test');
     await user.keyboard('{Escape}');
     expect(screen.queryByTestId('turnover-dialog')).toBeNull();
   });
@@ -328,16 +411,17 @@ describe('Portfolio', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/portfolio/batiments/100');
   });
 
-  it('shows the global search on the sectors page only', async () => {
+  it('shows the global search on the sectors page', async () => {
     wrap('/portfolio');
     expect(screen.getByTestId('portfolio-global-search')).toBeTruthy();
     expect(screen.getByTestId('all-units-link')).toBeTruthy();
   });
 
-  it('has no global search on an inner page', async () => {
+  it('has no global search on inner pages; their lists get their own search', async () => {
     wrap('/portfolio/batiments/100');
     expect(await screen.findAllByTestId('unit-row')).not.toHaveLength(0);
     expect(screen.queryByTestId('portfolio-global-search')).toBeNull();
+    expect(screen.getByTestId('portfolio-search')).toBeTruthy(); // the units list search
   });
 
   it('moves through search results with the arrow keys', async () => {
@@ -389,7 +473,12 @@ describe('Portfolio', () => {
     const fiche = await screen.findByTestId('building-fiche');
     expect(within(fiche).getByText('Membrane avec gravier')).toBeTruthy();
     expect(within(screen.getByTestId('building-paint')).getByText('promar200 sw7017')).toBeTruthy();
-    expect(within(screen.getByTestId('building-characteristics')).getByText('Oui')).toBeTruthy(); // dogs
+    const chars = screen.getByTestId('building-characteristics');
+    expect(within(within(chars).getByTestId('char-group-systems')).getByText('Central Hot Water (Gas)')).toBeTruthy();
+    expect(within(chars).getByTestId('amenity-dogs_allowed')).toHaveTextContent(/Chiens permis.*oui/);
+    expect(within(chars).getByTestId('amenity-piscine')).toHaveTextContent(/non/);
+    // Jump links carry the counts of each part.
+    expect(within(screen.getByTestId('building-info-nav')).getByRole('link', { name: /Fiche technique\s*2/ })).toBeTruthy();
 
     const row = within(fiche).getAllByTestId('fiche-row')[0];
     await user.click(within(row).getByTestId('edit-fiche'));
@@ -469,6 +558,30 @@ describe('Portfolio', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/portfolio/secteurs/1');
   });
 
+  it('sector page: filter by building count, sort, and switch to the list view', async () => {
+    const user = userEvent.setup();
+    wrap('/portfolio/secteurs/1');
+    await screen.findAllByTestId('project-card');
+    // Header buttons on desktop.
+    expect(screen.getByTestId('add-project')).toHaveTextContent('Nouveau projet');
+    await user.selectOptions(screen.getByTestId('project-size'), '1');
+    expect(screen.getAllByTestId('project-card').map((c) => c.querySelector('h2')?.textContent)).toEqual(['Projet Murray']);
+    await user.selectOptions(screen.getByTestId('project-size'), 'all');
+    await user.selectOptions(screen.getByTestId('project-sort'), 'buildings');
+    expect(screen.getAllByTestId('project-card')[0].querySelector('h2')?.textContent).toBe('Projet Cartier');
+    await user.click(screen.getByTestId('view-list'));
+    expect(screen.getAllByTestId('project-row')).toHaveLength(2);
+    expect(screen.queryByTestId('project-card')).toBeNull();
+    await user.click(screen.getByTestId('view-grid'));
+  });
+
+  it('project cards show the building count and a total under the grid', async () => {
+    wrap('/portfolio/secteurs/1');
+    const cards = await screen.findAllByTestId('project-card');
+    expect(cards[0].textContent).toMatch(/\d+ bâtiments?/);
+    expect(screen.getByTestId('project-count')).toHaveTextContent(`${cards.length} projet`);
+  });
+
   it('opens a building\'s units from its title and its information from the eye', async () => {
     wrap('/portfolio/secteurs/1/projets/10');
     const card = (await screen.findAllByTestId('building-card'))[0];
@@ -519,6 +632,11 @@ describe('Portfolio', () => {
     wrap('/portfolio/unites/1000');
     const paint = await screen.findByTestId('unit-paint');
     expect(within(paint).getByText('SW 7005')).toBeTruthy();
+    // Grouped by zone, the units' own zone first, in sentence case.
+    const zones = within(paint).getAllByTestId('paint-zone');
+    expect(zones.map((z) => z.querySelector('h4')?.firstChild?.textContent)).toEqual(['Logements', 'Airs communs']);
+    expect(within(zones[0]).getByText('Ce logement')).toBeTruthy();
+    expect(within(zones[0]).getByText('Property coq sw7005')).toBeTruthy();
     expect(within(paint).getByRole('link')).toHaveAttribute('href', '/portfolio/batiments/100/informations#fiche-technique');
   });
 });

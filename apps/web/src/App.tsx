@@ -82,7 +82,7 @@ export default function App() {
   return (
     <JustificationProvider lang={lang}>
       <Routes>
-        <Route path="/sondage/:token" element={<SurveyPage lang={lang} />} />
+        <Route path="/sondage/:token" element={<SurveyPage lang={lang} onToggleLang={toggleLang} />} />
         <Route
           path="/public/demande"
           element={<PublicDemande lang={lang} onToggleLang={toggleLang} />}

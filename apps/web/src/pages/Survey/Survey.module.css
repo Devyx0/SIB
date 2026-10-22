@@ -1,22 +1,24 @@
-/* Same photo band as the login page (pages/Login/index.module.css). */
+/* Same frame as the login and the public request form: photo band across
+   the top, charcoal rule above it, a white card overlapping it. Controls
+   (language button, Oui / Non toggle, messages) match the public form. */
 .page {
   position: relative;
   isolation: isolate;
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: flex-start;
   background: var(--color-bg);
   border-top: 4px solid var(--charcoal);
-  padding: 24px;
+  padding: 12vh 24px 48px;
 }
 
 .page::before {
   content: '';
   position: absolute;
   inset: 0 0 auto;
-  height: 42%;
+  height: 42vh;
   z-index: -1;
   background:
     linear-gradient(to bottom, rgb(7 35 74 / 0.08), rgb(7 35 74 / 0.28)),
@@ -26,16 +28,470 @@
 
 .card {
   width: 100%;
-  max-width: 440px;
+  max-width: 480px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--r-lg);
-  padding: 28px 28px 24px;
+  padding: 28px 32px 26px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 22px;
   box-shadow: var(--sh-pop);
   animation: cardIn 0.35s var(--ease-out);
+}
+
+/* Brand left, language right, divider under. */
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+/* The staff app's language button, same look. */
+.langBtn {
+  flex: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  min-height: 32px;
+  min-width: 44px;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--color-neutral-800);
+  cursor: pointer;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+}
+
+.langBtn:hover {
+  background: var(--navy-50);
+  border-color: var(--navy-300);
+  color: var(--navy-800);
+}
+
+.langBtn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.title {
+  margin: 0;
+  font-size: 22px;
+  color: var(--color-text);
+}
+
+.sub {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-neutral-700);
+}
+
+.hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-neutral-600);
+}
+
+/* « 2 sur 3 réponses » with a small bar. */
+.step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+.stepBar {
+  flex: 0 0 64px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--navy-100);
+  overflow: hidden;
+}
+
+.stepBar > span {
+  display: block;
+  height: 100%;
+  background: var(--navy-800);
+  transition: width 0.3s var(--ease-out);
+}
+
+/* Who came and where — the visit being rated. */
+.visit {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--navy-50);
+  border: 1px solid var(--navy-100);
+  font-size: 14px;
+}
+
+.visitIcon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--navy-800);
+}
+
+.visitText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+
+.visitMeta {
+  font-size: 13px;
+  color: var(--color-neutral-700);
+}
+
+/* ── Questions ───────────────────────────────────────────────────── */
+
+.question {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--color-divider);
+}
+
+.questionLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--color-text);
+}
+
+.qNum {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--navy-800);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  transform: translateY(-1px);
+}
+
+.req {
+  margin-left: 3px;
+  color: var(--color-danger);
+  white-space: nowrap;
+}
+
+.optional {
+  font-weight: 400;
+  color: var(--color-neutral-600);
+}
+
+.ratingRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.stars {
+  display: flex;
+  gap: 2px;
+}
+
+.star {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-md);
+  background: none;
+  cursor: pointer;
+  color: var(--color-neutral-400);
+  transition: transform var(--dur) var(--ease-out), color var(--dur);
+}
+
+.star:hover {
+  transform: scale(1.08);
+}
+
+.star:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* Brand navy stars (the app's gold --color-star stays for staff views). */
+.starOn {
+  color: var(--navy-800);
+}
+
+.ratingHint {
+  min-height: 1.4em;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--navy-800);
+}
+
+/* Oui / Non: two separate buttons with a gap and an icon each. Picked:
+   Oui green, Non red; the other one fades back so the choice stands out. */
+.yesNo {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.yn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease-out), background var(--dur) var(--ease-out),
+    color var(--dur) var(--ease-out), opacity var(--dur) var(--ease-out);
+}
+
+.yn input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ynIcon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  flex: none;
+}
+
+.ynYes .ynIcon { color: var(--color-success); }
+.ynNo .ynIcon { color: var(--color-danger); }
+
+.ynYes:hover { border-color: var(--color-success-border); background: var(--color-success-t); }
+.ynNo:hover { border-color: var(--color-danger-border); background: var(--color-danger-t); }
+
+.ynYes.ynOn {
+  border-color: var(--color-success);
+  background: var(--color-success-t);
+  color: var(--color-success);
+}
+
+.ynNo.ynOn {
+  border-color: var(--color-danger);
+  background: var(--color-danger-t);
+  color: var(--color-danger);
+}
+
+/* Picked: the icon disc fills. */
+.ynOn .ynIcon {
+  background: currentColor;
+}
+
+.ynOn .ynIcon svg {
+  color: #fff;
+}
+
+.ynOff {
+  opacity: 0.55;
+}
+
+.yn:has(input:focus-visible) {
+  box-shadow: var(--ring);
+}
+
+.comments {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+
+.comments:hover { border-color: var(--color-neutral-400); }
+
+.comments:focus {
+  border-color: var(--navy-800);
+  box-shadow: var(--ring);
+}
+
+.counter {
+  align-self: flex-end;
+  margin-top: -4px;
+  font-size: 12px;
+  color: var(--color-neutral-600);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Messages ─────────────────────────────────────────────────────── */
+
+.fieldError {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-danger);
+}
+
+.error {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--color-danger);
+  background: var(--color-danger-t);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--r-md);
+}
+
+.demoNote {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--r-md);
+  background: var(--color-warning-t);
+  color: var(--color-warning-ink);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+/* ── Submit ───────────────────────────────────────────────────────── */
+
+.submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--navy-800);
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+}
+
+.submit:hover:not(:disabled) { background: var(--navy-900); }
+.submit:active:not(:disabled) { transform: translateY(1px); }
+.submit:focus-visible { outline: none; box-shadow: var(--ring); }
+
+.submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgb(255 255 255 / 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ── Loading / done / invalid link ───────────────────────────────── */
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skelTitle,
+.skelLine,
+.skelBlock {
+  display: block;
+  border-radius: var(--r-md);
+  background: linear-gradient(90deg, var(--color-bg-alt), var(--color-divider), var(--color-bg-alt));
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+
+.skelTitle { width: 70%; height: 24px; }
+.skelLine { width: 50%; height: 14px; }
+.skelBlock { width: 100%; height: 120px; margin-top: 8px; }
+
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 4px;
+  text-align: center;
+}
+
+.stateIcon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: var(--color-success-t);
+  color: var(--color-success);
+}
+
+.stateIconWarn {
+  background: var(--color-warning-t);
+  color: var(--color-warning-ink);
+}
+
+.pageCenter {
+  align-items: center;
+  padding: 24px;
+}
+
+.pageCenter .card {
+  max-width: 440px;
 }
 
 @keyframes cardIn {
@@ -43,13 +499,31 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card, .skelTitle, .skelLine, .skelBlock { animation: none; }
+  .spinner { animation-duration: 2s; }
+  .star:hover { transform: none; }
+}
+
 @media (max-width: 639px) {
   .page {
+    padding: 72px 16px 32px;
+  }
+
+  .pageCenter {
     padding: 16px;
   }
 
   .page::before {
-    height: 30%;
+    height: 30vh;
     background:
       linear-gradient(to bottom, rgb(7 35 74 / 0.08), rgb(7 35 74 / 0.28)),
       url('../../assets/login-terrace-sm.jpg') center 40% / cover no-repeat,
@@ -57,142 +531,9 @@
   }
 
   .card {
-    padding: 24px 20px 20px;
+    padding: 22px 18px 20px;
   }
-}
 
-.brand {
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--color-divider);
-}
-
-.title {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 650;
-  color: var(--color-text);
-}
-
-.meta {
-  margin: 0;
-  font-size: 0.9rem;
-  color: var(--color-neutral-600);
-}
-
-.question {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.questionLabel {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.choices {
-  display: flex;
-  gap: 8px;
-}
-
-.choice {
-  flex: 1;
-  min-height: 40px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--r-md);
-  background: var(--color-surface);
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  color: var(--color-text);
-}
-
-.choice:hover {
-  background: var(--navy-50);
-}
-
-.choiceSelected {
-  border-color: var(--navy-600);
-  background: var(--navy-100);
-  color: var(--navy-800);
-  font-weight: 600;
-}
-
-.stars {
-  display: flex;
-  gap: 4px;
-}
-
-.star {
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: none;
-  background: none;
-  font-size: 2rem;
-  line-height: 1;
-  cursor: pointer;
-  color: var(--color-neutral-400);
-  transition: transform var(--dur) var(--ease-out), color var(--dur);
-}
-
-.star:hover {
-  transform: scale(1.1);
-}
-
-.star:focus-visible {
-  outline: none;
-  box-shadow: var(--ring);
-  border-radius: var(--r-sm);
-}
-
-/* Survey stars are brand blue (the app's gold --color-star stays for staff views). */
-.starOn {
-  color: #0b3263;
-}
-
-.ratingHint {
-  font-size: 0.9rem;
-  color: var(--color-neutral-600);
-}
-
-.comments {
-  width: 100%;
-  min-height: 88px;
-  resize: vertical;
-  border: 1px solid var(--color-border);
-  border-radius: var(--r-md);
-  padding: 10px 12px;
-  font: inherit;
-  font-size: 0.9rem;
-}
-
-.submit {
-  min-height: 42px;
-  border: none;
-  border-radius: var(--r-md);
-  background: var(--navy-800);
-  color: #fff;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.submit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.error {
-  margin: 0;
-  color: #a33;
-  font-size: 0.9rem;
-}
-
-.done {
-  margin: 0;
-  font-size: 1rem;
-  color: var(--color-text);
-  line-height: 1.45;
+  /* Five 44px stars still fit a 320px phone. */
+  .stars { gap: 0; }
 }

@@ -16,7 +16,6 @@ import TaskTable, { sortTasks, taskUrgency, type TaskSortKey } from './TaskTable
 import TaskWeekGrid, { addDays, mondayOf, torontoYmd } from './TaskWeekGrid';
 import DetailPanel from './DetailPanel';
 import NouvelAppelModal from './NouvelAppelModal';
-import TaskDayStrip from './TaskDayStrip';
 import Pagination from '../../components/Pagination';
 import { DEMO_ROW, isDemoEnabled } from '../../dev/demoRequest';
 import styles from './index.module.css';
@@ -30,20 +29,6 @@ interface Props {
 }
 
 const PAGE_SIZE = 50;
-
-/** Month-so-far through +14d so AI tasks due later (Faible = +3d) stay visible. */
-function defaultDateRange(): { start: string; end: string } {
-  const today = torontoYmd();
-  const end = addDays(today, 14);
-  let start = `${today.slice(0, 7)}-01`;
-  // FilterBar / GET /tasks reject windows wider than 31 days.
-  if ((Date.parse(`${end}T12:00:00`) - Date.parse(`${start}T12:00:00`)) / 86400000 > 31) {
-    start = addDays(end, -31);
-  }
-  return { start, end };
-}
-
-const { start: DEFAULT_START, end: DEFAULT_END } = defaultDateRange();
 
 const TASK_SORT_KEYS: readonly string[] = [
   'due_at', 'urgency_tier', 'description', 'territoire',
@@ -103,24 +88,17 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
   }
 
   const taskView = !isTriage && searchParams.get('view') === 'calendar' ? 'calendar' : 'list';
-  const rangeStart = searchParams.get('start_date') ?? DEFAULT_START;
-  const rangeEnd = searchParams.get('end_date') ?? DEFAULT_END;
-  /** Tasks: optional single-day focus within the range (list view only). */
-  const dayFocus = searchParams.get('day');
+  // Both boards list every date (« Tout ») until a period is picked, so an
+  // old untriaged call or an overdue task never drops out of view.
+  const rangeStart = searchParams.get('start_date') ?? '';
+  const rangeEnd = searchParams.get('end_date') ?? '';
   const weekStart = mondayOf(
     (/^\d{4}-\d{2}-\d{2}$/.test(rangeStart) ? rangeStart : torontoYmd()),
   );
   const weekEnd = addDays(weekStart, 6);
-  const startDate = isTriage
-    ? ''
-    : taskView === 'calendar'
-      ? weekStart
-      : (dayFocus && dayFocus >= rangeStart && dayFocus <= rangeEnd ? dayFocus : rangeStart);
-  const endDate = isTriage
-    ? ''
-    : taskView === 'calendar'
-      ? weekEnd
-      : (dayFocus && dayFocus >= rangeStart && dayFocus <= rangeEnd ? dayFocus : rangeEnd);
+  const hasRange = !!rangeStart && !!rangeEnd;
+  const startDate = taskView === 'calendar' ? weekStart : (hasRange ? rangeStart : '');
+  const endDate = taskView === 'calendar' ? weekEnd : (hasRange ? rangeEnd : '');
   const statusParam = clampStatusesToMode(mode, searchParams.getAll('status'));
   const sourceCalendar = searchParams.get('source_calendar') ?? undefined;
   const q = searchParams.get('q') ?? undefined;
@@ -150,6 +128,8 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
   );
 
   const params = {
+    start_date: startDate || undefined,
+    end_date: endDate || undefined,
     status: statusForApi,
     source_calendar: sourceCalendar,
     q: q || undefined,
@@ -165,7 +145,7 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
   };
 
   const isDateRangeValid = (() => {
-    if (isTriage || !startDate || !endDate) return true;
+    if (!startDate || !endDate) return true;
     const days = (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000;
     return days >= 0 && days <= 31;
   })();
@@ -195,7 +175,9 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
   const taskFilters = { sectorId, urgency, q, hasSubcontractor };
   const taskRows = sortTasks(
     (tasksQuery.data?.items ?? []).filter((r) =>
-      matchesTaskFilters(r, taskFilters) && !(redispatch && r.has_followup)),
+      matchesTaskFilters(r, taskFilters) && !(redispatch && r.has_followup)
+      // « Tout » also returns undated tasks; they stay in their own group.
+      && !(showUndated && !startDate && r.due_at == null)),
     sortBy, sortDir,
   );
   const undatedTasks = showUndated
@@ -234,7 +216,7 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
 
   // URL params that narrow the list (sort and paging are not filters).
   const FILTER_KEYS = [
-    'start_date', 'end_date', 'day', 'status', 'source_calendar', 'q',
+    'start_date', 'end_date', 'status', 'source_calendar', 'q',
     'sector_id', 'urgency', 'assigned_employee_id', 'redispatch',
     'has_subcontractor', 'sort_by', 'sort_dir',
   ];
@@ -249,15 +231,6 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
     });
   }
 
-  function setDayFocus(day: string | null) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (day) next.set('day', day);
-      else next.delete('day');
-      next.delete('offset');
-      return next;
-    });
-  }
 
   function setPage(newOffset: number) {
     setSearchParams((prev) => {
@@ -324,7 +297,15 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
                 className={taskView === 'list' ? styles.viewToggleActive : undefined}
                 aria-pressed={taskView === 'list'}
                 data-testid="tasks-view-list"
-                onClick={() => setFilter('view', null)}
+                onClick={() => setSearchParams((prev) => {
+                  // Leave the calendar's week behind: the list goes back to « Tout ».
+                  const next = new URLSearchParams(prev);
+                  next.delete('view');
+                  next.delete('start_date');
+                  next.delete('end_date');
+                  next.delete('offset');
+                  return next;
+                })}
               >
                 {t(lang, 'Liste', 'List')}
               </button>
@@ -343,7 +324,6 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
                   const mon = mondayOf(anchor);
                   next.set('start_date', mon);
                   next.set('end_date', addDays(mon, 6));
-                  next.delete('day');
                   next.delete('offset');
                   return next;
                 })}
@@ -385,22 +365,20 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
         onStartDate={(v) => setSearchParams((prev) => {
           const next = new URLSearchParams(prev);
           if (v) next.set('start_date', v); else next.delete('start_date');
-          next.delete('day');
           next.delete('offset');
           return next;
         })}
         onEndDate={(v) => setSearchParams((prev) => {
           const next = new URLSearchParams(prev);
           if (v) next.set('end_date', v); else next.delete('end_date');
-          next.delete('day');
           next.delete('offset');
           return next;
         })}
         onDateRange={(start, end) => setSearchParams((prev) => {
           const next = new URLSearchParams(prev);
-          next.set('start_date', start);
-          next.set('end_date', end);
-          next.delete('day');
+          // Empty pair = « Tout »: every date.
+          if (start && end) { next.set('start_date', start); next.set('end_date', end); }
+          else { next.delete('start_date'); next.delete('end_date'); }
           next.delete('offset');
           return next;
         })}
@@ -419,18 +397,14 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
         hasActiveFilters={hasActiveFilters}
         onReset={resetFilters}
         countUnit={isTriage ? 'call' : 'task'}
+        // The calendar picks its week with its own arrows; the period control rests.
+        dateNote={!isTriage && taskView === 'calendar'
+          ? t(lang, 'En vue calendrier, changez de semaine avec les flèches du calendrier.',
+            'In calendar view, change week with the calendar arrows.')
+          : undefined}
         showSourceFilter={isTriage}
       />
 
-      {!isTriage && taskView === 'list' && (
-        <TaskDayStrip
-          lang={lang}
-          startDate={rangeStart}
-          endDate={rangeEnd}
-          selectedDay={dayFocus && dayFocus >= rangeStart && dayFocus <= rangeEnd ? dayFocus : null}
-          onSelectDay={setDayFocus}
-        />
-      )}
 
       {/* Only the table cards scroll; header, filters and paging stay put. */}
       {!isTriage && taskView === 'list' && (
@@ -487,7 +461,6 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
             const mon = mondayOf(torontoYmd());
             next.set('start_date', mon);
             next.set('end_date', addDays(mon, 6));
-            next.delete('day');
             next.delete('offset');
             return next;
           })}
@@ -496,7 +469,6 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
             const mon = addDays(weekStart, delta * 7);
             next.set('start_date', mon);
             next.set('end_date', addDays(mon, 6));
-            next.delete('day');
             next.delete('offset');
             return next;
           })}

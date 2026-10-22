@@ -7,7 +7,7 @@ import Select from '../../components/Select';
 import { t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import { fmtDate } from './format';
-import { Breadcrumbs, Empty, Header, LevelState, portfolioPath, rootCrumb, sectorName } from './shared';
+import { Breadcrumbs, Empty, Header, LevelState, TenantNames, portfolioPath, rootCrumb, sectorName } from './shared';
 import styles from './Portfolio.module.css';
 
 // Every unit of the portfolio in one list, narrowed by filters that live in
@@ -95,6 +95,7 @@ export default function UnitsListView({ lang }: { lang: Lang }) {
     <>
       <Breadcrumbs items={[rootCrumb(lang), { label: t(lang, 'Logements', 'Units') }]} lang={lang} />
       <Header
+        lang={lang}
         eyebrow={t(lang, 'Parc immobilier', 'Property portfolio')}
         title={t(lang, 'Logements', 'Units')}
         subtitle={t(lang, 'Tous les logements, filtrés selon vos critères.', 'Every unit, narrowed by your filters.')}
@@ -210,7 +211,7 @@ export default function UnitsListView({ lang }: { lang: Lang }) {
                   <td className={`${styles.nowrap} ${styles.hideNarrow}`}>{sectorName(lang, u.territoire, u.sector_id)}</td>
                   <td className={styles.nowrap}>{u.grandeur ?? '—'}</td>
                   <td>{u.tenant_names.length > 0
-                    ? u.tenant_names.join(', ')
+                    ? <TenantNames names={u.tenant_names} />
                     : <span className={styles.vacant}>{t(lang, 'Vacant', 'Vacant')}</span>}</td>
                   <td className={`${styles.nowrap} ${styles.hideNarrow}`}>{fmtDate(u.fin_bail, lang) ?? '—'}</td>
                 </tr>

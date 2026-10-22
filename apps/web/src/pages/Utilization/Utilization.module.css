@@ -76,6 +76,154 @@
   box-shadow: var(--sh-raised);
 }
 
+.periodRow {
+  position: relative;
+}
+
+/* Phone-only controls (see the 639px block). */
+.calBtn,
+.sortMenuWrap,
+.legendTop {
+  display: none;
+}
+
+.calBtn {
+  align-items: center;
+  gap: 6px;
+}
+
+.calLabel {
+  font-variant-numeric: tabular-nums;
+}
+
+.calPopover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  padding: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-pop);
+}
+
+.sortMenuWrap {
+  position: relative;
+  flex: none;
+}
+
+.sortIconBtn {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--navy-800);
+  cursor: pointer;
+}
+
+.sortIconBtn:focus-visible,
+.sortMenuItem:focus-visible,
+.sortDirOpt:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.sortMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: 240px;
+  padding: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-pop);
+}
+
+.sortMenuLabel {
+  margin: 4px 8px 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+.sortMenuItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sortMenuItem:hover {
+  background: var(--navy-50);
+}
+
+.sortMenuOn {
+  color: var(--navy-800);
+  font-weight: 600;
+}
+
+.sortMenuDir {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-divider);
+}
+
+.sortDirOpt {
+  min-height: 38px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-neutral-700);
+  cursor: pointer;
+}
+
+.sortDirOn {
+  border-color: var(--navy-800);
+  background: var(--navy-800);
+  color: #fff;
+}
+
+/* Compact colour key: dots + short names on one line. */
+.legendTop {
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 10px 12px;
+  list-style: none;
+  border-bottom: 1px solid var(--color-divider);
+  font-size: 12.5px;
+  color: var(--color-neutral-700);
+}
+
+.legendTop li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .dateRange {
   display: inline-flex;
   align-items: center;
@@ -922,12 +1070,128 @@ section.reviewsDialog {
     font-size: 20px;
   }
 
+  /* Period: 7 / 14 / 30 + a calendar button on one line; no date fields. */
+  .periodRow {
+    width: 100%;
+  }
+
+  .presets {
+    display: flex;
+    width: 100%;
+  }
+
+  .preset {
+    flex: 1 1 auto;
+    min-height: 38px;
+    padding: 4px 8px;
+    white-space: nowrap;
+  }
+
+  .calBtn {
+    display: inline-flex;
+    flex: 0 0 auto;
+  }
+
+  .dateRange {
+    display: none;
+  }
+
+  /* Search and a sort button share one line; the select row goes. */
+  .toolbar {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
   .search {
-    flex-basis: 100%;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 40px;
+  }
+
+  .sortControl {
+    display: none;
+  }
+
+  .sortMenuWrap {
+    display: block;
+  }
+
+  /* Compact colour key above the cards; the long one below goes. */
+  .legendTop {
+    display: flex;
+  }
+
+  .footer .legend {
+    display: none;
+  }
+
+  /* ── Table → one card per employee ─────────────────────────────── */
+  .tableWrap {
+    overflow: visible;
+  }
+
+  .table,
+  .table tbody {
+    display: block;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "person person"
+      "calls  rating"
+      "time   time"
+      "outcomes outcomes";
+    gap: 12px 14px;
+    padding: 14px 12px;
+    border-bottom: 1px solid var(--color-divider);
+  }
+
+  .table tbody tr:last-child {
+    border-bottom: none;
+  }
+
+  .table tbody tr > *,
+  .table tbody tr:nth-child(even) > *,
+  .table tbody tr:hover > * {
+    display: block;
+    padding: 0;
+    border: none;
+    background: transparent;
   }
 
   .stickyCol {
-    min-width: 170px;
+    grid-area: person;
+    position: static;
+    min-width: 0;
+    box-shadow: none;
+  }
+
+  .cellCalls { grid-area: calls; }
+  .cellRating { grid-area: rating; }
+  .cellTime { grid-area: time; }
+  .cellOutcomes { grid-area: outcomes; }
+
+  /* Each figure carries its own small label (the column header is gone). */
+  .table tbody td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-neutral-600);
+  }
+
+  .table tbody td.empty::before {
+    content: none;
   }
 
   .legendFull {

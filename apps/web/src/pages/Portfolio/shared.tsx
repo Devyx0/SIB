@@ -1,20 +1,12 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { portfolioPath } from './paths';
+import PortfolioSearch from './PortfolioSearch';
 import { t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import styles from './Portfolio.module.css';
 
-// Sector → project → building → unit → tenant. Each level has its own URL so
-// back/forward, refresh and shared links all land on the same view.
-export const portfolioPath = {
-  root: () => '/portfolio',
-  sector: (sectorId: number) => `/portfolio/secteurs/${sectorId}`,
-  project: (sectorId: number, projectId: number) => `/portfolio/secteurs/${sectorId}/projets/${projectId}`,
-  /** The building's units. */
-  building: (buildingId: number) => `/portfolio/batiments/${buildingId}`,
-  /** The building's information page (characteristics, paint, fiche, documents). */
-  buildingInfo: (buildingId: number) => `/portfolio/batiments/${buildingId}/informations`,
-  unit: (unitId: number) => `/portfolio/unites/${unitId}`,
-};
+export { portfolioPath } from './paths';
 
 export const PROJECT_FR: [string, string] = ['projet', 'projets'];
 export const PROJECT_EN: [string, string] = ['project', 'projects'];
@@ -23,11 +15,60 @@ export const BUILDING_EN: [string, string] = ['building', 'buildings'];
 export const UNIT_FR: [string, string] = ['logement', 'logements'];
 export const UNIT_EN: [string, string] = ['unit', 'units'];
 
+const PHONE = '(max-width: 639px)';
+
+/** True on phone widths (same breakpoint as the CSS). Some buttons sit in a
+ *  different place there, so the page renders them in one spot or the other. */
+export function useIsPhone() {
+  const query = typeof window !== 'undefined' ? window.matchMedia?.(PHONE) : undefined;
+  const [phone, setPhone] = useState(() => query?.matches ?? false);
+  useEffect(() => {
+    if (!query) return;
+    const on = () => setPhone(query.matches);
+    on();
+    query.addEventListener?.('change', on);
+    return () => query.removeEventListener?.('change', on);
+  }, [query]);
+  return phone;
+}
+
 export type Crumb = { label: string; to?: string };
 
-export function Breadcrumbs({ items, lang }: { items: Crumb[]; lang: Lang }) {
+/** Full trail on wider screens. On a phone it folds into « ‹ parent » (one
+ *  level up) and a home button (the sectors page) — the trail is too long
+ *  to read on a narrow screen. */
+export function Breadcrumbs({ items, lang, action }: {
+  items: Crumb[]; lang: Lang;
+  /** Phone: a button at the right end of the back / home row (the page's « + »). */
+  action?: React.ReactNode;
+}) {
+  const parent = [...items.slice(0, -1)].reverse().find((c) => c.to);
+  const home = items[0]?.to;
   return (
     <nav aria-label={t(lang, "Fil d'Ariane", 'Breadcrumb')}>
+      {parent?.to && (
+        <div className={styles.crumbsCompact} data-testid="crumbs-compact">
+          <Link to={parent.to} className={styles.backLink} data-testid="crumbs-back"
+                aria-label={t(lang, `Retour : ${parent.label}`, `Back: ${parent.label}`)}>
+            <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none"
+                 stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12.5 4.5L7 10l5.5 5.5" />
+            </svg>
+            <span className={styles.backLabel}>{parent.label}</span>
+          </Link>
+          {home && home !== parent.to && (
+            <Link to={home} className={styles.homeLink} data-testid="crumbs-home"
+                  aria-label={t(lang, 'Accueil du portfolio (secteurs)', 'Portfolio home (sectors)')}
+                  title={t(lang, 'Accueil du portfolio', 'Portfolio home')}>
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none"
+                   stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 11l9-7 9 7" /><path d="M5 10v10h14V10" /><path d="M10 20v-6h4v6" />
+              </svg>
+            </Link>
+          )}
+          {action && <div className={styles.crumbsAction}>{action}</div>}
+        </div>
+      )}
       <ol className={styles.crumbs} data-testid="breadcrumbs">
         {items.map((c, i) => (
           <li key={i}>
@@ -41,26 +82,58 @@ export function Breadcrumbs({ items, lang }: { items: Crumb[]; lang: Lang }) {
   );
 }
 
-export function Header({ eyebrow, title, subtitle, chips, search }: {
+/** One fact under a heading: an icon, a short text, optionally a link (the parent level). */
+export type Fact = { icon: React.ReactNode; label: React.ReactNode; to?: string; key: string };
+
+/** The facts row under a heading: « ⌂ 4 1/2 | 👥 2 occupants | 🏢 117 Sainte-Anne ». */
+function Facts({ facts }: { facts: Fact[] }) {
+  return (
+    <ul className={styles.levelFacts} data-testid="level-summary">
+      {facts.map((f) => (
+        <li key={f.key} className={styles.factItem} data-testid={`fact-${f.key}`}>
+          <span className={styles.factIcon}>{f.icon}</span>
+          {f.to ? <Link to={f.to} className={styles.factLink}>{f.label}</Link> : <span>{f.label}</span>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Title on the left; the page's buttons on the right, pinned to the top.
+ *  `globalSearch` (Portfolio home only) puts the portfolio-wide search on the
+ *  same row, left of the buttons. Inner pages search their own list instead. */
+export function Header({ lang, eyebrow, title, subtitle, chips, facts, actions, globalSearch = false, actionsBelow = false }: {
+  lang: Lang;
   eyebrow: string;
   title: string;
   subtitle?: string | null;
   chips?: (string | null)[];
-  search?: React.ReactNode;
+  /** What the level holds, as icon facts under the title. */
+  facts?: (Fact | null | false | '' | undefined)[] | null | false;
+  actions?: React.ReactNode;
+  globalSearch?: boolean;
+  /** Desktop: the buttons sit under the heading instead of on the right. */
+  actionsBelow?: boolean;
 }) {
   return (
-    <header className={styles.header}>
+    <header className={`${styles.header} ${actionsBelow ? styles.headerBelow : ''} ${globalSearch ? styles.headerHome : ''}`}>
       <div>
         <p className={styles.eyebrow}>{eyebrow}</p>
         <h1 className={styles.title}>{title}</h1>
         {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
+        {facts && facts.some(Boolean) && <Facts facts={facts.filter(Boolean) as Fact[]} />}
         {chips && chips.some(Boolean) && (
           <div className={styles.chips}>
             {chips.filter(Boolean).map((c) => <span key={c} className={styles.chip}>{c}</span>)}
           </div>
         )}
       </div>
-      {search}
+      {(globalSearch || actions) && (
+        <div className={`${styles.headerSide} ${globalSearch ? styles.headerSideSearch : ''}`}>
+          {globalSearch && <div role="search" className={styles.headerSearch}><PortfolioSearch lang={lang} /></div>}
+          {actions}
+        </div>
+      )}
     </header>
   );
 }
@@ -68,10 +141,17 @@ export function Header({ eyebrow, title, subtitle, chips, search }: {
 export function SearchBox({ value, onChange, placeholder }: {
   value: string; onChange: (v: string) => void; placeholder: string;
 }) {
+  // Searches the list right below it (projects, buildings or units).
   return (
-    <input type="search" className={styles.search} value={value} placeholder={placeholder}
-           aria-label={placeholder} data-testid="portfolio-search"
-           onChange={(e) => onChange(e.target.value)} />
+    <span className={styles.filterBox} role="search">
+      <svg className={styles.filterIcon} viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"
+           fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <circle cx="9" cy="9" r="6" /><path d="M13.5 13.5L17 17" />
+      </svg>
+      <input type="search" className={styles.search} value={value} placeholder={placeholder}
+             aria-label={placeholder} data-testid="portfolio-search"
+             onChange={(e) => onChange(e.target.value)} />
+    </span>
   );
 }
 
@@ -109,6 +189,22 @@ export function Arrow() {
          fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M8 5l5 5-5 5" />
     </svg>
+  );
+}
+
+/** A unit's tenants, one per line, lettered A, B, C… when there are several
+ *  (one tenant needs no letter). */
+export function TenantNames({ names }: { names: string[] }) {
+  if (names.length === 1) return <>{names[0]}</>;
+  return (
+    <ul className={styles.tenantNames} data-testid="tenant-names">
+      {names.map((name, i) => (
+        <li key={`${i}-${name}`}>
+          <span className={styles.tenantLetter} aria-hidden="true">{String.fromCharCode(65 + (i % 26))}</span>
+          {name}
+        </li>
+      ))}
+    </ul>
   );
 }
 

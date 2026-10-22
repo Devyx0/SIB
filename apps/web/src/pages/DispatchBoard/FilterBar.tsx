@@ -72,7 +72,6 @@ export default function FilterBar({
   countUnit = 'call',
   showSourceFilter = true,
 }: Props) {
-  const showDates = mode === 'tasks';
   const statusOptions = statusesForMode(mode);
   const [draft, setDraft] = useState(q);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -151,6 +150,9 @@ export default function FilterBar({
     ? { days, start: todayYmd, end: shiftYmd(todayYmd, days - 1) }
     : { days, start: shiftYmd(todayYmd, -(days - 1)), end: todayYmd });
   const activeQuick = QUICK_RANGES.find((r) => r.start === draftStart && r.end === draftEnd)?.days;
+  // « Tout »: no period, every date.
+  const allActive = !draftStart && !draftEnd;
+  const customActive = !activeQuick && !allActive;
   const shortDay = (v: string) => (v && v.length === 10 ? `${v.slice(8)}/${v.slice(5, 7)}` : '—');
   const customLabel = `${shortDay(draftStart)} → ${shortDay(draftEnd)}`;
 
@@ -284,7 +286,7 @@ export default function FilterBar({
           )}
         </button>
 
-        {showDates && <div className={styles.fieldGroup}>
+        <div className={styles.fieldGroup}>
           <span className={styles.label} id="board-period">{t(lang, 'Période', 'Period')}</span>
           <div
             className={styles.periodWrap}
@@ -294,6 +296,17 @@ export default function FilterBar({
             }}
           >
             <div className={styles.period} role="group" aria-labelledby="board-period">
+              <button
+                type="button"
+                className={`${styles.periodBtn} ${allActive ? styles.periodBtnActive : ''}`}
+                aria-pressed={allActive}
+                disabled={!!dateNote}
+                title={t(lang, 'Toutes les dates', 'All dates')}
+                onClick={() => { applyQuickRange('', ''); setCalOpen(false); }}
+                data-testid="quick-range-all"
+              >
+                {t(lang, 'Tout', 'All')}
+              </button>
               {QUICK_RANGES.map((r) => (
                 <button
                   key={r.days}
@@ -315,11 +328,11 @@ export default function FilterBar({
               ))}
               <button
                 type="button"
-                className={`${styles.periodBtn} ${styles.calBtn} ${!activeQuick ? styles.periodBtnActive : ''}`}
+                className={`${styles.periodBtn} ${styles.calBtn} ${customActive ? styles.periodBtnActive : ''}`}
                 aria-haspopup="dialog"
                 aria-expanded={calOpen}
                 aria-controls="board-period-cal"
-                aria-label={activeQuick
+                aria-label={!customActive
                   ? t(lang, 'Choisir une période personnalisée', 'Pick a custom range')
                   : t(lang, `Période personnalisée : ${customLabel}. Modifier`, `Custom range: ${customLabel}. Change`)}
                 disabled={!!dateNote}
@@ -329,7 +342,10 @@ export default function FilterBar({
                 <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="4.5" width="14" height="12" rx="2" /><path d="M3 8.5h14M7 3v3M13 3v3" />
                 </svg>
-                {!activeQuick && <span className={styles.customLabel}>{customLabel}</span>}
+                {customActive && <span className={styles.customLabel}>{customLabel}</span>}
+                {!customActive && (
+                  <span className={styles.calHint} aria-hidden="true">{t(lang, 'Choisir des dates', 'Pick dates')}</span>
+                )}
               </button>
             </div>
 
@@ -377,7 +393,7 @@ export default function FilterBar({
               </div>
             </div>
           </div>
-        </div>}
+        </div>
 
         <div className={styles.fieldGroup}>
           <span className={styles.label}>{t(lang, 'Statut', 'Status')}</span>
@@ -513,15 +529,19 @@ export default function FilterBar({
             </label>
           )}
 
-          <button
-            type="button"
-            className={styles.colsBtn + (showAllCols ? ' ' + styles.colsBtnActive : '')}
-            onClick={onToggleCols}
-            aria-pressed={showAllCols}
-            title={t(lang, 'Afficher toutes les colonnes', 'Toggle all columns')}
-          >
-            {showAllCols ? t(lang, 'Moins de colonnes', 'Fewer columns') : t(lang, 'Plus de colonnes', 'More columns')}
-          </button>
+          {/* Only the triage table has optional columns. */}
+          {mode === 'triage' && (
+            <button
+              type="button"
+              className={styles.colsBtn + (showAllCols ? ' ' + styles.colsBtnActive : '')}
+              onClick={onToggleCols}
+              aria-pressed={showAllCols}
+              title={t(lang, 'Afficher toutes les colonnes', 'Toggle all columns')}
+              data-testid="cols-toggle"
+            >
+              {showAllCols ? t(lang, 'Moins de colonnes', 'Fewer columns') : t(lang, 'Plus de colonnes', 'More columns')}
+            </button>
+          )}
 
           <span className={styles.divider} aria-hidden="true" />
 

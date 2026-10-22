@@ -103,7 +103,9 @@ export default function TaskTable({
       return (
         <tr>
           <td colSpan={colCount} className={styles.emptyState}>
-            {errorMsg ?? t(lang, 'Erreur lors du chargement.', 'Loading error.')}
+            <div className={styles.emptyInner}>
+              {errorMsg ?? t(lang, 'Erreur lors du chargement.', 'Loading error.')}
+            </div>
           </td>
         </tr>
       );
@@ -112,14 +114,16 @@ export default function TaskTable({
       return (
         <tr>
           <td colSpan={colCount} className={styles.emptyState}>
-            <span className={styles.emptyTitle}>
-              {t(lang, 'Aucune tâche dans cette plage.', 'No tasks in this range.')}
-            </span>
-            <span className={styles.emptyHint}>
-              {t(lang,
-                'Élargissez la période ou retirez des filtres pour voir plus de résultats.',
-                'Widen the period or remove filters to see more results.')}
-            </span>
+            <div className={styles.emptyInner}>
+              <span className={styles.emptyTitle}>
+                {t(lang, 'Aucune tâche dans cette plage.', 'No tasks in this range.')}
+              </span>
+              <span className={styles.emptyHint}>
+                {t(lang,
+                  'Élargissez la période ou retirez des filtres pour voir plus de résultats.',
+                  'Widen the period or remove filters to see more results.')}
+              </span>
+            </div>
           </td>
         </tr>
       );
