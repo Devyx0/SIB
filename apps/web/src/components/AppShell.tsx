@@ -124,12 +124,12 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
 
         <div className={styles.newCall} onClick={() => setMenuOpen(false)}>
           {intakeOnly ? (
-            <NavLink to="/intake" data-testid="nav-nouvel-appel" className={navItemClass}>
+            <NavLink to="/intake" data-testid="nav-nouvel-appel" className={styles.newCallBtn}>
               <span className={styles.plus} aria-hidden="true">+</span>
               {t(lang, 'Nouvel appel', 'New call')}
             </NavLink>
           ) : (
-            <Link to="/triage?nouvel-appel=1" data-testid="nav-nouvel-appel" className={styles.navItem}>
+            <Link to="/triage?nouvel-appel=1" data-testid="nav-nouvel-appel" className={styles.newCallBtn}>
               <span className={styles.plus} aria-hidden="true">+</span>
               {t(lang, 'Nouvel appel', 'New call')}
             </Link>
