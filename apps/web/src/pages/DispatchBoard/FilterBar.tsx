@@ -140,17 +140,17 @@ export default function FilterBar({
     ? (total === 1 ? `1 ${t(lang, 'tâche', 'task')}` : `${total} ${t(lang, 'tâches', 'tasks')}`)
     : (total === 1 ? `1 ${t(lang, 'appel', 'call')}` : `${total} ${t(lang, 'appels', 'calls')}`);
 
-  // Quick ranges end today (America/Toronto, like the board's default) and
-  // count today as one of the days: « 7 derniers jours » = today + 6 before.
+  // Tasks look forward (scheduled work); triage looks back (intake dates).
   const todayYmd = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
-  function daysBefore(ymd: string, n: number): string {
+  function shiftYmd(ymd: string, n: number): string {
     const [y, m, d] = ymd.split('-').map(Number);
-    return new Date(Date.UTC(y, m - 1, d - n)).toISOString().slice(0, 10);
+    return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
   }
-  const QUICK_RANGES = [7, 14, 30].map((days) => ({ days, start: daysBefore(todayYmd, days - 1) }));
-  const activeQuick = draftEnd === todayYmd
-    ? QUICK_RANGES.find((r) => r.start === draftStart)?.days
-    : undefined;
+  const lookAhead = mode === 'tasks';
+  const QUICK_RANGES = [7, 14, 30].map((days) => lookAhead
+    ? { days, start: todayYmd, end: shiftYmd(todayYmd, days - 1) }
+    : { days, start: shiftYmd(todayYmd, -(days - 1)), end: todayYmd });
+  const activeQuick = QUICK_RANGES.find((r) => r.start === draftStart && r.end === draftEnd)?.days;
   const shortDay = (v: string) => (v && v.length === 10 ? `${v.slice(8)}/${v.slice(5, 7)}` : '—');
   const customLabel = `${shortDay(draftStart)} → ${shortDay(draftEnd)}`;
 
@@ -174,13 +174,13 @@ export default function FilterBar({
     else { onStartDate(start); onEndDate(end); }
   }
 
-  function applyQuickRange(start: string) {
+  function applyQuickRange(start: string, end: string) {
     if (startTimer.current) clearTimeout(startTimer.current);
     if (endTimer.current) clearTimeout(endTimer.current);
     setDraftStart(start);
-    setDraftEnd(todayYmd);
-    if (onDateRange) onDateRange(start, todayYmd);
-    else { onStartDate(start); onEndDate(todayYmd); }
+    setDraftEnd(end);
+    if (onDateRange) onDateRange(start, end);
+    else { onStartDate(start); onEndDate(end); }
   }
 
   const dateRangeError = (() => {
@@ -301,9 +301,13 @@ export default function FilterBar({
                   className={`${styles.periodBtn} ${activeQuick === r.days ? styles.periodBtnActive : ''}`}
                   aria-pressed={activeQuick === r.days}
                   disabled={!!dateNote}
-                  title={t(lang, `${r.days} derniers jours`, `Last ${r.days} days`)}
-                  aria-label={t(lang, `${r.days} derniers jours`, `Last ${r.days} days`)}
-                  onClick={() => { applyQuickRange(r.start); setCalOpen(false); }}
+                  title={lookAhead
+                    ? t(lang, `${r.days} prochains jours`, `Next ${r.days} days`)
+                    : t(lang, `${r.days} derniers jours`, `Last ${r.days} days`)}
+                  aria-label={lookAhead
+                    ? t(lang, `${r.days} prochains jours`, `Next ${r.days} days`)
+                    : t(lang, `${r.days} derniers jours`, `Last ${r.days} days`)}
+                  onClick={() => { applyQuickRange(r.start, r.end); setCalOpen(false); }}
                   data-testid={`quick-range-${r.days}`}
                 >
                   {t(lang, `${r.days} jours`, `${r.days} days`)}

@@ -338,6 +338,17 @@
   overflow-wrap: anywhere;
 }
 
+.mapLink {
+  color: var(--color-accent, #0b57d0);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.mapLink:hover {
+  text-decoration-thickness: 2px;
+}
+
 .followupEntry {
   border-top: 1px solid var(--color-divider);
   padding-top: 0.5rem;

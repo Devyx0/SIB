@@ -98,7 +98,7 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
         status_code=500,
         content=_envelope(
             code="INTERNAL_ERROR",
-            message="Une erreur est survenue — réessayez",
+            message="Something went wrong — try again",
             request_id=_rid(request),
         ),
     )

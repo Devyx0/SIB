@@ -1,12 +1,13 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRequest } from '../../hooks/useRequest';
 import {
-  ApiError, fetchEmployees, fetchTechnicianSuggestions,
-  dispatchAddLog, dispatchSave,
+  ApiError, apiErrorMessage, fetchEmployees, fetchTechnicianSuggestions,
+  dispatchSave,
   triggerTriage,
 } from '../../api/client';
 import TriageFeedbackWidget from '../../components/TriageFeedbackWidget';
+import AiNotesSections from '../../components/AiNotesSections';
 import { useJustify, type JustifyRequest } from '../../components/Justification';
 import type { DispatchFields, Justification } from '../../api/client';
 import {
@@ -17,9 +18,9 @@ import type { MeResponse } from '../../api/schema.d.ts';
 import { statusLabel, timeEstimateLabel, sourceCalendarLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import { googleMapsUrl } from '../../lib/maps';
-import { urgencyLabel, urgencyOptions } from '../../lib/urgencyLevels';
+import { urgencyLabel } from '../../lib/urgencyLevels';
 import styles from './DetailPanel.module.css';
-import TaskEditor from './TaskEditor';
+import TaskEditor, { type TaskEditorHandle } from './TaskEditor';
 
 
 function formatCost(amount: number | string, lang: Lang): string {
@@ -42,8 +43,8 @@ const BAND_FR: Record<string, string> = {
   critical: 'critique', emergency: 'urgence', priority: 'priorité', normal: 'normal',
 };
 const LOC_FR: Record<string, string> = { quebec: 'Québec', levis: 'Lévis' };
-// Calls where a technician suggestion helps pick who gets the next task.
-const SUGGEST_STATUSES = new Set(['triaged', 'open', 'awaiting_redispatch']);
+// Calls where per-task technician suggestions help pick assignees.
+const SUGGEST_STATUSES = new Set(['triaged', 'triage_proposal', 'open', 'awaiting_redispatch']);
 
 export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = 'fr', me }: Props) {
   const [polling, setPolling] = useState(false);
@@ -69,13 +70,31 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
   });
 
   const [staleMsg, setStaleMsg] = useState<string | null>(null);
-  const [followUpDate, setFollowUpDate] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
+  const [taskDirty, setTaskDirty] = useState(0);
+  const taskEditorRef = useRef<TaskEditorHandle>(null);
+  const okTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onTaskDirty = useCallback((n: number) => {
+    setTaskDirty((prev) => (prev === n ? prev : n));
+  }, []);
+
+  function flashOk(message: string) {
+    setStaleMsg(null);
+    setOkMsg(message);
+    if (okTimerRef.current) clearTimeout(okTimerRef.current);
+    okTimerRef.current = setTimeout(() => setOkMsg(null), 3000);
+  }
+
+  function flashErr(message: string) {
+    setOkMsg(null);
+    setStaleMsg(message);
+  }
+
+  useEffect(() => () => {
+    if (okTimerRef.current) clearTimeout(okTimerRef.current);
+  }, []);
   const [nextSteps, setNextSteps] = useState<string | null>(null);
   const [cost, setCost] = useState<string | null>(null);
-  const [logText, setLogText] = useState('');
-  const [suggestedEmpId, setSuggestedEmpId] = useState<number | null>(null);
-  // undefined = untouched; null = « Aucune »
-  const [urgencyDraft, setUrgencyDraft] = useState<string | null | undefined>(undefined);
   const weatherEnabled = !!me?.weather_escalation_enabled;
 
   // Poll while triage is in progress; stop after 3 minutes with retry option
@@ -127,23 +146,27 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
 
   async function applyAndRefresh(fn: () => Promise<unknown>) {
     setStaleMsg(null);
+    setOkMsg(null);
     try {
       const updated = await fn();
-      qc.setQueryData(['request', requestId], updated);
+      if (updated && typeof updated === 'object' && updated !== null && 'request_id' in updated) {
+        qc.setQueryData(['request', requestId], updated);
+      } else {
+        await qc.invalidateQueries({ queryKey: ['request', requestId] });
+      }
       qc.invalidateQueries({ queryKey: ['requests'] });
-      setFollowUpDate(null);
+      qc.invalidateQueries({ queryKey: ['tasks'] });
       setNextSteps(null);
       setCost(null);
-      setUrgencyDraft(undefined);
-      setLogText('');
+      flashOk(t(lang, 'Enregistré.', 'Saved.'));
     } catch (err) {
       if (err instanceof ApiError && err.code === 'STALE_DATA') {
-        setStaleMsg(t(lang, 'La demande a été modifiée — rechargement…', 'Modified by another user — reloading…'));
+        flashErr(t(lang, 'La demande a été modifiée — rechargement…', 'Modified by another user — reloading…'));
         qc.invalidateQueries({ queryKey: ['requests'] });
         qc.invalidateQueries({ queryKey: ['request', requestId] });
         setTimeout(() => setStaleMsg(null), 3000);
       } else if (err instanceof ApiError) {
-        setStaleMsg(err.message);
+        flashErr(apiErrorMessage(lang, err));
       }
     }
   }
@@ -166,69 +189,70 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
     (employees ?? []).find((e) => e.employee_id === id)?.nom_employe ?? `#${id}`;
   const clip = (v: string | null | undefined) => (v && v.length > 60 ? `${v.slice(0, 57)}…` : v || NONE);
 
-  // ── Staged edits: everything is saved together with « Enregistrer » ──
+  // ── Staged edits: tasks + call notes share one « Enregistrer » ──
   const fmtCost = (v: number | null) => (v != null ? formatCost(v, lang) : NONE);
   const costDraft: number | null | undefined =
     cost === null ? undefined : cost.trim() === '' ? null : Number(cost);
-  type Pending = { key: keyof DispatchFields; label: string; before: string; after: string; value: unknown };
-  const pending: Pending[] = [];
+  type NotePending = { key: keyof DispatchFields; label: string; before: string; after: string; value: unknown };
+  const notePending: NotePending[] = [];
   if (data) {
-    if (urgencyDraft !== undefined && urgencyDraft !== (data.urgency_tier ?? null)) {
-      pending.push({ key: 'urgency_tier', label: t(lang, 'Urgence', 'Urgency'),
-        before: urgencyLabel(lang, data.urgency_tier), after: urgencyLabel(lang, urgencyDraft), value: urgencyDraft });
-    }
-    if (followUpDate !== null && (followUpDate || null) !== (data.next_follow_up_date ?? null)) {
-      pending.push({ key: 'next_follow_up_date', label: t(lang, 'Prochain suivi', 'Next follow-up'),
-        before: data.next_follow_up_date ?? NONE, after: followUpDate || NONE, value: followUpDate || null });
-    }
     if (nextSteps !== null && (nextSteps.trim() || null) !== (data.next_steps ?? null)) {
-      pending.push({ key: 'next_steps', label: t(lang, 'Prochaines étapes', 'Next steps'),
+      notePending.push({ key: 'next_steps', label: t(lang, 'Prochaines étapes', 'Next steps'),
         before: clip(data.next_steps), after: clip(nextSteps.trim()), value: nextSteps.trim() || null });
     }
     const savedCost = data.estimated_cost != null ? Number(data.estimated_cost) : null;
     if (costDraft !== undefined && !Number.isNaN(costDraft) && costDraft !== savedCost) {
-      pending.push({ key: 'estimated_cost', label: t(lang, 'Coût estimé', 'Estimated cost'),
+      notePending.push({ key: 'estimated_cost', label: t(lang, 'Coût estimé', 'Estimated cost'),
         before: fmtCost(savedCost), after: fmtCost(costDraft), value: costDraft });
     }
   }
-  const changedKeys = new Set(pending.map((p) => p.key));
-  const effectiveUrgency = urgencyDraft !== undefined ? urgencyDraft : (data?.urgency_tier ?? null);
+  const changedKeys = new Set(notePending.map((p) => p.key));
+  const pendingCount = notePending.length + taskDirty;
 
   function discardEdits() {
-    setUrgencyDraft(undefined);
-    setFollowUpDate(null);
     setNextSteps(null);
     setCost(null);
+    taskEditorRef.current?.discardDrafts();
+    setTaskDirty(0);
   }
 
   function doSave() {
-    if (!data || pending.length === 0) return;
-    const changes = Object.fromEntries(pending.map((p) => [p.key, p.value])) as Partial<DispatchFields>;
-    const n = pending.length;
+    if (!data || pendingCount === 0) return;
+    const taskRows = taskEditorRef.current?.pendingRows() ?? [];
+    const allChanges = [
+      ...taskRows,
+      ...notePending.map(({ label, before, after }) => ({ label, before, after })),
+    ];
+    const n = allChanges.length;
     decide(
       {
-        decision: n === 1 ? pending[0].label : t(lang, `${n} modifications`, `${n} changes`),
-        ...(n === 1 ? { before: pending[0].before, after: pending[0].after } : {}),
-        changes: pending.map(({ label, before, after }) => ({ label, before, after })),
+        decision: n === 1 ? allChanges[0].label : t(lang, `${n} modifications`, `${n} changes`),
+        ...(n === 1 ? { before: allChanges[0].before, after: allChanges[0].after } : {}),
+        changes: allChanges,
       },
-      (justification) => dispatchSave(requestId, {
-        current: {
-          assigned_employee_id: data.assigned_employee_id ?? null,
-          start_date: data.start_date ?? null,
-          urgency_tier: data.urgency_tier ?? null,
-          next_follow_up_date: data.next_follow_up_date ?? null,
-          next_steps: data.next_steps ?? null,
-          estimated_cost: data.estimated_cost != null ? Number(data.estimated_cost) : null,
-        },
-        changes,
-        justification,
-      }),
+      async (justification) => {
+        if (taskRows.length) await taskEditorRef.current?.commitDrafts(justification);
+        if (notePending.length === 0) return null;
+        const changes = Object.fromEntries(notePending.map((p) => [p.key, p.value])) as Partial<DispatchFields>;
+        return dispatchSave(requestId, {
+          current: {
+            assigned_employee_id: data.assigned_employee_id ?? null,
+            start_date: data.start_date ?? null,
+            urgency_tier: data.urgency_tier ?? null,
+            next_follow_up_date: data.next_follow_up_date ?? null,
+            next_steps: data.next_steps ?? null,
+            estimated_cost: data.estimated_cost != null ? Number(data.estimated_cost) : null,
+          },
+          changes,
+          justification,
+        });
+      },
     );
   }
 
   // Closing with unsaved edits asks first.
   function requestClose() {
-    if (pending.length > 0 && !window.confirm(t(lang,
+    if (pendingCount > 0 && !window.confirm(t(lang,
       'Des modifications ne sont pas enregistrées. Fermer quand même ?',
       'You have unsaved changes. Close anyway?'))) return;
     onClose();
@@ -294,7 +318,8 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
           <div className={styles.body}>
             {isPending && <p className={styles.loading}>{t(lang, 'Chargement…', 'Loading…')}</p>}
             {isError && <p className={styles.error}>{errorText()}</p>}
-            {staleMsg && <p className={styles.staleMsg}>{staleMsg}</p>}
+            {staleMsg && <p className={styles.staleMsg} data-testid="panel-error">{staleMsg}</p>}
+            {okMsg && <p className={styles.okMsg} role="status" data-testid="panel-success">{okMsg}</p>}
 
             {data && (
               <>
@@ -309,12 +334,12 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                     </section>
                   )}
 
-                  {/* AI interpretation comparison — only when AI ran AND values differ from tenant's */}
+                  {/* AI interpretation comparison — only when AI ran AND values differ from tenant's.
+                      Animals stay on the Location card (lease/caller); never compared here (hallucination risk). */}
                   {data.triage_model_version && data.raw_caller_body && (() => {
                     const accessDiffers = data.raw_caller_body.entry_permission !== data.entry_permission;
-                    const animalsDiffers = data.raw_caller_body.animals !== data.animals;
                     const problemsDiffer = !!data.problems && data.raw_caller_body?.problems !== data.problems;
-                    if (!accessDiffers && !animalsDiffers && !problemsDiffer) return null;
+                    if (!accessDiffers && !problemsDiffer) return null;
                     const pair = (label: string, tenant: string | null, ai: string | null) => (
                       <div className={styles.compare}>
                         <span className={styles.compareLabel}>{label}</span>
@@ -335,23 +360,36 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                         <h3 className={styles.cardTitle}>{t(lang, 'Interprétation IA', 'AI interpretation')}</h3>
                         {problemsDiffer && pair(t(lang, 'Problème', 'Problem'), data.raw_caller_body?.problems ?? null, data.problems)}
                         {accessDiffers && pair(t(lang, 'Accès', 'Access'), data.raw_caller_body.entry_permission, data.entry_permission)}
-                        {animalsDiffers && pair(t(lang, 'Animaux', 'Animals'), data.raw_caller_body.animals, data.animals)}
                       </section>
                     );
                   })()}
 
-                  {/* AI section — triage summary and notes, coord/dir only */}
+                  {/* AI section — notes → reasoning (bottom) → feedback, coord/dir only */}
                   {isEditor && data.triage_model_version && (
                     <section className={styles.card} data-testid="ai-section">
                       <h3 className={styles.cardTitle}>{t(lang, 'Résumé IA', 'AI summary')}</h3>
-                      {data.problem_summary && <p className={styles.prose}>{data.problem_summary}</p>}
-                      {data.other_notes && (
-                        <>
-                          <h4 className={styles.subTitle}>{t(lang, 'Notes IA', 'AI notes')}</h4>
-                          <p className={styles.prose}>{data.other_notes}</p>
-                        </>
+                      <AiNotesSections
+                        embedded
+                        lang={lang}
+                        problemSummary={data.problem_summary}
+                        otherNotes={data.other_notes}
+                        aiImportantNotes={data.ai_important_notes}
+                        aiNextSteps={data.ai_next_steps}
+                      />
+                      {data.ai_reasoning?.trim() && (
+                        <div className={styles.reasoning} data-testid="ai-reasoning">
+                          <h4 className={styles.subTitle}>{t(lang, 'Raisonnement IA', 'AI reasoning')}</h4>
+                          <p className={styles.prose}>{data.ai_reasoning.trim()}</p>
+                        </div>
                       )}
-                      <TriageFeedbackWidget requestId={requestId} lang={lang} />
+                      <TriageFeedbackWidget
+                        requestId={requestId}
+                        lang={lang}
+                        hasProposals={(data.tasks ?? []).some((x) => x.accepted_at == null)}
+                        onDispatchProposals={async () => {
+                          await taskEditorRef.current?.acceptProposals();
+                        }}
+                      />
                     </section>
                   )}
 
@@ -480,7 +518,29 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                           : (data.assigned_employee_name ?? '—')}
                       </dd>
                       <dt>{t(lang, 'Sous-traitant', 'Subcontractor')}</dt>
-                      <dd>{data.subcontractor_name ?? '—'}</dd>
+                      <dd>{(() => {
+                        const fromTasks = [...new Set(
+                          (data.tasks ?? [])
+                            .map((x) => x.subcontractor_name)
+                            .filter((x): x is string => !!x),
+                        )];
+                        if (fromTasks.length) return fromTasks.join(', ');
+                        return data.subcontractor_name ?? '—';
+                      })()}
+                      </dd>
+                      <dt>{t(lang, 'Urgence', 'Urgency')}</dt>
+                      <dd>{(() => {
+                        const fromTasks = [...new Set(
+                          (data.tasks ?? [])
+                            .map((x) => x.urgency_tier)
+                            .filter((x): x is string => !!x),
+                        )];
+                        if (fromTasks.length) {
+                          return fromTasks.map((u) => urgencyLabel(lang, u)).join(', ');
+                        }
+                        return urgencyLabel(lang, data.urgency_tier);
+                      })()}
+                      </dd>
                       <dt>{t(lang, 'Estimation', 'Est. time')}</dt>
                       <dd>{timeEstimateLabel(lang, data.time_estimate_bucket)}</dd>
                       <dt>{t(lang, 'Coût estimé', 'Est. cost')}</dt>
@@ -549,8 +609,7 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                                 qc.invalidateQueries({ queryKey: ['request', requestId] });
                                 setPolling(true);
                               } catch (err) {
-                                const msg = err instanceof ApiError ? err.message : String(err);
-                                setStaleMsg(msg);
+                                setStaleMsg(apiErrorMessage(lang, err));
                               }
                             }}
                           >
@@ -568,13 +627,16 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                   <section className={`${styles.card} ${styles.actionsCard}`}>
                     <h3 className={styles.cardTitle}>{t(lang, 'Tâches', 'Tasks')}</h3>
                     <TaskEditor
+                      ref={taskEditorRef}
                       lang={lang}
                       requestId={requestId}
                       callStatus={data.status}
                       tasks={data.tasks ?? []}
                       employees={employees ?? []}
-                      suggestedEmployeeId={suggestedEmpId}
-                      onError={setStaleMsg}
+                      suggestions={techSuggestions?.suggestions ?? []}
+                      onError={flashErr}
+                      onSuccess={flashOk}
+                      onDirtyChange={onTaskDirty}
                     />
                   </section>
                 )}
@@ -582,82 +644,16 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                 {isEditor && (
                   <section className={`${styles.card} ${styles.actionsCard}`} data-testid="edit-controls">
                     <h3 className={styles.cardTitle}>
-                      {t(lang, 'Actions répartiteur', 'Dispatch actions')}
+                      {t(lang, 'Notes d\'appel', 'Call notes')}
                     </h3>
 
                     {isClosed && (
                       <p className={styles.closedNotice}>
-                        {t(lang, 'Demande fermée — seul le journal est modifiable.', 'Closed — only log entries are allowed.')}
+                        {t(lang, 'Demande fermée — notes non modifiables.', 'Closed — notes are read-only.')}
                       </p>
                     )}
 
                     <div className={styles.actionsGrid}>
-                      {/* Post-triage suggestions — pre-fill assign only */}
-                      {SUGGEST_STATUSES.has(data.status)
-                        && (techSuggestions?.suggestions?.length ?? 0) > 0 && (
-                        <div className={styles.suggestBlock} data-testid="tech-suggestions">
-                          <label className={styles.editLabel}>
-                            {t(lang, 'Suggestion technicien', 'Technician suggestion')}
-                          </label>
-                          <ul className={styles.suggestList}>
-                            {techSuggestions!.suggestions.map((s) => (
-                              <li key={s.employee_id}>
-                                <button
-                                  type="button"
-                                  className={styles.suggestBtn}
-                                  disabled={isClosed}
-                                  data-testid={`tech-suggest-${s.employee_id}`}
-                                  onClick={() => setSuggestedEmpId(s.employee_id)}
-                                >
-                                  <span className={styles.suggestName}>
-                                    {s.initials ? `${s.initials} — ` : ''}{s.name}
-                                    {s.is_en_route && (
-                                      <span className={styles.suggestEnRoute} data-testid="suggest-en-route">
-                                        {t(lang, 'En route', 'En route')}
-                                      </span>
-                                    )}
-                                  </span>
-                                  <span className={styles.suggestWhy}>{s.why}</span>
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {/* Urgency */}
-                      <div className={`${styles.editField} ${changedKeys.has('urgency_tier') ? styles.editFieldChanged : ''}`}>
-                        <span className={styles.editLabel}>{t(lang, 'Urgence', 'Urgency')}</span>
-                        <div className={styles.urgencyPills}>
-                          {urgencyOptions(lang).map(({ value, label }) => (
-                            <button
-                              key={String(value)}
-                              type="button"
-                              className={`${styles.pill} ${effectiveUrgency === value ? styles.pillActive : ''}`}
-                              aria-pressed={effectiveUrgency === value}
-                              disabled={isClosed}
-                              onClick={() => setUrgencyDraft(value)}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Next follow-up date */}
-                      <div className={`${styles.editField} ${changedKeys.has('next_follow_up_date') ? styles.editFieldChanged : ''}`}>
-                        <label className={styles.editLabel}>{t(lang, 'Prochain suivi', 'Next follow-up')}</label>
-                        <input
-                          type="date"
-                          className={styles.editInput}
-                          value={followUpDate ?? data.next_follow_up_date ?? ''}
-                          disabled={isClosed}
-                          onChange={(e) => setFollowUpDate(e.target.value)}
-                          data-testid="follow-up-input"
-                        />
-                      </div>
-
-                      {/* Next steps */}
                       <div className={`${styles.editField} ${changedKeys.has('next_steps') ? styles.editFieldChanged : ''}`}>
                         <label className={styles.editLabel}>{t(lang, 'Prochaines étapes', 'Next steps')}</label>
                         <textarea
@@ -670,7 +666,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                         />
                       </div>
 
-                      {/* Cost */}
                       <div className={`${styles.editField} ${changedKeys.has('estimated_cost') ? styles.editFieldChanged : ''}`}>
                         <label className={styles.editLabel}>{t(lang, 'Coût estimé ($)', 'Est. cost ($)')}</label>
                         <input
@@ -684,42 +679,18 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                           data-testid="cost-input"
                         />
                       </div>
-
-                      {/* Log entry — always enabled even on closed */}
-                      <div className={styles.editField}>
-                        <span className={styles.editLabel}>{t(lang, 'Ajouter une note', 'Add log entry')}</span>
-                        <div className={styles.logForm}>
-                          <textarea
-                            className={styles.editTextarea}
-                            value={logText}
-                            onChange={(e) => setLogText(e.target.value)}
-                            rows={2}
-                            placeholder={t(lang, 'Note de suivi…', 'Follow-up note…')}
-                            data-testid="log-text"
-                          />
-                          <button
-                            className={styles.applyBtn}
-                            disabled={!logText.trim()}
-                            onClick={() => applyAndRefresh(() =>
-                              dispatchAddLog(requestId, { entry_text: logText.trim() })
-                            )}
-                          >
-                            {t(lang, 'Ajouter', 'Add')}
-                          </button>
-                        </div>
-                      </div>
                     </div>
 
                     {!isClosed && (
-                      <div className={`${styles.saveBar} ${pending.length ? styles.saveBarDirty : ''}`} data-testid="save-bar">
+                      <div className={`${styles.saveBar} ${pendingCount ? styles.saveBarDirty : ''}`} data-testid="save-bar">
                         <span className={styles.saveStatus} aria-live="polite">
-                          {pending.length === 0
+                          {pendingCount === 0
                             ? t(lang, 'Aucune modification', 'No changes')
                             : t(lang,
-                              `${pending.length} modification${pending.length > 1 ? 's' : ''} non enregistrée${pending.length > 1 ? 's' : ''}`,
-                              `${pending.length} unsaved change${pending.length > 1 ? 's' : ''}`)}
+                              `${pendingCount} modification${pendingCount > 1 ? 's' : ''} non enregistrée${pendingCount > 1 ? 's' : ''}`,
+                              `${pendingCount} unsaved change${pendingCount > 1 ? 's' : ''}`)}
                         </span>
-                        {pending.length > 0 && (
+                        {pendingCount > 0 && (
                           <button type="button" className={styles.discardBtn} onClick={discardEdits}>
                             {t(lang, 'Annuler les modifications', 'Discard changes')}
                           </button>
@@ -727,7 +698,7 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                         <button
                           type="button"
                           className={styles.saveBtn}
-                          disabled={pending.length === 0}
+                          disabled={pendingCount === 0}
                           onClick={doSave}
                           data-testid="save-btn"
                         >

@@ -249,6 +249,9 @@ class RequestDetail(ListRow):
     triage_summary: Optional[str] = None
     work_performed: Optional[str] = None
     other_notes: Optional[str] = None
+    ai_important_notes: Optional[list[str]] = None
+    ai_next_steps: Optional[list[str]] = None
+    ai_reasoning: Optional[str] = None
     delegable_notes: Optional[str] = None
     report_notes: Optional[str] = None
     tenant_agreement_notes: Optional[str] = None
@@ -359,6 +362,7 @@ class TechnicianSuggestion(BaseModel):
     name: str
     why: str
     is_en_route: bool = False
+    today_load: int = 0
 
 
 class TechnicianSuggestionsResponse(BaseModel):

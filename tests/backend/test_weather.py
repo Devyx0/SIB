@@ -400,6 +400,7 @@ def test_escalation_floors_urgency_and_cites_civil_code(db_conn, mkreq, weather_
     service.apply_triage_escalation(parsed, rid)
     assert parsed["urgency_tier"] == "URGENT"
     assert "1864" in parsed["other_notes"] and "1865" in parsed["other_notes"]
+    assert any("1864" in n for n in (parsed.get("ai_important_notes") or []))
     rows = _eval_rows(db_conn, rid)
     assert len(rows) == 1
     ev = rows[0]

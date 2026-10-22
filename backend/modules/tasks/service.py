@@ -23,6 +23,7 @@ from backend.modules.requests import repository as request_repo
 from . import repository as repo
 from .schemas import (
     AcceptTaskBody, ArrivedBody, AssignTaskBody, CancelTaskBody, CloseoutBody, CloseoutOut, CreateTaskBody, EnRouteBody,
+    UpdateTaskBody,
     FollowUpBody, ScheduleTaskBody, TaskListItem, TaskListResponse, TaskOut, RejectAllOut,
 )
 
@@ -134,7 +135,7 @@ def create_task(conn, body: CreateTaskBody, user: CurrentUser) -> TaskOut:
         if (parent is None or parent["request_id"] != body.request_id
                 or parent["accepted_at"] is None or parent["status"] not in repo._FOLLOWED_UP):
             raise ValidationFailed(
-                "La tâche parente doit être « expertise requise » ou « retour requis » sur cet appel"
+                "Parent task must be needs_expertise or return_visit on this call"
             )
 
     # triage_proposal / triaged / legacy fieldwork states → container is now open
@@ -183,6 +184,20 @@ def assign_task(conn, task_id: int, body: AssignTaskBody, user: CurrentUser) -> 
 def schedule_task(conn, task_id: int, body: ScheduleTaskBody, user: CurrentUser) -> TaskOut:
     task = _get_editable(conn, task_id)
     return _apply(conn, task, user, body.justification, "task_schedule", due_at=body.due_at)
+
+
+def update_task(conn, task_id: int, body: UpdateTaskBody, user: CurrentUser) -> TaskOut:
+    """Update urgency / subcontractor on an accepted editable task."""
+    task = _get_editable(conn, task_id)
+    fields: dict = {}
+    fs = body.model_fields_set
+    if "urgency_tier" in fs:
+        fields["urgency_tier"] = body.urgency_tier
+    if "subcontractor_name" in fs:
+        fields["subcontractor_name"] = body.subcontractor_name
+    if not fields:
+        raise ValidationFailed("No task fields to update")
+    return _apply(conn, task, user, body.justification, "task_update", **fields)
 
 
 def cancel_task(conn, task_id: int, body: CancelTaskBody, user: CurrentUser) -> TaskOut:
@@ -249,35 +264,74 @@ def _set_request_status(conn, req: dict, target: str, user: CurrentUser) -> None
     req["status"] = target
 
 
+def _accept_overrides(body: AcceptTaskBody | None, row: dict) -> dict:
+    """Fields the coordinator changed on the proposal card (omit → keep AI values)."""
+    if body is None:
+        return {}
+    out: dict = {}
+    fs = body.model_fields_set
+    if "description" in fs and body.description is not None and body.description != row["description"]:
+        out["description"] = body.description
+    if "subcontractor_name" in fs:
+        out["subcontractor_name"] = body.subcontractor_name
+    if "urgency_tier" in fs:
+        out["urgency_tier"] = body.urgency_tier
+    if "assigned_employee_id" in fs:
+        out["assigned_employee_id"] = body.assigned_employee_id
+    if "due_at" in fs:
+        out["due_at"] = body.due_at
+    return out
+
+
 def _accept_rows(conn, req: dict, rows: list[dict], user: CurrentUser,
-                 description: str | None = None) -> list[TaskOut]:
+                 body: AcceptTaskBody | None = None) -> list[TaskOut]:
     out = []
     for row in rows:
-        new_desc = description if description and description != row["description"] else None
-        task = repo.accept_task(conn, row["task_id"], new_desc)
-        if new_desc is not None:
-            _provenance(conn, row["task_id"], "description", user, row["description"], new_desc)
+        overrides = _accept_overrides(body, row)
+        if "assigned_employee_id" in overrides:
+            _check_assignee(conn, overrides["assigned_employee_id"])
+        task = repo.accept_task(conn, row["task_id"], **overrides)
+        for col, new in overrides.items():
+            _provenance(conn, row["task_id"], col, user, row.get(col), new)
         _provenance(conn, row["task_id"], "accepted_at", user, None, task["accepted_at"])
+        # Assignee + due on accept → scheduled (same rule as assign/schedule).
+        target = _derived_status(task["status"], task["assigned_employee_id"], task["due_at"])
+        if target != task["status"]:
+            transition_task(task["status"], target)
+            repo.update_task_status(conn, task["task_id"], target)
+            _provenance(conn, task["task_id"], "status", user, task["status"], target)
+            task = repo.get_task(conn, task["task_id"])
         out.append(TaskOut(**task))
     if req["status"] == "triage_proposal" and rows:
         _set_request_status(conn, req, "open", user)
     return out
 
 
+def _require_triage_feedback(conn, request_id: int, user: CurrentUser) -> None:
+    """Accept is gated on AI summary feedback for this coordinator on this call."""
+    from backend.modules.feedback import repository as feedback_repo
+    if feedback_repo.get_feedback(conn, request_id, user.employee_id) is None:
+        raise ValidationFailed(
+            "Soumettez un retour sur le résumé IA avant de dispatcher les propositions"
+        )
+
+
 def accept_task(conn, task_id: int, body: AcceptTaskBody, user: CurrentUser) -> TaskOut:
-    """Accept one AI proposal (optionally re-worded). First accept opens a triage_proposal call."""
+    """Accept one AI proposal (optionally edited / assigned). First accept opens the call."""
     task = repo.get_task(conn, task_id)
     if task is None:
         raise NotFoundError(f"Task {task_id} not found")
     req = _lock_call_for_proposals(conn, task["request_id"])
+    _require_triage_feedback(conn, task["request_id"], user)
     rows = repo.lock_proposals(conn, task["request_id"], task_id)
     if not rows:
         raise ConflictError("Task is already accepted")
-    return _accept_rows(conn, req, rows, user, body.description)[0]
+    return _accept_rows(conn, req, rows, user, body)[0]
 
 
 def accept_all(conn, request_id: int, user: CurrentUser) -> list[TaskOut]:
     req = _lock_call_for_proposals(conn, request_id)
+    _require_triage_feedback(conn, request_id, user)
     rows = repo.lock_proposals(conn, request_id)
     if not rows:
         raise ConflictError("No AI proposals to accept")
@@ -343,20 +397,20 @@ def _set_status(conn, task: dict, target: str, user: CurrentUser) -> None:
 def _own_open_visit(conn, task: dict, user: CurrentUser) -> dict:
     visit = request_repo.get_open_visit(conn, user.employee_id)
     if visit is None or visit["task_id"] != task["task_id"]:
-        raise ConflictError("Aucune visite en cours pour cette tâche")
+        raise ConflictError("No open visit for this task")
     return visit
 
 
 def en_route(conn, task_id: int, body: EnRouteBody, user: CurrentUser) -> TaskOut:
     """Technician/contractor departs for the task. Status → en_route, visit row,
     two outbox rows (sms + email, never sent in V1), status provenance."""
-    task = _lock_own(conn, task_id, user, "Seul l'employé assigné peut se mettre en route",
+    task = _lock_own(conn, task_id, user, "Only the assigned employee can go en route",
                      body.current_status)
     open_visit = request_repo.get_open_visit(conn, user.employee_id)
     if open_visit is not None:
         raise ConflictError(
-            f"Tâche {open_visit['task_id']} (appel {open_visit['request_id']}) déjà en route "
-            "— clôturez-la d'abord",
+            f"Task {open_visit['task_id']} (call {open_visit['request_id']}) already en route "
+            "— close it out first",
             details={
                 "open_task_id": open_visit["task_id"],
                 "open_request_id": open_visit["request_id"],
@@ -398,10 +452,10 @@ def en_route(conn, task_id: int, body: EnRouteBody, user: CurrentUser) -> TaskOu
 
 def arrived(conn, task_id: int, body: ArrivedBody, user: CurrentUser) -> TaskOut:
     """Technician arrived on site. Status → arrived; stamps visit.arrived_at for travel KPI."""
-    task = _lock_own(conn, task_id, user, "Seul l'employé assigné peut marquer l'arrivée",
+    task = _lock_own(conn, task_id, user, "Only the assigned employee can mark arrived",
                      body.current_status)
     if task["status"] != "en_route":
-        raise ConflictError("La tâche n'est pas en route")
+        raise ConflictError("Task is not en route")
     visit = _own_open_visit(conn, task, user)
     _set_status(conn, task, "arrived", user)
     request_repo.mark_visit_arrived(conn, visit_id=visit["visit_id"], lat=body.lat, lng=body.lng)
@@ -421,25 +475,25 @@ def closeout(conn, task_id: int, body: CloseoutBody, user: CurrentUser) -> Close
     task: complete → done, partial_reschedule → return_visit + follow-up task,
     partial_expertise / failed → needs_expertise. Closes the visit, logs the
     comment on the call, then runs the call auto-close check."""
-    task = _lock_own(conn, task_id, user, "Seul l'employé assigné peut clôturer",
+    task = _lock_own(conn, task_id, user, "Only the assigned employee can close out",
                      body.current_status)
     if task["status"] not in ("arrived", "working"):
-        raise ConflictError("Marquez l'arrivée avant de clôturer")
+        raise ConflictError("Mark arrived before closing out")
     visit = _own_open_visit(conn, task, user)
     request_id = task["request_id"]
 
     today = today_local()
     if body.outcome == "partial_reschedule":
         if body.next_date is not None and body.next_date < today:
-            raise ValidationFailed("La date de retour ne peut pas être dans le passé")
+            raise ValidationFailed("Return date cannot be in the past")
     elif body.next_date is not None:
-        raise ValidationFailed("Une date de retour n'est permise que pour « je dois revenir »")
+        raise ValidationFailed("A return date is only allowed for « I need to come back »")
     if body.urgent and body.outcome not in ("partial_expertise", "failed"):
-        raise ValidationFailed("« Urgent » n'est permis que pour les expertises")
+        raise ValidationFailed("Urgent is only allowed for expertise outcomes")
 
     ids = list(dict.fromkeys(body.attachment_ids))
     if request_repo.count_usable_photos(conn, request_id, user.employee_id, ids) != len(ids):
-        raise ValidationFailed("Photo invalide, d'un autre appel ou déjà utilisée")
+        raise ValidationFailed("Invalid photo, from another call, or already used")
 
     # No separate « au travail » tap yet: closing out implies work started.
     if task["status"] == "arrived":

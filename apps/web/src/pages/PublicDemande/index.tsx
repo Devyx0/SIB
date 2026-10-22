@@ -227,8 +227,8 @@ export default function PublicDemande({
               <p className={styles.deskHelp} data-testid="public-desk-help">
                 {t(
                   lang,
-                  'Aucun logement trouvé. Appelez l’accueil au ',
-                  'No matching unit found. Call the front desk at ',
+                  'Veuillez nous contacter au ',
+                  'Please contact us at ',
                 )}
                 <a href={`tel:${FRONT_DESK_PHONE.replace(/\D/g, '')}`}>{FRONT_DESK_PHONE}</a>
                 .

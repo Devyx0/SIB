@@ -18,9 +18,15 @@ const LEVELS: Array<{ value: FeedbackLevel; fr: string; en: string }> = [
 interface Props {
   requestId: number;
   lang?: Lang;
+  /** When true, the primary action is « Dispatcher » (feedback then accept proposals). */
+  hasProposals?: boolean;
+  /** Accept remaining AI proposals (with local edits). Called after feedback is saved. */
+  onDispatchProposals?: () => Promise<void>;
 }
 
-export default function TriageFeedbackWidget({ requestId, lang = 'fr' }: Props) {
+export default function TriageFeedbackWidget({
+  requestId, lang = 'fr', hasProposals = false, onDispatchProposals,
+}: Props) {
   const qc = useQueryClient();
 
   const { data: existing } = useQuery<TriageFeedback | null>({
@@ -40,7 +46,6 @@ export default function TriageFeedbackWidget({ requestId, lang = 'fr' }: Props) 
   const [reason, setReason] = useState('');
   const [, setInputMethod] = useState<'typed' | 'voice'>('typed');
 
-  // Sync form state when existing feedback loads.
   useEffect(() => {
     if (existing) {
       setLevel(existing.level);
@@ -49,21 +54,40 @@ export default function TriageFeedbackWidget({ requestId, lang = 'fr' }: Props) 
   }, [existing?.feedback_id]);
 
   const mutation = useMutation({
-    mutationFn: () => upsertFeedback(requestId, {
-      level: level!,
-      reason: reason.trim() || null,
-    }),
+    mutationFn: async () => {
+      const result = await upsertFeedback(requestId, {
+        level: level!,
+        reason: reason.trim() || null,
+      });
+      if (hasProposals && onDispatchProposals) {
+        await onDispatchProposals();
+      }
+      return result;
+    },
     onSuccess: (result) => {
       qc.setQueryData(['feedback', requestId], result);
+      void qc.invalidateQueries({ queryKey: ['request', requestId] });
+      void qc.invalidateQueries({ queryKey: ['tasks'] });
+      void qc.invalidateQueries({ queryKey: ['requests'] });
     },
   });
 
   const needsReason = level === 'partiellement utile' || level === 'pas utile';
   const canSave = level !== null && (!needsReason || reason.trim().length >= 10);
+  const isDispatch = hasProposals;
 
   return (
     <div className={styles.widget} data-testid="feedback-widget">
       <h4 className={styles.heading}>{t(lang, 'Retour sur le résumé IA', 'AI summary feedback')}</h4>
+      <p className={styles.hint}>
+        {isDispatch
+          ? t(lang,
+            'Utile → Dispatcher. Partiellement / Pas utile → commentez (min. 10 car.), corrigez les tâches, puis Dispatcher.',
+            'Useful → Dispatch. Partially / Not useful → comment (min. 10 chars), edit tasks, then Dispatch.')
+          : t(lang,
+            'Mettez à jour votre retour sur le résumé IA.',
+            'Update your feedback on the AI summary.')}
+      </p>
 
       <div className={styles.levelBtns} role="group" aria-label={t(lang, 'Niveau de retour', 'Feedback level')}>
         {LEVELS.map(({ value, fr, en }) => (
@@ -110,13 +134,17 @@ export default function TriageFeedbackWidget({ requestId, lang = 'fr' }: Props) 
         className={styles.saveBtn}
         onClick={() => mutation.mutate()}
         disabled={!canSave || mutation.isPending}
-        data-testid="feedback-save"
+        data-testid={isDispatch ? 'feedback-dispatch' : 'feedback-save'}
       >
         {mutation.isPending
-          ? t(lang, 'Enregistrement…', 'Saving…')
-          : existing
-            ? t(lang, 'Mettre à jour', 'Update')
-            : t(lang, 'Enregistrer', 'Save')}
+          ? (isDispatch
+            ? t(lang, 'Dispatch…', 'Dispatching…')
+            : t(lang, 'Enregistrement…', 'Saving…'))
+          : isDispatch
+            ? t(lang, 'Dispatcher', 'Dispatch')
+            : existing
+              ? t(lang, 'Mettre à jour', 'Update')
+              : t(lang, 'Enregistrer', 'Save')}
       </button>
 
       {existing && !mutation.isPending && !mutation.isError && (

@@ -1,9 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useRequests } from '../../hooks/useRequests';
 import { useTasks } from '../../hooks/useTasks';
-import { fetchSectors, fetchEmployees, ApiError } from '../../api/client';
+import { fetchSectors, fetchEmployees, apiErrorMessage } from '../../api/client';
 import type { BoardMode } from '../../api/boardModes';
 import { clampStatusesToMode, defaultStatusesForMode } from '../../api/boardModes';
 import { expandStatusFilter } from '../../api/statusValues';
@@ -13,6 +13,7 @@ import { t } from '../../i18n';
 import FilterBar from './FilterBar';
 import RequestTable from './RequestTable';
 import TaskTable, { sortTasks, taskUrgency, type TaskSortKey } from './TaskTable';
+import TaskWeekGrid, { addDays, mondayOf, torontoYmd } from './TaskWeekGrid';
 import DetailPanel from './DetailPanel';
 import NouvelAppelModal from './NouvelAppelModal';
 import TaskDayStrip from './TaskDayStrip';
@@ -30,14 +31,15 @@ interface Props {
 
 const PAGE_SIZE = 50;
 
-/** Local calendar dates in America/Toronto (matches backend today_local). */
-function torontoYmd(d: Date = new Date()): string {
-  return d.toLocaleDateString('en-CA', { timeZone: 'America/Toronto' }); // YYYY-MM-DD
-}
-
+/** Month-so-far through +14d so AI tasks due later (Faible = +3d) stay visible. */
 function defaultDateRange(): { start: string; end: string } {
-  const end = torontoYmd();
-  const start = `${end.slice(0, 7)}-01`; // first day of current month
+  const today = torontoYmd();
+  const end = addDays(today, 14);
+  let start = `${today.slice(0, 7)}-01`;
+  // FilterBar / GET /tasks reject windows wider than 31 days.
+  if ((Date.parse(`${end}T12:00:00`) - Date.parse(`${start}T12:00:00`)) / 86400000 > 31) {
+    start = addDays(end, -31);
+  }
   return { start, end };
 }
 
@@ -100,12 +102,25 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
     }
   }
 
+  const taskView = !isTriage && searchParams.get('view') === 'calendar' ? 'calendar' : 'list';
   const rangeStart = searchParams.get('start_date') ?? DEFAULT_START;
   const rangeEnd = searchParams.get('end_date') ?? DEFAULT_END;
-  /** Tasks: optional single-day focus within the range. */
+  /** Tasks: optional single-day focus within the range (list view only). */
   const dayFocus = searchParams.get('day');
-  const startDate = isTriage ? '' : (dayFocus && dayFocus >= rangeStart && dayFocus <= rangeEnd ? dayFocus : rangeStart);
-  const endDate = isTriage ? '' : (dayFocus && dayFocus >= rangeStart && dayFocus <= rangeEnd ? dayFocus : rangeEnd);
+  const weekStart = mondayOf(
+    (/^\d{4}-\d{2}-\d{2}$/.test(rangeStart) ? rangeStart : torontoYmd()),
+  );
+  const weekEnd = addDays(weekStart, 6);
+  const startDate = isTriage
+    ? ''
+    : taskView === 'calendar'
+      ? weekStart
+      : (dayFocus && dayFocus >= rangeStart && dayFocus <= rangeEnd ? dayFocus : rangeStart);
+  const endDate = isTriage
+    ? ''
+    : taskView === 'calendar'
+      ? weekEnd
+      : (dayFocus && dayFocus >= rangeStart && dayFocus <= rangeEnd ? dayFocus : rangeEnd);
   const statusParam = clampStatusesToMode(mode, searchParams.getAll('status'));
   const sourceCalendar = searchParams.get('source_calendar') ?? undefined;
   const q = searchParams.get('q') ?? undefined;
@@ -277,20 +292,7 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
     });
   }
 
-  const is403 =
-    isError &&
-    error instanceof ApiError &&
-    (error.code === 'PERMISSION_DENIED' || error.code === 'HTTP_403');
-
-  const errorMsg = !isError
-    ? undefined
-    : is403
-      ? t(lang, 'Accès refusé', 'Access denied')
-      : error instanceof ApiError && error.code === 'VALIDATION_FAILED' && error.message.includes('31 day')
-        ? t(lang, 'La plage de dates ne peut pas dépasser 31 jours', error.message)
-        : error instanceof ApiError && error.code === 'VALIDATION_FAILED' && error.message.includes('end_date')
-          ? t(lang, 'La date de fin ne peut pas précéder la date de début', error.message)
-          : (error instanceof ApiError ? error.message : t(lang, 'Erreur', 'Error'));
+  const errorMsg = !isError ? undefined : apiErrorMessage(lang, error);
 
   // Dev-only: ?demo=1 puts one fake call at the top of the main table.
   const demo = isDemoEnabled(searchParams);
@@ -316,9 +318,39 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
         </div>
         <div className={styles.headerActions}>
           {!isTriage && (
-            <Link to="/tasks/calendar" className={styles.calendarLink} data-testid="calendar-link">
-              {t(lang, 'Calendrier', 'Calendar')}
-            </Link>
+            <div className={styles.viewToggle} role="group" aria-label={t(lang, 'Vue', 'View')} data-testid="tasks-view-toggle">
+              <button
+                type="button"
+                className={taskView === 'list' ? styles.viewToggleActive : undefined}
+                aria-pressed={taskView === 'list'}
+                data-testid="tasks-view-list"
+                onClick={() => setFilter('view', null)}
+              >
+                {t(lang, 'Liste', 'List')}
+              </button>
+              <button
+                type="button"
+                className={taskView === 'calendar' ? styles.viewToggleActive : undefined}
+                aria-pressed={taskView === 'calendar'}
+                data-testid="tasks-view-calendar"
+                onClick={() => setSearchParams((prev) => {
+                  const next = new URLSearchParams(prev);
+                  next.set('view', 'calendar');
+                  // Snap the range to the week containing the current start (or today).
+                  const anchor = next.get('start_date') && /^\d{4}-\d{2}-\d{2}$/.test(next.get('start_date')!)
+                    ? next.get('start_date')!
+                    : torontoYmd();
+                  const mon = mondayOf(anchor);
+                  next.set('start_date', mon);
+                  next.set('end_date', addDays(mon, 6));
+                  next.delete('day');
+                  next.delete('offset');
+                  return next;
+                })}
+              >
+                {t(lang, 'Calendrier', 'Calendar')}
+              </button>
+            </div>
           )}
           {isCoordOrDir && (
             <button
@@ -390,7 +422,7 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
         showSourceFilter={isTriage}
       />
 
-      {!isTriage && (
+      {!isTriage && taskView === 'list' && (
         <TaskDayStrip
           lang={lang}
           startDate={rangeStart}
@@ -401,7 +433,7 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
       )}
 
       {/* Only the table cards scroll; header, filters and paging stay put. */}
-      {!isTriage && (
+      {!isTriage && taskView === 'list' && (
         <div className={styles.scrollArea} data-testid="board-scroll">
           {undatedTasks.length > 0 && (
             <div className={`${styles.tableWrap} ${styles.unscheduledGroup}`} data-testid="unscheduled-group">
@@ -438,6 +470,37 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
             />
           </div>
         </div>
+      )}
+
+      {!isTriage && taskView === 'calendar' && (
+        <TaskWeekGrid
+          lang={lang}
+          weekStart={weekStart}
+          datedRows={taskRows}
+          undatedRows={undatedTasks}
+          selectedTaskId={selectedTaskId}
+          onSelect={selectTask}
+          isLoading={isPending}
+          isError={isError}
+          onToday={() => setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            const mon = mondayOf(torontoYmd());
+            next.set('start_date', mon);
+            next.set('end_date', addDays(mon, 6));
+            next.delete('day');
+            next.delete('offset');
+            return next;
+          })}
+          onShiftWeek={(delta) => setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            const mon = addDays(weekStart, delta * 7);
+            next.set('start_date', mon);
+            next.set('end_date', addDays(mon, 6));
+            next.delete('day');
+            next.delete('offset');
+            return next;
+          })}
+        />
       )}
 
       {isTriage && <div className={styles.scrollArea} data-testid="board-scroll">

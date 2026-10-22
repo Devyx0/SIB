@@ -75,6 +75,18 @@ describe('/tasks board', () => {
     expect(screen.getByText((c) => c.trim() === '1 tâche')).toBeTruthy();
   });
 
+  it('default date window reaches two weeks ahead (Faible AI due dates)', async () => {
+    wrap('tasks', '/tasks');
+    await waitFor(() => expect(mocks.fetchTasks).toHaveBeenCalled());
+    const params = mocks.fetchTasks.mock.calls.find((c) => c[0].start_date)![0];
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
+    const end = new Date(`${today}T12:00:00`);
+    end.setDate(end.getDate() + 14);
+    const expectEnd = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+    expect(params.end_date).toBe(expectEnd);
+    expect(params.end_date >= today).toBe(true);
+  });
+
   it('the day strip narrows the due-date window to that day', async () => {
     wrap('tasks', '/tasks?start_date=2026-09-01&end_date=2026-09-25&day=2026-09-10');
     await waitFor(() => expect(mocks.fetchTasks).toHaveBeenCalledWith(expect.objectContaining({

@@ -208,13 +208,20 @@ def test_create_task_during_triage_proposal_opens_call(ac, db_conn):
 
 def test_create_task_during_triage_proposal_keeps_pending_proposals(ac, db_conn):
     rid = _mk_request(db_conn, "triage_proposal")
+    db_conn.execute(
+        "UPDATE maintenance_request SET triage_model_version = 'test-model' WHERE request_id = %s",
+        [rid],
+    )
     proposal = insert_task(db_conn, request_id=rid, description="IA", source="ai_recommended",
                            accepted_at=None)["task_id"]
     assert ac(_coord()).post("/api/v1/tasks", json={
         "request_id": rid, "description": "Maison", "justification": _JUST}).status_code == 200
     assert _req_status(db_conn, rid) == "open"
     assert get_task(db_conn, proposal)["accepted_at"] is None
-    # …and it can still be accepted afterwards.
+    # Accept is gated on feedback.
+    assert ac(_coord()).post(f"/api/v1/tasks/{proposal}/accept").status_code == 422
+    from backend.modules.feedback.repository import upsert_feedback
+    upsert_feedback(db_conn, rid, 4, "utile", None, {"problem_summary": "x"}, "test-model")
     assert ac(_coord()).post(f"/api/v1/tasks/{proposal}/accept").status_code == 200
 
 
@@ -405,6 +412,45 @@ def test_schedule_after_dispatch_or_terminal_409(ac, db_conn, open_request_id, s
 def test_schedule_unknown_task_404(ac):
     r = ac(_coord()).post("/api/v1/tasks/999999999/schedule", json={"due_at": _DUE_ISO, "justification": _JUST})
     assert r.status_code == 404
+
+
+# ── POST /tasks/{id}/update ───────────────────────────────────────────────────
+
+def test_update_urgency_and_subcontractor(ac, db_conn, open_request_id):
+    t = _accepted(db_conn, open_request_id, urgency_tier="Faible")
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/update", json={
+        "urgency_tier": "URGENT", "subcontractor_name": "  Fortin  ", "justification": _JUST,
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["urgency_tier"] == "URGENT"
+    assert body["subcontractor_name"] == "Fortin"
+    assert body["status"] == t["status"]
+
+
+def test_update_clear_subcontractor(ac, db_conn, open_request_id):
+    t = _accepted(db_conn, open_request_id, subcontractor_name="Fortin")
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/update", json={
+        "subcontractor_name": None, "justification": _JUST,
+    })
+    assert r.status_code == 200
+    assert r.json()["subcontractor_name"] is None
+
+
+def test_update_no_fields_422(ac, db_conn, open_request_id):
+    t = _accepted(db_conn, open_request_id)
+    assert ac(_coord()).post(
+        f"/api/v1/tasks/{t['task_id']}/update", json={"justification": _JUST},
+    ).status_code == 422
+
+
+@pytest.mark.parametrize("status", ["en_route", "done", "cancelled"])
+def test_update_after_dispatch_or_terminal_409(ac, db_conn, open_request_id, status):
+    t = _accepted(db_conn, open_request_id, assigned_employee_id=_TECH, due_at=_DUE, status=status)
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/update", json={
+        "urgency_tier": "URGENT", "justification": _JUST,
+    })
+    assert r.status_code == 409
 
 
 # ── GET /requests/{id} carries tasks ──────────────────────────────────────────

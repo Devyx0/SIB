@@ -39,7 +39,10 @@ OUTPUT_SCHEMA = {
     "subcontractor_name": "str | null",
     "vendor_id": "int | null",
     "synergy_request_ids": "list[int]",
-    "other_notes": "str | null",
+    "ai_important_notes": "list[str] | null",
+    "ai_next_steps": "list[str] | null",
+    "reasoning": "str | null",
+    "other_notes": "str | null",  # legacy; prefer the two arrays
     "recommended_tasks": (
         "list[{description: str, suggested_trade?: str, urgency_tier?: URGENT|Intermédiaire|Faible|null, "
         "vendor_id?: int|null, subcontractor_name?: str|null, notes?: str|null}] "
@@ -155,17 +158,30 @@ def _check_recommended_tasks(parsed: dict) -> str | None:
 
 def _text_fields(parsed: dict) -> list[str]:
     out = []
-    for key in ("title", "entry_permission", "other_notes"):
+    for key in ("title", "entry_permission", "other_notes", "reasoning", "ai_reasoning"):
         v = parsed.get(key)
         if isinstance(v, str):
             out.append(v)
-    for p in parsed.get("problems", []):
-        if isinstance(p, str):
-            out.append(p)
+    for key in ("ai_important_notes", "ai_next_steps", "problems"):
+        for p in parsed.get(key) or []:
+            if isinstance(p, str):
+                out.append(p)
     for t in _recommended_tasks(parsed):
         if isinstance(t, dict):
             out.extend(t[k] for k in _TASK_TEXT_KEYS if isinstance(t.get(k), str))
     return out
+
+
+def _notes_blob(parsed: dict) -> str:
+    """Joined text used by rentroll phrase checks."""
+    parts: list[str] = []
+    if isinstance(parsed.get("other_notes"), str):
+        parts.append(parsed["other_notes"])
+    for key in ("ai_important_notes", "ai_next_steps"):
+        for p in parsed.get(key) or []:
+            if isinstance(p, str):
+                parts.append(p)
+    return "\n".join(parts)
 
 
 def parse_response(raw: str) -> dict:
@@ -317,10 +333,10 @@ def validate(
         )
 
     if required_notes:
-        notes = parsed.get("other_notes") or ""
+        notes = _notes_blob(parsed)
         missing = [p for p in required_notes if p not in notes]
         if missing:
-            return "rejected_rentroll", f"other_notes missing {missing!r}"
+            return "rejected_rentroll", f"ai notes missing {missing!r}"
 
     # Gate 7 — duplicate / addition must cite an open same-unit call (rule 12)
     verdict = parsed.get("verdict")

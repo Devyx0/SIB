@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from backend.core.exceptions import NotFoundError, ValidationFailed
+from backend.core.security import CurrentUser
 
 from . import repository as repo
 from .schemas import FeedbackBody, FeedbackResponse
@@ -15,7 +16,7 @@ def get_feedback(conn, request_id: int, employee_id: int) -> FeedbackResponse:
 
 
 def upsert_feedback(
-    conn, request_id: int, employee_id: int, body: FeedbackBody
+    conn, request_id: int, user: CurrentUser, body: FeedbackBody,
 ) -> FeedbackResponse:
     snapshot = repo.get_triage_snapshot(conn, request_id)
     if snapshot is None:
@@ -26,10 +27,11 @@ def upsert_feedback(
     row = repo.upsert_feedback(
         conn,
         request_id,
-        employee_id,
+        user.employee_id,
         body.level,
         body.reason,
         snapshot,
         snapshot["triage_model_version"],
     )
+    # Accept / dispatch is a separate step (UI « Dispatcher »), gated on this row.
     return FeedbackResponse(**row)

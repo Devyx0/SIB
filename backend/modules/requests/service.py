@@ -48,7 +48,8 @@ _INTERNAL_TECH: frozenset[str] = frozenset({
 #   request_id, start_date, asnu, urgency_tier, urgency_raw, raw_title,
 #   building_id/address/name, sector_id, territoire, color_code,
 #   assigned_employee_id/name, subcontractor_name, time_estimate_*, source_calendar*,
-#   status, event_id, problem_summary, work_performed, entry_permission, animals,
+#   status, event_id, problem_summary, work_performed, ai_important_notes,
+#   ai_next_steps, entry_permission, animals,
 #   follow_up_expected, unit_id/label, project_id/label, html_link, caller_type,
 #   bail_raw, historique_raw, ft_link, ft_name, problems, followup_log,
 #   category_raw, element, symptome, composante, emplacement,
@@ -163,6 +164,21 @@ def list_requests(conn, params, user: CurrentUser) -> ListResponse:
     )
 
 
+def _hydrate_ai_notes(row: dict) -> None:
+    """Fill ai_* arrays from other_notes when columns are empty (legacy rows).
+
+    Tech/contractor never receive other_notes (stripped below); they do receive
+    ai_important_notes / ai_next_steps — so hydrate before the strip.
+    """
+    has_arrays = bool(row.get("ai_important_notes")) or bool(row.get("ai_next_steps"))
+    if has_arrays or not row.get("other_notes"):
+        return
+    from backend.triage.ai_notes import parse_other_notes
+    important, next_steps = parse_other_notes(row["other_notes"])
+    row["ai_important_notes"] = important
+    row["ai_next_steps"] = next_steps
+
+
 def get_request(conn, request_id: int, user: CurrentUser) -> RequestDetail:
     scope_sql, scope_params = _scope(user)
     row = repo.get_request(conn, request_id, scope_sql=scope_sql, scope_params=scope_params)
@@ -172,6 +188,8 @@ def get_request(conn, request_id: int, user: CurrentUser) -> RequestDetail:
     row["visits"] = repo.list_visits(conn, request_id)
     row["tasks"] = task_service.list_for_request(conn, request_id, user)
     row["intake_photo_ids"] = repo.list_intake_photo_ids(conn, request_id)
+
+    _hydrate_ai_notes(row)
 
     is_restricted = not bool(user.roles & {"director", "coordinator"})
     if is_restricted:
@@ -518,6 +536,7 @@ def _suggestion_why(c: dict, lang: str) -> str:
     fr = lang != "en"
     parts: list[str] = []
     hist = int(c.get("history_count") or 0)
+    load = int(c.get("today_load") or 0)
     if c.get("is_a5"):
         parts.append("Dédié à cet immeuble" if fr else "Dedicated to this building")
     if hist > 0:
@@ -527,6 +546,13 @@ def _suggestion_why(c: dict, lang: str) -> str:
         )
     if not parts:
         parts.append("Secteur correspondant" if fr else "Matches sector")
+    if load > 0:
+        parts.append(
+            f"{load} appel{'s' if load > 1 else ''} aujourd'hui" if fr
+            else f"{load} call{'s' if load != 1 else ''} today"
+        )
+    else:
+        parts.append("Charge légère aujourd'hui" if fr else "Light load today")
     if c.get("is_en_route"):
         parts.append("En route actuellement" if fr else "Currently en route")
     return " · ".join(parts)
@@ -535,19 +561,24 @@ def _suggestion_why(c: dict, lang: str) -> str:
 def get_technician_suggestions(
     conn, request_id: int, lang: str = "fr",
 ) -> TechnicianSuggestionsResponse:
-    """DB-ranked top-3 suggestions; never invents out-of-sector people."""
+    """DB-ranked top-3 suggestions; never invents out-of-sector people.
+
+    Rank: A5 dedicated → lighter today_load → more building history →
+    prefer not en_route → name. Workload is a first-class signal, not a
+    tie-break after history alone.
+    """
     loc = repo.get_request_location(conn, request_id)
     if loc is None:
         raise NotFoundError(f"Request {request_id} not found")
     candidates = repo.list_technician_suggestion_candidates(
         conn, building_id=loc.get("building_id"), sector_id=loc.get("sector_id"),
     )
-    # Rank: history desc, prefer not en_route, prefer A5, then name.
     candidates.sort(
         key=lambda c: (
+            -int(bool(c.get("is_a5"))),
+            int(c.get("today_load") or 0),
             -int(c.get("history_count") or 0),
             bool(c.get("is_en_route")),
-            -int(bool(c.get("is_a5"))),
             (c.get("name") or "").lower(),
         )
     )
@@ -561,6 +592,7 @@ def get_technician_suggestions(
                 name=c.get("name") or "",
                 why=_suggestion_why(c, lang),
                 is_en_route=bool(c.get("is_en_route")),
+                today_load=int(c.get("today_load") or 0),
             )
             for c in top
         ],

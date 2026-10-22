@@ -91,4 +91,23 @@ export const DEMO_DETAIL: RequestDetail = {
   ft_link: null,
   ft_name: null,
   weather_evaluation: null,
+  tasks: [
+    {
+      task_id: -101,
+      request_id: DEMO_REQUEST_ID,
+      description: 'Réparer la fuite sous l’évier',
+      status: 'queued',
+      assigned_employee_id: null,
+      vendor_id: null,
+      subcontractor_name: 'Fortin',
+      due_at: null,
+      urgency_tier: 'URGENT',
+      source: 'dispatcher',
+      accepted_at: `${today}T12:00:00Z`,
+      parent_task_id: null,
+      sort_order: 0,
+      created_at: `${today}T12:00:00Z`,
+      updated_at: `${today}T12:00:00Z`,
+    },
+  ],
 };

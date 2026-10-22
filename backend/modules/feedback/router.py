@@ -27,7 +27,7 @@ def feedback_upsert(
     user: CurrentUser = _COORD_DIR,
     conn=Depends(get_db_conn),
 ) -> FeedbackResponse:
-    return service.upsert_feedback(conn, request_id, user.employee_id, body)
+    return service.upsert_feedback(conn, request_id, user, body)
 
 
 @router.get(

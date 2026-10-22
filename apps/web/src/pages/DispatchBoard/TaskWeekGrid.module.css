@@ -1,0 +1,199 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 12px;
+  padding: 0 28px 16px;
+  overflow: hidden;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.todayBtn,
+.arrow {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--navy-800);
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.arrow {
+  font-size: 18px;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--color-neutral-800);
+}
+
+.range {
+  font-size: 13px;
+  color: var(--color-neutral-800);
+  min-width: 12em;
+  text-align: center;
+}
+
+.muted {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-neutral-600);
+}
+
+.error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-danger, #b42318);
+}
+
+.sansDate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  flex-shrink: 0;
+}
+
+.sansDate h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-warning-ink);
+}
+
+.sansDateList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(150px, 1fr));
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.day {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0; /* allow column to scroll inside the grid row */
+  height: 100%;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.dayToday {
+  /* Soft tint only — a thick border on a stretched empty day looked like an overlay. */
+  background: color-mix(in srgb, var(--navy-50, #eef2f7) 65%, white);
+}
+
+.dayToday h2 {
+  color: var(--navy-800);
+}
+
+.day h2 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+  color: var(--color-neutral-600);
+}
+
+.todayPill {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--navy-800);
+  background: color-mix(in srgb, var(--navy-700, #0b3263) 12%, white);
+  padding: 1px 5px;
+  border-radius: 999px;
+}
+
+.emptyDay {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-neutral-500);
+}
+
+.task {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 0;
+  padding: 6px 8px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--navy-50, #eef2f7);
+  color: var(--color-neutral-900);
+  cursor: pointer;
+}
+
+.task:hover {
+  border-color: var(--color-border);
+}
+
+.taskSelected {
+  border-color: var(--navy-700, #0b3263);
+  background: color-mix(in srgb, var(--navy-700, #0b3263) 12%, white);
+}
+
+.taskUrgent {
+  border-left: 3px solid var(--color-danger, #b42318);
+}
+
+.taskDesc {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.taskMeta {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--color-neutral-600);
+}
+
+@media (max-width: 639px) {
+  .wrap {
+    padding: 0 14px 12px;
+  }
+
+  .grid {
+    grid-template-columns: repeat(7, minmax(160px, 1fr));
+  }
+}

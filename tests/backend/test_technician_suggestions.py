@@ -234,6 +234,61 @@ def test_suggestions_history_counts_done_tasks(ac, db_conn, sector_building):
     assert ids.index(tasked) < ids.index(legacy)
 
 
+def test_suggestions_prefers_lighter_today_load(ac, db_conn, sector_building):
+    """Same building history → tech with fewer open calls due today ranks higher."""
+    bid, sid = sector_building["building_id"], sector_building["sector_id"]
+    # Isolate the sector pool so seed techs don't crowd out the heavy peer.
+    db_conn.execute(
+        "UPDATE employee SET is_active = false WHERE sector_id = %s AND is_active = true",
+        [sid],
+    )
+    light = _mk_tech(db_conn, initials="TLT", name="Light Load", sector_id=sid)
+    heavy = _mk_tech(db_conn, initials="THV", name="Heavy Load", sector_id=sid)
+    for eid in (light, heavy):
+        db_conn.execute(
+            """
+            INSERT INTO maintenance_request
+              (status, building_id, sector_id, assigned_employee_id, start_date, raw_title)
+            VALUES ('closed', %s, %s, %s, CURRENT_DATE - 20, 'hist')
+            """,
+            [bid, sid, eid],
+        )
+    # Give heavy three open accepted tasks due today (app TZ).
+    for i in range(3):
+        rid_h = db_conn.execute(
+            """
+            INSERT INTO maintenance_request (status, building_id, sector_id, raw_title)
+            VALUES ('open', %s, %s, %s) RETURNING request_id
+            """,
+            [bid, sid, f"Heavy {i}"],
+        ).fetchone()["request_id"]
+        insert_task(
+            db_conn, request_id=rid_h, description=f"Busy {i}", status="scheduled",
+            assigned_employee_id=heavy, source="dispatcher",
+            accepted_at=datetime.now(timezone.utc),
+            due_at=datetime.now(timezone.utc),
+        )
+    rid = db_conn.execute(
+        """
+        INSERT INTO maintenance_request (status, building_id, sector_id, raw_title)
+        VALUES ('triaged', %s, %s, 'Balance me') RETURNING request_id
+        """,
+        [bid, sid],
+    ).fetchone()["request_id"]
+
+    r = ac(_user(_COORD, "coordinator")).get(
+        f"/api/v1/requests/{rid}/technician-suggestions"
+    )
+    assert r.status_code == 200, r.text
+    sugg = r.json()["suggestions"]
+    by_id = {s["employee_id"]: s for s in sugg}
+    assert light in by_id and heavy in by_id
+    assert sugg[0]["employee_id"] == light
+    assert by_id[heavy]["today_load"] == 3
+    assert by_id[light]["today_load"] == 0
+    assert "aujourd'hui" in by_id[heavy]["why"].lower() or "today" in by_id[heavy]["why"].lower()
+
+
 def test_suggestions_tech_forbidden(ac, db_conn, sector_building):
     bid, sid = sector_building["building_id"], sector_building["sector_id"]
     rid = db_conn.execute(

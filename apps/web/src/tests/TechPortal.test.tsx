@@ -308,6 +308,52 @@ describe('call view', () => {
     expect(screen.queryByText('RÉSUMÉ IA — NE PAS AFFICHER')).toBeNull();
   });
 
+  it('links the full building address to Google Maps', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({
+      building_address: '123 rue Test',
+      building_full_address: '123 rue Test, Québec, G1K 0A1',
+      unit_label: '4',
+      problems: 'Fuite',
+    }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByTestId('building-map-link')).toBeTruthy());
+    const link = screen.getByTestId('building-map-link') as HTMLAnchorElement;
+    expect(link.textContent).toContain('123 rue Test, Québec, G1K 0A1');
+    expect(link.href).toContain('google.com/maps');
+    expect(link.href).toContain(encodeURIComponent('123 rue Test, Québec, G1K 0A1'));
+    expect(screen.getByText(/app\. 4/)).toBeTruthy();
+  });
+
+  it('shows ai_important_notes as AI notes', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({
+      other_notes: null,
+      ai_important_notes: ['Plomberie d’abord, puis plancher une fois sec.'],
+      ai_next_steps: ["Couper l'eau"],
+      triage_summary: 'Clarify reason — not for tech',
+      problems: 'Fuite',
+    }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByTestId('call-ai-notes')).toBeTruthy());
+    expect(screen.getByText('Notes IA')).toBeTruthy();
+    expect(screen.getByTestId('ai-notes-important').textContent).toContain(
+      'Plomberie d’abord, puis plancher une fois sec.',
+    );
+    expect(screen.getByTestId('ai-notes-next').textContent).toContain("Couper l'eau");
+    expect(screen.queryByText('Clarify reason — not for tech')).toBeNull();
+  });
+
+  it('hides AI notes when arrays and other_notes are empty', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({
+      other_notes: null, ai_important_notes: null, ai_next_steps: null, problems: 'Fuite',
+    }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByText('Fuite')).toBeTruthy());
+    expect(screen.queryByTestId('call-ai-notes')).toBeNull();
+  });
+
   it('shows taxonomy, next steps, ASNU and estimate for the technician', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
     mocks.fetchRequest.mockResolvedValue(detail({

@@ -258,6 +258,9 @@ def get_request(
             mr.triage_summary,
             mr.work_performed,
             mr.other_notes,
+            mr.ai_important_notes,
+            mr.ai_next_steps,
+            mr.ai_reasoning,
             mr.delegable_notes,
             mr.report_notes,
             mr.tenant_agreement_notes,
@@ -996,14 +999,51 @@ def get_request_location(conn, request_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+# Open work due today (local calendar day). Accepted non-terminal tasks on
+# due_at, plus legacy call-level assignee with start_date=today and no accepted
+# task yet. Used by suggestion ranking and AI tech prefill.
+# Local "today" must use the app TZ — DB session is often UTC, so CURRENT_DATE
+# alone would disagree with (due_at AT TIME ZONE tz)::date near midnight.
+_TODAY_LOAD_SQL = """
+            COALESCE((
+                SELECT count(*)::int FROM (
+                    SELECT t_d.task_id
+                    FROM dispatch_task t_d
+                    WHERE t_d.assigned_employee_id = e.employee_id
+                      AND t_d.accepted_at IS NOT NULL
+                      AND t_d.status::text NOT IN ('done', 'cancelled')
+                      AND (t_d.due_at AT TIME ZONE {tz})::date
+                          = (CURRENT_TIMESTAMP AT TIME ZONE {tz})::date
+                    UNION ALL
+                    SELECT mr_d.request_id
+                    FROM maintenance_request mr_d
+                    WHERE mr_d.assigned_employee_id = e.employee_id
+                      AND mr_d.start_date = (CURRENT_TIMESTAMP AT TIME ZONE {tz})::date
+                      AND mr_d.status::text NOT IN ('closed')
+                      AND NOT EXISTS (
+                          SELECT 1 FROM dispatch_task t_x
+                          WHERE t_x.request_id = mr_d.request_id
+                            AND t_x.accepted_at IS NOT NULL
+                            AND t_x.assigned_employee_id = e.employee_id
+                      )
+                ) day_load
+            ), 0)
+"""
+
+
+def today_load_sql(*, tz_literal: str = "%(tz)s") -> str:
+    """SQL expression counting today's open assignments for employee alias `e`."""
+    return _TODAY_LOAD_SQL.format(tz=tz_literal)
+
+
 def list_technician_suggestion_candidates(
     conn, *, building_id: int | None, sector_id: int | None,
 ) -> list[dict]:
-    """Active tech/contractor in sector or A5 for this building, with history + en_route."""
+    """Active tech/contractor in sector or A5 for this building, with history + load + en_route."""
     if building_id is None and sector_id is None:
         return []
     rows = conn.execute(
-        """
+        f"""
         SELECT
             e.employee_id,
             e.initials,
@@ -1018,6 +1058,7 @@ def list_technician_suggestion_candidates(
                 SELECT 1 FROM request_visit v_er
                 WHERE v_er.employee_id = e.employee_id AND v_er.closeout_at IS NULL
             ) AS is_en_route,
+            {today_load_sql()} AS today_load,
             COALESCE((
                 -- Done tasks at this building in the last 12 months, plus
                 -- pre-task closed calls that never got an accepted task.

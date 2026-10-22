@@ -142,7 +142,9 @@ def maybe_close_request(conn, request_id: int) -> bool:
     return True
 
 
-_UPDATABLE_FIELDS: frozenset[str] = frozenset({"assigned_employee_id", "due_at"})
+_UPDATABLE_FIELDS: frozenset[str] = frozenset({
+    "assigned_employee_id", "due_at", "urgency_tier", "subcontractor_name",
+})
 
 
 def lock_accepted_task(conn, task_id: int) -> dict | None:
@@ -165,15 +167,24 @@ def lock_proposals(conn, request_id: int, task_id: int | None = None) -> list[di
     return [dict(r) for r in rows]
 
 
-def accept_task(conn, task_id: int, description: str | None = None) -> dict:
+def accept_task(conn, task_id: int, **fields: Any) -> dict:
+    """Stamp accepted_at; optional overrides (description, subcontractor, urgency, assignee, due)."""
+    allowed = {
+        "description", "subcontractor_name", "urgency_tier",
+        "assigned_employee_id", "due_at",
+    }
+    unknown = set(fields) - allowed
+    if unknown:
+        raise ValueError(f"Bad accept fields: {sorted(unknown)}")
+    sets = ["accepted_at = now()", "updated_at = now()"]
+    params: dict[str, Any] = {"task_id": task_id}
+    for col, val in fields.items():
+        sets.append(f"{col} = %({col})s")
+        params[col] = val
     conn.execute(
-        """
-        UPDATE dispatch_task
-        SET accepted_at = now(), description = COALESCE(%(description)s, description),
-            updated_at = now()
-        WHERE task_id = %(task_id)s AND accepted_at IS NULL
-        """,
-        {"task_id": task_id, "description": description},
+        f"UPDATE dispatch_task SET {', '.join(sets)} "
+        "WHERE task_id = %(task_id)s AND accepted_at IS NULL",
+        params,
     )
     return get_task(conn, task_id)
 

@@ -70,19 +70,19 @@ class RequestClosedError(ConflictError):
 
 class RequestEnRouteError(ConflictError):
     code = "REQUEST_EN_ROUTE"
-    detail = "Appel en cours — le technicien doit d'abord clôturer"
+    detail = "Call in progress — technician must close out first"
 
 
 class AssigneeEnRouteError(ConflictError):
     code = "ASSIGNEE_EN_ROUTE"
-    detail = "Technicien déjà en route — clôturer d'abord"
+    detail = "Technician already en route — close out first"
 
 
 class StorageError(AppError):
     # 502: the storage backend failed, not us — the client can safely retry
     status_code = 502
     code = "STORAGE_ERROR"
-    detail = "Échec de l'envoi de la photo — réessayez"
+    detail = "Photo upload failed — try again"
 
 
 # Legacy alias kept for any future references

@@ -271,20 +271,20 @@ describe('phone filter toggle', () => {
 
 describe('quick date ranges', () => {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
-  const minus = (n: number) => {
+  const shift = (n: number) => {
     const [y, m, d] = today.split('-').map(Number);
-    return new Date(Date.UTC(y, m - 1, d - n)).toISOString().slice(0, 10);
+    return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
   };
 
-  it.each([[7, 6], [14, 13], [30, 29]])('%i jours sets both dates in one call, ending today', async (days, back) => {
+  it.each([[7, 6], [14, 13], [30, 29]])('%i jours on tasks looks ahead from today', async (days, ahead) => {
     const onDateRange = vi.fn();
     const onStartDate = vi.fn();
     render(<FilterBar {...defaultProps} onDateRange={onDateRange} onStartDate={onStartDate} />);
-    await userEvent.click(screen.getByRole('button', { name: `${days} derniers jours` }));
-    expect(onDateRange).toHaveBeenCalledWith(minus(back), today);
+    await userEvent.click(screen.getByRole('button', { name: `${days} prochains jours` }));
+    expect(onDateRange).toHaveBeenCalledWith(today, shift(ahead));
     expect(onStartDate).not.toHaveBeenCalled();
-    expect((screen.getByTestId('start-date-input') as HTMLInputElement).value).toBe(minus(back));
-    expect((screen.getByTestId('end-date-input') as HTMLInputElement).value).toBe(today);
+    expect((screen.getByTestId('start-date-input') as HTMLInputElement).value).toBe(today);
+    expect((screen.getByTestId('end-date-input') as HTMLInputElement).value).toBe(shift(ahead));
   });
 
   it('a custom range shows on the calendar button and is picked from the calendar', async () => {
@@ -317,7 +317,7 @@ describe('quick date ranges', () => {
   });
 
   it('marks the matching range as active', () => {
-    render(<FilterBar {...defaultProps} startDate={minus(13)} endDate={today} />);
+    render(<FilterBar {...defaultProps} startDate={today} endDate={shift(13)} />);
     expect(screen.getByTestId('quick-range-14').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByTestId('quick-range-7').getAttribute('aria-pressed')).toBe('false');
   });

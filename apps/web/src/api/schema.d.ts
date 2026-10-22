@@ -178,6 +178,12 @@ export interface RequestDetail extends ListRow {
   triage_summary: string | null;
   work_performed: string | null;
   other_notes: string | null;
+  /** Structured AI Important bullets (preferred over parsing other_notes). */
+  ai_important_notes?: string[] | null;
+  /** Structured AI Next-step bullets. */
+  ai_next_steps?: string[] | null;
+  /** Short AI rationale for prefilled dispatch choices (urgency, routing, tasks). */
+  ai_reasoning?: string | null;
   delegable_notes: string | null;
   report_notes: string | null;
   tenant_agreement_notes: string | null;

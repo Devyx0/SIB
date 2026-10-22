@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRequest } from '../../hooks/useRequest';
-import { taskEnRoute, taskArrived, ApiError, GENERIC_ERROR_FR } from '../../api/client';
+import { taskEnRoute, taskArrived, ApiError, apiErrorMessage } from '../../api/client';
 import type { MeResponse, RequestDetail, TaskOut } from '../../api/schema.d.ts';
 import type { Lang } from '../../i18n';
 import { t, statusLabel, timeEstimateLabel } from '../../i18n';
 import { formatEntryDate } from '../../components/HistoryTimeline';
 import { IntakePhotos } from '../../components/RequestSections';
+import AiNotesSections from '../../components/AiNotesSections';
 import { urgencyLabel } from '../../lib/urgencyLevels';
 import { dueDay } from '../../lib/taskDates';
+import { googleMapsUrl } from '../../lib/maps';
 import TechHeader from './TechHeader';
 import { elapsedLabel } from './elapsed';
 import { pickMyTask, taskIdParam } from './myTask';
@@ -87,9 +89,10 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
     } catch (e) {
       if (e instanceof ApiError) {
         const d = e.details as { open_request_title?: string | null } | null;
-        setActionError(d?.open_request_title ? `${e.message} (${d.open_request_title})` : e.message);
+        const base = apiErrorMessage(lang, e);
+        setActionError(d?.open_request_title ? `${base} (${d.open_request_title})` : base);
       } else {
-        setActionError(GENERIC_ERROR_FR);
+        setActionError(apiErrorMessage(lang, e));
       }
     } finally {
       setBusy(false);
@@ -108,7 +111,7 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
         lng: pos?.lng ?? null,
       }));
     } catch (e) {
-      setActionError(e instanceof ApiError ? e.message : GENERIC_ERROR_FR);
+      setActionError(apiErrorMessage(lang, e));
     } finally {
       setBusy(false);
     }
@@ -127,6 +130,9 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
   const hasTaxonomy = !!(
     req?.element || req?.symptome || req?.composante || req?.emplacement || req?.category_raw
   );
+  const buildingAddress = req
+    ? (req.building_full_address ?? req.building_address)
+    : null;
 
   return (
     <div className={styles.page}>
@@ -238,12 +244,41 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
 
             <section className={styles.card}>
               <h2 className={styles.cardTitle}>{t(lang, 'Adresse', 'Address')}</h2>
-              <p>
-                {req.building_address ?? '—'}
-                {req.unit_label ? `, app. ${req.unit_label}` : ''}
-              </p>
+              {buildingAddress ? (
+                <p>
+                  <a
+                    className={styles.mapLink}
+                    href={googleMapsUrl(buildingAddress)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={t(lang, 'Ouvrir dans Google Maps', 'Open in Google Maps')}
+                    data-testid="building-map-link"
+                  >
+                    {buildingAddress}
+                    <span aria-hidden="true"> ↗</span>
+                  </a>
+                  {req.unit_label ? `, app. ${req.unit_label}` : ''}
+                </p>
+              ) : (
+                <p>{req.unit_label ? `app. ${req.unit_label}` : '—'}</p>
+              )}
               {req.building_name && <p className={styles.muted}>{req.building_name}</p>}
             </section>
+
+            {((req.ai_important_notes && req.ai_important_notes.length > 0)
+              || (req.ai_next_steps && req.ai_next_steps.length > 0)
+              || req.other_notes) && (
+              <section className={styles.card} data-testid="call-ai-notes">
+                <h2 className={styles.cardTitle}>{t(lang, 'Notes IA', 'AI notes')}</h2>
+                <AiNotesSections
+                  embedded
+                  lang={lang}
+                  otherNotes={req.other_notes}
+                  aiImportantNotes={req.ai_important_notes}
+                  aiNextSteps={req.ai_next_steps}
+                />
+              </section>
+            )}
 
             <section className={styles.card} data-testid="call-problem">
               <h2 className={styles.cardTitle}>

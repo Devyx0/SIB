@@ -1,14 +1,16 @@
 /** Call detail: the call's tasks (assign / schedule) and « Nouvelle tâche ». */
-import { useEffect, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  ApiError, acceptAllTasks, acceptTask, assignTask, cancelTask, createTask, followUpTask, rejectAllTasks, rejectTask,
-  scheduleTask,
+  ApiError, apiErrorMessage, acceptTask, assignTask, cancelTask, createTask, followUpTask, rejectAllTasks, rejectTask,
+  scheduleTask, updateTask,
+  type Justification, type TechnicianSuggestion,
 } from '../../api/client';
 import type { EmployeeLookup, TaskOut } from '../../api/schema.d.ts';
 import { useJustify, type JustifyRequest } from '../../components/Justification';
 import { roleLabel, statusLabel, t, type Lang } from '../../i18n';
 import { dueAtFromDay, dueDay } from '../../lib/taskDates';
+import { urgencyOptions } from '../../lib/urgencyLevels';
 import Select from '../../components/Select';
 import styles from './DetailPanel.module.css';
 
@@ -18,10 +20,24 @@ interface Props {
   callStatus: string;
   tasks: TaskOut[];
   employees: EmployeeLookup[];
-  /** A technician suggestion picked in the panel — pre-fills the new task's assignee. */
-  suggestedEmployeeId: number | null;
+  /** Same ranked list for the call; applied per task (or new-task) assignee. */
+  suggestions?: TechnicianSuggestion[];
   onError: (message: string) => void;
+  onSuccess?: (message: string) => void;
+  /** Staged accepted-task edits — parent Save bar uses this count. */
+  onDirtyChange?: (count: number) => void;
 }
+
+export type TaskPendingRow = { label: string; before: string; after: string };
+
+export type TaskEditorHandle = {
+  discardDrafts: () => void;
+  pendingRows: () => TaskPendingRow[];
+  /** Apply staged accepted-task field edits with the shared justification. */
+  commitDrafts: (justification: Justification) => Promise<void>;
+  /** Accept every AI proposal, applying local draft overrides. Requires feedback first. */
+  acceptProposals: () => Promise<void>;
+};
 
 // Assignee and date are dispatcher-editable until the tech leaves (backend _EDITABLE).
 const EDITABLE = new Set(['queued', 'scheduled']);
@@ -37,11 +53,65 @@ const NO_NEW_TASK = new Set([
   'intake_received', 'triage_pending', 'triage_clarify', 'triage_failed', 'closed',
 ]);
 
-type Draft = { assignee?: number | null; day?: string };
+type Draft = {
+  assignee?: number | null;
+  day?: string;
+  urgency?: string | null;
+  sub?: string | null;
+};
+type ProposalDraft = {
+  description?: string;
+  subcontractor_name?: string | null;
+  urgency_tier?: string | null;
+  assignee?: number | null;
+  day?: string;
+};
 
-export default function TaskEditor({
-  lang, requestId, callStatus, tasks, employees, suggestedEmployeeId, onError,
-}: Props) {
+function TechSuggestList({
+  lang, suggestions, disabled, onPick, testId,
+}: {
+  lang: Lang;
+  suggestions: TechnicianSuggestion[];
+  disabled: boolean;
+  onPick: (employeeId: number) => void;
+  testId: string;
+}) {
+  if (suggestions.length === 0) return null;
+  return (
+    <div className={styles.suggestBlock} data-testid={testId}>
+      <label className={styles.editLabel}>
+        {t(lang, 'Suggestion technicien', 'Technician suggestion')}
+      </label>
+      <ul className={styles.suggestList}>
+        {suggestions.map((s) => (
+          <li key={s.employee_id}>
+            <button
+              type="button"
+              className={styles.suggestBtn}
+              disabled={disabled}
+              data-testid={`${testId}-${s.employee_id}`}
+              onClick={() => onPick(s.employee_id)}
+            >
+              <span className={styles.suggestName}>
+                {s.initials ? `${s.initials} — ` : ''}{s.name}
+                {s.is_en_route && (
+                  <span className={styles.suggestEnRoute} data-testid="suggest-en-route">
+                    {t(lang, 'En route', 'En route')}
+                  </span>
+                )}
+              </span>
+              <span className={styles.suggestWhy}>{s.why}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
+  lang, requestId, callStatus, tasks, employees, suggestions = [], onError, onSuccess, onDirtyChange,
+}, ref) {
   const qc = useQueryClient();
   const justify = useJustify();
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
@@ -50,12 +120,7 @@ export default function TaskEditor({
   const [newDay, setNewDay] = useState('');
   const [parent, setParent] = useState<TaskOut | null>(null);
   const [busy, setBusy] = useState(false);
-  // Re-worded proposals, keyed by task id; untouched proposals are accepted as written.
-  const [wording, setWording] = useState<Record<number, string>>({});
-
-  useEffect(() => {
-    if (suggestedEmployeeId != null) setNewAssignee(suggestedEmployeeId);
-  }, [suggestedEmployeeId]);
+  const [proposalDrafts, setProposalDrafts] = useState<Record<number, ProposalDraft>>({});
 
   const accepted = tasks.filter((x) => x.accepted_at != null);
   const proposals = tasks.filter((x) => x.accepted_at == null);
@@ -82,11 +147,9 @@ export default function TaskEditor({
   }
 
   function report(err: unknown) {
+    onError(apiErrorMessage(lang, err));
     if (err instanceof ApiError && err.code === 'ASSIGNEE_EN_ROUTE') {
-      onError(t(lang, "Technicien déjà en route — clôturer d'abord", 'Technician already en route — close out first'));
       qc.invalidateQueries({ queryKey: ['employees'] });
-    } else {
-      onError(err instanceof ApiError ? err.message : t(lang, 'Erreur', 'Error'));
     }
     qc.invalidateQueries({ queryKey: ['request', requestId] });
   }
@@ -121,17 +184,50 @@ export default function TaskEditor({
     }
   }
 
-  const proposalText = (p: TaskOut) => wording[p.task_id] ?? p.description;
-  const anyReworded = proposals.some((p) => proposalText(p).trim() !== p.description);
+  function proposalView(p: TaskOut) {
+    const d = proposalDrafts[p.task_id] ?? {};
+    return {
+      description: d.description ?? p.description,
+      subcontractor_name: d.subcontractor_name !== undefined ? d.subcontractor_name : p.subcontractor_name,
+      urgency_tier: d.urgency_tier !== undefined ? d.urgency_tier : p.urgency_tier,
+      assignee: d.assignee !== undefined ? d.assignee : p.assigned_employee_id,
+      day: d.day !== undefined ? d.day : (dueDay(p.due_at) ?? ''),
+    };
+  }
+  function setProposal(taskId: number, patch: ProposalDraft) {
+    setProposalDrafts((prev) => ({ ...prev, [taskId]: { ...prev[taskId], ...patch } }));
+  }
 
-  function acceptProposal(p: TaskOut) {
-    const text = proposalText(p).trim();
-    if (!text) return;
-    return decideProposals(() => acceptTask(p.task_id, text !== p.description ? { description: text } : {}));
+  function acceptBody(p: TaskOut): Parameters<typeof acceptTask>[1] {
+    const v = proposalView(p);
+    const body: Parameters<typeof acceptTask>[1] = {};
+    const text = v.description.trim();
+    if (text && text !== p.description) body.description = text;
+    if ((v.subcontractor_name ?? null) !== (p.subcontractor_name ?? null)) {
+      body.subcontractor_name = v.subcontractor_name;
+    }
+    if ((v.urgency_tier ?? null) !== (p.urgency_tier ?? null)) {
+      body.urgency_tier = v.urgency_tier;
+    }
+    if ((v.assignee ?? null) !== (p.assigned_employee_id ?? null)) {
+      body.assigned_employee_id = v.assignee;
+    }
+    if ((v.day || null) !== (dueDay(p.due_at) ?? null)) {
+      body.due_at = v.day ? dueAtFromDay(v.day) : null;
+    }
+    return body;
+  }
+
+  async function acceptProposals() {
+    for (const p of proposals) {
+      const text = proposalView(p).description.trim();
+      if (!text) throw new Error(t(lang, 'Description requise', 'Description required'));
+      await acceptTask(p.task_id, acceptBody(p));
+    }
+    setProposalDrafts({});
   }
 
   function rejectAllProposals() {
-    // With nothing accepted yet, this sends the call back to clarify.
     const backToClarify = accepted.length === 0;
     const msg = backToClarify
       ? t(lang, "Rejeter toutes les propositions renvoie l'appel en clarification. Continuer ?",
@@ -141,32 +237,62 @@ export default function TaskEditor({
     return decideProposals(() => rejectAllTasks(requestId));
   }
 
-  async function saveTask(task: TaskOut) {
-    const d = drafts[task.task_id] ?? {};
+  function taskFieldChanges(task: TaskOut, d: Draft): TaskPendingRow[] {
     const assigneeChanged = d.assignee !== undefined && d.assignee !== task.assigned_employee_id;
     const dayChanged = d.day !== undefined && (d.day || null) !== dueDay(task.due_at);
-    if (!assigneeChanged && !dayChanged) return;
-    const changes = [
-      ...(assigneeChanged ? [{ label: t(lang, 'Assignation', 'Assignment'),
-        before: nameOf(task.assigned_employee_id), after: nameOf(d.assignee!) }] : []),
-      ...(dayChanged ? [{ label: t(lang, 'Date prévue', 'Due date'),
+    const urgencyChanged = d.urgency !== undefined && (d.urgency ?? null) !== (task.urgency_tier ?? null);
+    const subChanged = d.sub !== undefined && (d.sub ?? null) !== (task.subcontractor_name ?? null);
+    const prefix = `${t(lang, 'Tâche', 'Task')} — ${task.description}`;
+    return [
+      ...(assigneeChanged ? [{ label: `${prefix} · ${t(lang, 'Assignation', 'Assignment')}`,
+        before: nameOf(task.assigned_employee_id), after: nameOf(d.assignee!)}] : []),
+      ...(dayChanged ? [{ label: `${prefix} · ${t(lang, 'Date prévue', 'Due date')}`,
         before: dueDay(task.due_at) ?? NONE, after: d.day || NONE }] : []),
+      ...(urgencyChanged ? [{ label: `${prefix} · ${t(lang, 'Urgence', 'Urgency')}`,
+        before: task.urgency_tier ?? NONE, after: d.urgency ?? NONE }] : []),
+      ...(subChanged ? [{ label: `${prefix} · ${t(lang, 'Sous-traitant', 'Subcontractor')}`,
+        before: task.subcontractor_name ?? NONE, after: d.sub || NONE }] : []),
     ];
-    const ok = await run(
-      {
-        decision: `${t(lang, 'Tâche', 'Task')} — ${task.description}`,
-        ...(changes.length === 1 ? { before: changes[0].before, after: changes[0].after } : {}),
-        changes,
-      },
-      async (justification) => {
-        if (assigneeChanged) await assignTask(task.task_id, { assigned_employee_id: d.assignee!, justification });
+  }
+
+  function pendingRows(): TaskPendingRow[] {
+    return accepted.flatMap((task) => taskFieldChanges(task, drafts[task.task_id] ?? {}));
+  }
+
+  const dirtyCount = pendingRows().length;
+  useEffect(() => {
+    onDirtyChange?.(dirtyCount);
+  }, [dirtyCount, onDirtyChange]);
+
+  useImperativeHandle(ref, () => ({
+    discardDrafts: () => setDrafts({}),
+    pendingRows,
+    acceptProposals,
+    commitDrafts: async (justification: Justification) => {
+      for (const task of accepted) {
+        const d = drafts[task.task_id] ?? {};
+        const assigneeChanged = d.assignee !== undefined && d.assignee !== task.assigned_employee_id;
+        const dayChanged = d.day !== undefined && (d.day || null) !== dueDay(task.due_at);
+        const urgencyChanged = d.urgency !== undefined && (d.urgency ?? null) !== (task.urgency_tier ?? null);
+        const subChanged = d.sub !== undefined && (d.sub ?? null) !== (task.subcontractor_name ?? null);
+        if (!assigneeChanged && !dayChanged && !urgencyChanged && !subChanged) continue;
+        if (assigneeChanged) {
+          await assignTask(task.task_id, { assigned_employee_id: d.assignee!, justification });
+        }
         if (dayChanged) {
           await scheduleTask(task.task_id, { due_at: d.day ? dueAtFromDay(d.day) : null, justification });
         }
-      },
-    );
-    if (ok) setDrafts((prev) => { const next = { ...prev }; delete next[task.task_id]; return next; });
-  }
+        if (urgencyChanged || subChanged) {
+          await updateTask(task.task_id, {
+            ...(urgencyChanged ? { urgency_tier: d.urgency ?? null } : {}),
+            ...(subChanged ? { subcontractor_name: d.sub || null } : {}),
+            justification,
+          });
+        }
+      }
+      setDrafts({});
+    },
+  }), [accepted, drafts, lang, employees]);
 
   async function cancelTaskRow(task: TaskOut) {
     await run(
@@ -206,7 +332,10 @@ export default function TaskEditor({
         });
       },
     );
-    if (ok) { setNewDesc(''); setNewAssignee(null); setNewDay(''); setParent(null); }
+    if (ok) {
+      setNewDesc(''); setNewAssignee(null); setNewDay(''); setParent(null);
+      onSuccess?.(t(lang, 'Tâche créée.', 'Task created.'));
+    }
   }
 
   function assigneeOptions(current: number | null) {
@@ -243,12 +372,17 @@ export default function TaskEditor({
         const editable = !isClosed && EDITABLE.has(task.status);
         const assignee = d.assignee !== undefined ? d.assignee : task.assigned_employee_id;
         const day = d.day !== undefined ? d.day : (dueDay(task.due_at) ?? '');
-        const dirty = (d.assignee !== undefined && d.assignee !== task.assigned_employee_id)
-          || (d.day !== undefined && (d.day || null) !== dueDay(task.due_at));
+        const urgency = d.urgency !== undefined ? d.urgency : task.urgency_tier;
+        const sub = d.sub !== undefined ? d.sub : (task.subcontractor_name ?? '');
+        const dirty = taskFieldChanges(task, d).length > 0;
         const setDraft = (patch: Draft) =>
           setDrafts((prev) => ({ ...prev, [task.task_id]: { ...prev[task.task_id], ...patch } }));
         return (
-          <div key={task.task_id} className={styles.editField} data-testid={`task-${task.task_id}`}>
+          <div
+            key={task.task_id}
+            className={`${styles.editField} ${dirty ? styles.editFieldChanged : ''}`}
+            data-testid={`task-${task.task_id}`}
+          >
             <span className={styles.editLabel}>
               {task.description} · {statusLabel(lang, task.status)}
             </span>
@@ -262,6 +396,15 @@ export default function TaskEditor({
             >
               {assigneeOptions(task.assigned_employee_id)}
             </Select>
+            {editable && (
+              <TechSuggestList
+                lang={lang}
+                suggestions={suggestions}
+                disabled={busy}
+                testId={`task-suggest-${task.task_id}`}
+                onPick={(employeeId) => setDraft({ assignee: employeeId })}
+              />
+            )}
             <input
               type="date"
               className={styles.editInput}
@@ -271,23 +414,33 @@ export default function TaskEditor({
               data-testid={`task-due-${task.task_id}`}
               onChange={(e) => setDraft({ day: e.target.value })}
             />
+            <label className={styles.editLabel}>{t(lang, 'Urgence', 'Urgency')}</label>
+            <Select
+              className={styles.editInput}
+              value={urgency ?? ''}
+              disabled={!editable || busy}
+              data-testid={`task-urgency-${task.task_id}`}
+              onChange={(e) => setDraft({ urgency: e.target.value || null })}
+            >
+              {urgencyOptions(lang).map(({ value, label }) => (
+                <option key={String(value)} value={value ?? ''}>{label}</option>
+              ))}
+            </Select>
+            <label className={styles.editLabel}>{t(lang, 'Sous-traitant', 'Subcontractor')}</label>
+            <input
+              className={styles.editInput}
+              value={sub}
+              disabled={!editable || busy}
+              placeholder="—"
+              data-testid={`task-sub-${task.task_id}`}
+              onChange={(e) => setDraft({ sub: e.target.value || null })}
+            />
             {IN_PROGRESS.has(task.status) && (
               <p className={styles.closedNotice} data-testid={`task-locked-${task.task_id}`}>
                 {t(lang,
                   "Appel en cours — le technicien doit d'abord clôturer",
                   'Call in progress — the technician must close it out first')}
               </p>
-            )}
-            {editable && (
-              <button
-                type="button"
-                className={styles.applyBtn}
-                disabled={!dirty || busy}
-                onClick={() => saveTask(task)}
-                data-testid={`task-save-${task.task_id}`}
-              >
-                {t(lang, 'Enregistrer', 'Save')}
-              </button>
             )}
             {!isClosed && CAN_CANCEL.has(task.status) && (
               <button
@@ -330,26 +483,68 @@ export default function TaskEditor({
       {proposals.length > 0 && !isClosed && (
         <div className={styles.editField} data-testid="task-proposals">
           <span className={styles.editLabel}>{t(lang, 'Propositions IA (à accepter)', 'AI proposals (to accept)')}</span>
-          {proposals.map((p) => (
+          {proposals.map((p) => {
+            const v = proposalView(p);
+            return (
             <div key={p.task_id} className={styles.editField} data-testid={`proposal-${p.task_id}`}>
               <textarea
                 className={styles.editTextarea}
-                value={proposalText(p)}
+                value={v.description}
                 rows={2}
                 disabled={busy}
                 aria-label={t(lang, 'Proposition IA', 'AI proposal')}
                 data-testid={`proposal-desc-${p.task_id}`}
-                onChange={(e) => setWording((prev) => ({ ...prev, [p.task_id]: e.target.value }))}
+                onChange={(e) => setProposal(p.task_id, { description: e.target.value })}
               />
-              <button
-                type="button"
-                className={styles.applyBtn}
-                disabled={busy || !proposalText(p).trim()}
-                onClick={() => acceptProposal(p)}
-                data-testid={`proposal-accept-${p.task_id}`}
+              <label className={styles.editLabel}>{t(lang, 'Sous-traitant', 'Subcontractor')}</label>
+              <input
+                className={styles.editInput}
+                value={v.subcontractor_name ?? ''}
+                disabled={busy}
+                placeholder="—"
+                data-testid={`proposal-sub-${p.task_id}`}
+                onChange={(e) => setProposal(p.task_id, { subcontractor_name: e.target.value || null })}
+              />
+              <label className={styles.editLabel}>{t(lang, 'Urgence', 'Urgency')}</label>
+              <Select
+                className={styles.editInput}
+                value={v.urgency_tier ?? ''}
+                disabled={busy}
+                data-testid={`proposal-urgency-${p.task_id}`}
+                onChange={(e) => setProposal(p.task_id, { urgency_tier: e.target.value || null })}
               >
-                {t(lang, 'Accepter', 'Accept')}
-              </button>
+                {urgencyOptions(lang).map(({ value, label }) => (
+                  <option key={String(value)} value={value ?? ''}>{label}</option>
+                ))}
+              </Select>
+              <label className={styles.editLabel}>{t(lang, 'Assigné à', 'Assigned to')}</label>
+              <Select
+                className={styles.editInput}
+                value={String(v.assignee ?? '')}
+                disabled={busy}
+                data-testid={`proposal-assign-${p.task_id}`}
+                onChange={(e) => setProposal(p.task_id, {
+                  assignee: e.target.value === '' ? null : Number(e.target.value),
+                })}
+              >
+                {assigneeOptions(null)}
+              </Select>
+              <TechSuggestList
+                lang={lang}
+                suggestions={suggestions}
+                disabled={busy}
+                testId={`proposal-suggest-${p.task_id}`}
+                onPick={(employeeId) => setProposal(p.task_id, { assignee: employeeId })}
+              />
+              <label className={styles.editLabel}>{t(lang, 'Date prévue', 'Due date')}</label>
+              <input
+                type="date"
+                className={styles.editInput}
+                value={v.day}
+                disabled={busy}
+                data-testid={`proposal-due-${p.task_id}`}
+                onChange={(e) => setProposal(p.task_id, { day: e.target.value })}
+              />
               <button
                 type="button"
                 className={styles.discardBtn}
@@ -360,17 +555,13 @@ export default function TaskEditor({
                 {t(lang, 'Rejeter', 'Reject')}
               </button>
             </div>
-          ))}
-          <button
-            type="button"
-            className={styles.applyBtn}
-            disabled={busy || anyReworded}
-            title={anyReworded ? t(lang, 'Acceptez les propositions modifiées une à une', 'Accept edited proposals one by one') : undefined}
-            onClick={() => decideProposals(() => acceptAllTasks(requestId))}
-            data-testid="proposals-accept-all"
-          >
-            {t(lang, 'Tout accepter', 'Accept all')}
-          </button>
+            );
+          })}
+          <p className={styles.editLabel}>
+            {t(lang,
+              'Dispatcher via le retour IA ci-dessus (Utile / Partiellement / Pas utile).',
+              'Dispatch via the AI feedback above (Useful / Partially / Not useful).')}
+          </p>
           <button
             type="button"
             className={styles.discardBtn}
@@ -384,20 +575,15 @@ export default function TaskEditor({
       )}
 
       <div className={styles.editField} data-testid="new-task">
-        <span className={styles.editLabel}>{t(lang, 'Nouvelle tâche', 'New task')}</span>
+        <span className={styles.editLabel} data-testid={parent ? 'new-task-parent' : undefined}>
+          {parent
+            ? t(lang, `Redispatch — ${parent.description}`, `Redispatch — ${parent.description}`)
+            : t(lang, 'Nouvelle tâche', 'New task')}
+        </span>
         {parent && (
-          <p className={styles.closedNotice} data-testid="new-task-parent">
-            {t(lang, 'Suite de', 'Follow-up to')} : {parent.description} · {statusLabel(lang, parent.status)}{' '}
-            <button
-              type="button"
-              className={styles.applyBtn}
-              disabled={busy}
-              onClick={() => setParent(null)}
-              data-testid="new-task-parent-clear"
-            >
-              {t(lang, 'Retirer', 'Remove')}
-            </button>
-          </p>
+          <button type="button" className={styles.discardBtn} disabled={busy} onClick={() => { setParent(null); setNewDesc(''); }}>
+            {t(lang, 'Annuler le redispatch', 'Cancel redispatch')}
+          </button>
         )}
         <textarea
           className={styles.editTextarea}
@@ -405,27 +591,34 @@ export default function TaskEditor({
           rows={2}
           disabled={!canCreate || busy}
           placeholder={t(lang, 'Travail à faire…', 'Work to do…')}
-          onChange={(e) => setNewDesc(e.target.value)}
           data-testid="new-task-desc"
+          onChange={(e) => setNewDesc(e.target.value)}
         />
         <Select
           className={styles.editInput}
           value={String(newAssignee ?? '')}
           disabled={!canCreate || busy}
-          aria-label={t(lang, 'Assigné à', 'Assigned to')}
           data-testid="new-task-assign"
           onChange={(e) => setNewAssignee(e.target.value === '' ? null : Number(e.target.value))}
         >
           {assigneeOptions(null)}
         </Select>
+        {canCreate && (
+          <TechSuggestList
+            lang={lang}
+            suggestions={suggestions}
+            disabled={busy}
+            testId="new-task-suggest"
+            onPick={(employeeId) => setNewAssignee(employeeId)}
+          />
+        )}
         <input
           type="date"
           className={styles.editInput}
           value={newDay}
           disabled={!canCreate || busy}
-          aria-label={t(lang, 'Date prévue', 'Due date')}
-          onChange={(e) => setNewDay(e.target.value)}
           data-testid="new-task-due"
+          onChange={(e) => setNewDay(e.target.value)}
         />
         <button
           type="button"
@@ -434,9 +627,11 @@ export default function TaskEditor({
           onClick={addTask}
           data-testid="new-task-btn"
         >
-          {t(lang, 'Ajouter la tâche', 'Add task')}
+          {parent ? t(lang, 'Créer le redispatch', 'Create redispatch') : t(lang, 'Ajouter la tâche', 'Add task')}
         </button>
       </div>
     </div>
   );
-}
+});
+
+export default TaskEditor;

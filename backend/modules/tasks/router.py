@@ -14,7 +14,7 @@ from backend.core.security import CurrentUser
 from . import service
 from .schemas import (
     AcceptTaskBody, ArrivedBody, AssignTaskBody, CancelTaskBody, CloseoutBody, CloseoutOut, CreateTaskBody, EnRouteBody,
-    FollowUpBody, ScheduleTaskBody, TaskListResponse, TaskOut, TaskStatusValue,
+    FollowUpBody, ScheduleTaskBody, TaskListResponse, TaskOut, TaskStatusValue, UpdateTaskBody,
 )
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -86,6 +86,11 @@ def task_assign(task_id: int, body: AssignTaskBody, user: CurrentUser = _COORD_D
 @router.post("/{task_id}/schedule", operation_id="task_schedule", response_model=TaskOut)
 def task_schedule(task_id: int, body: ScheduleTaskBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> TaskOut:
     return service.schedule_task(conn, task_id, body, user)
+
+
+@router.post("/{task_id}/update", operation_id="task_update", response_model=TaskOut)
+def task_update(task_id: int, body: UpdateTaskBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> TaskOut:
+    return service.update_task(conn, task_id, body, user)
 
 
 @router.post("/{task_id}/cancel", operation_id="task_cancel", response_model=TaskOut)

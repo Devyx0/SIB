@@ -218,6 +218,12 @@
   margin: 0 0 12px;
 }
 
+.reasoning {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-divider, #e5e7eb);
+}
+
 .subTitle {
   font-size: 13px;
   font-weight: 600;
@@ -365,6 +371,16 @@
   color: var(--color-danger);
   background: var(--color-danger-t);
   border: 1px solid var(--color-danger-border);
+  border-radius: var(--r-md);
+  padding: 8px 12px;
+  margin: 0 0 16px;
+}
+
+.okMsg {
+  font-size: 13px;
+  color: var(--color-success, #0f6b3c);
+  background: var(--color-success-t, #e8f6ee);
+  border: 1px solid var(--color-success-border, #a8d5b8);
   border-radius: var(--r-md);
   padding: 8px 12px;
   margin: 0 0 16px;

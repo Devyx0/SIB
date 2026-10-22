@@ -88,8 +88,16 @@ class CreateTaskBody(BaseModel):
 
 
 class AcceptTaskBody(BaseModel):
-    """Optional edit of an AI proposal's wording while accepting it."""
+    """Accept an AI proposal; any set field overrides the proposal before accept.
+
+    Assignee / due_at let the coordinator schedule in the same step (no separate
+    assign/schedule call). Omitted fields keep the AI values.
+    """
     description: Optional[str] = Field(default=None, max_length=2000)
+    subcontractor_name: Optional[str] = Field(default=None, max_length=200)
+    urgency_tier: Optional[str] = None
+    assigned_employee_id: Optional[int] = None
+    due_at: Optional[datetime] = None
 
     @field_validator("description")
     @classmethod
@@ -100,6 +108,19 @@ class AcceptTaskBody(BaseModel):
         if not v:
             raise ValueError("description must not be blank")
         return v
+
+    @field_validator("subcontractor_name")
+    @classmethod
+    def _sub_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
+
+    @field_validator("due_at")
+    @classmethod
+    def _local(cls, v: datetime | None) -> datetime | None:
+        return _localize(v)
 
 
 class FollowUpBody(BaseModel):
@@ -144,6 +165,21 @@ class ScheduleTaskBody(BaseModel):
     @classmethod
     def _local(cls, v: datetime | None) -> datetime | None:
         return _localize(v)
+
+
+class UpdateTaskBody(BaseModel):
+    """Edit task dispatch fields (urgency / subcontractor). Omitted keys are left alone."""
+    urgency_tier: Optional[str] = None
+    subcontractor_name: Optional[str] = None
+    justification: JustificationBody
+
+    @field_validator("subcontractor_name")
+    @classmethod
+    def _sub_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
 
 
 class CancelTaskBody(BaseModel):

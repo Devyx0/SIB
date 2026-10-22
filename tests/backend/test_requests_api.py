@@ -534,6 +534,47 @@ def test_detail_technician_strips_internal_fields(ac, db_conn):
     assert body["other_notes"]     is None
 
 
+def test_detail_technician_receives_ai_notes_from_other_notes(ac, db_conn):
+    """Tech must get ai_* (hydrated from other_notes) even though other_notes is stripped."""
+    db_conn.execute(
+        """
+        UPDATE maintenance_request
+           SET other_notes = %s,
+               ai_important_notes = NULL,
+               ai_next_steps = NULL
+         WHERE request_id = %s
+        """,
+        (
+            "IMPORTANT:\n- Accès keybox H\nNEXT:\n- Couper l'eau",
+            _REQ_WITH_PII,
+        ),
+    )
+    tech_r = ac(_user(_TECH_ASSIGNED, "technician")).get(f"/api/v1/requests/{_REQ_WITH_PII}")
+    assert tech_r.status_code == 200
+    body = tech_r.json()
+    assert body["other_notes"] is None
+    assert body["ai_important_notes"] == ["Accès keybox H"]
+    assert body["ai_next_steps"] == ["Couper l'eau"]
+
+
+def test_detail_technician_receives_stored_ai_note_arrays(ac, db_conn):
+    db_conn.execute(
+        """
+        UPDATE maintenance_request
+           SET other_notes = NULL,
+               ai_important_notes = %s,
+               ai_next_steps = %s
+         WHERE request_id = %s
+        """,
+        (["RÉQUÉRANT ABSENT"], ["Vérifier joint"], _REQ_WITH_PII),
+    )
+    tech_r = ac(_user(_TECH_ASSIGNED, "technician")).get(f"/api/v1/requests/{_REQ_WITH_PII}")
+    assert tech_r.status_code == 200
+    body = tech_r.json()
+    assert body["ai_important_notes"] == ["RÉQUÉRANT ABSENT"]
+    assert body["ai_next_steps"] == ["Vérifier joint"]
+
+
 # ── Extended PII case-scoping (occupants_raw / tenant_agreement_notes) ─────────
 
 def test_detail_technician_assigned_sees_occupants(ac):

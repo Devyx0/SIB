@@ -79,8 +79,8 @@ def test_single_writes_proposals_and_triage_proposal(db_conn, mk_request):
         assert r["accepted_at"] is None
         assert r["source"] == "ai_recommended"
         assert r["status"] == "queued"
-        assert r["assigned_employee_id"] is None  # rule 37
-        assert r["due_at"] is None
+        assert r["assigned_employee_id"] is None  # no building/sector on this fixture
+        assert r["due_at"] is not None  # urgency → default due
     assert [r["urgency_tier"] for r in rows] == ["URGENT", "Faible"]
     assert rows[1]["subcontractor_name"] == "Fortin"
     assert [r["sort_order"] for r in rows] == [0, 1]
@@ -95,6 +95,84 @@ def test_task_vendor_id_persisted(db_conn, mk_request):
     with _cur(db_conn) as cur:
         _write_result(cur, rid, _parsed(recommended_tasks=tasks), "test-model")
     assert _tasks(db_conn, rid)[0]["vendor_id"] == vid["vendor_id"]
+
+
+def test_proposals_prefill_assignee_when_building_known(db_conn):
+    """Sector/building on the call → one ranked tech stamped on each proposal."""
+    rid = db_conn.execute(
+        "INSERT INTO maintenance_request (status, raw_title, building_id, sector_id) "
+        "VALUES ('triage_pending'::request_status, 'Prefill tech', 3, 1) "
+        "RETURNING request_id",
+    ).fetchone()["request_id"]
+    with _cur(db_conn) as cur:
+        _write_result(cur, rid, _parsed(recommended_tasks=[
+            {"description": "Fuite", "urgency_tier": "URGENT", "suggested_trade": "plomberie"},
+            {"description": "Plancher", "urgency_tier": "Faible", "suggested_trade": "plancher"},
+        ]), "test-model")
+    rows = _tasks(db_conn, rid)
+    assert len(rows) == 2
+    assert all(r["assigned_employee_id"] is not None for r in rows)
+    assert all(r["due_at"] is not None for r in rows)
+    # Prefer different techs across trades when the pool has ≥2 people.
+    pool = db_conn.execute(
+        """SELECT count(*)::int AS n FROM employee e
+           JOIN employee_role er ON er.employee_id = e.employee_id
+           WHERE e.is_active AND er.role IN ('technician', 'contractor')
+             AND e.sector_id = 1""",
+    ).fetchone()["n"]
+    if pool >= 2:
+        assert rows[0]["assigned_employee_id"] != rows[1]["assigned_employee_id"]
+
+
+def test_pick_tech_prefers_lighter_today_load(db_conn):
+    """Among sector peers with no trade history, prefer the tech with fewer calls today."""
+    from datetime import datetime, timezone
+
+    from backend.modules.tasks.repository import insert_task
+    from backend.triage.service import _pick_tech_for_trade
+
+    row = db_conn.execute(
+        "SELECT building_id, sector_id FROM building WHERE sector_id IS NOT NULL LIMIT 1"
+    ).fetchone()
+    bid, sid = row["building_id"], row["sector_id"]
+    # Isolate: park existing sector techs inactive for this ranking check.
+    db_conn.execute(
+        "UPDATE employee SET is_active = false WHERE sector_id = %s AND is_active = true",
+        [sid],
+    )
+    light = db_conn.execute(
+        """INSERT INTO employee (initials, nom_employe, sector_id, is_active, employment_type)
+           VALUES ('PL1', 'Prefill Light', %s, true, 'staff') RETURNING employee_id""",
+        [sid],
+    ).fetchone()["employee_id"]
+    heavy = db_conn.execute(
+        """INSERT INTO employee (initials, nom_employe, sector_id, is_active, employment_type)
+           VALUES ('PH1', 'Prefill Heavy', %s, true, 'staff') RETURNING employee_id""",
+        [sid],
+    ).fetchone()["employee_id"]
+    for eid in (light, heavy):
+        db_conn.execute(
+            "INSERT INTO employee_role (employee_id, role) VALUES (%s, 'technician') "
+            "ON CONFLICT DO NOTHING",
+            [eid],
+        )
+    for i in range(2):
+        rid_h = db_conn.execute(
+            """INSERT INTO maintenance_request (status, building_id, sector_id, raw_title)
+               VALUES ('open', %s, %s, %s) RETURNING request_id""",
+            [bid, sid, f"load-{i}"],
+        ).fetchone()["request_id"]
+        insert_task(
+            db_conn, request_id=rid_h, description=f"load {i}", status="scheduled",
+            assigned_employee_id=heavy, source="dispatcher",
+            accepted_at=datetime.now(timezone.utc),
+            due_at=datetime.now(timezone.utc),
+        )
+    with _cur(db_conn) as cur:
+        picked = _pick_tech_for_trade(
+            cur, building_id=bid, sector_id=sid, trade="plomberie", used=set(),
+        )
+    assert picked == light
 
 
 def test_single_without_tasks_stays_triaged(db_conn, mk_request):

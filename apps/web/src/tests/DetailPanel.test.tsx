@@ -119,10 +119,11 @@ describe('DetailPanel', () => {
   it('shows stale message when STALE_DATA 409 received', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
-    vi.spyOn(client, 'dispatchAddLog').mockRejectedValue(new ApiError('STALE_DATA', 'stale'));
+    vi.spyOn(client, 'dispatchSave').mockRejectedValue(new ApiError('STALE_DATA', 'stale'));
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
-    await userEvent.type(screen.getByTestId('log-text'), 'Note de suivi test.');
-    await userEvent.click(screen.getByRole('button', { name: 'Ajouter' }));
+    fireEvent.change(screen.getByTestId('next-steps-input'), { target: { value: 'Commander la pièce' } });
+    await userEvent.click(screen.getByTestId('save-btn'));
+    await justifyWith('Dégât d’eau actif chez le locataire');
     await waitFor(() => expect(screen.getByText(/La demande a été modifiée/)).toBeTruthy());
   });
 
@@ -144,7 +145,9 @@ describe('DetailPanel', () => {
     await waitFor(() => expect(screen.getByTestId('task-assign-7').querySelectorAll('option').length).toBeGreaterThan(1));
     await userEvent.selectOptions(screen.getByTestId('task-assign-7'), '14');
     expect(assign).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByTestId('task-save-7'));
+    expect((screen.getByTestId('save-btn') as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByTestId('task-save-7')).toBeNull();
+    await userEvent.click(screen.getByTestId('save-btn'));
     await justifyWith();
     await waitFor(() => expect(assign).toHaveBeenCalledWith(7, {
       assigned_employee_id: 14,
@@ -155,6 +158,35 @@ describe('DetailPanel', () => {
     );
     expect(schedule).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByTestId('panel-success').textContent).toMatch(/Enregistré/));
+  });
+
+  it('shows technician suggestions per editable task and applies to that task only', async () => {
+    const twoTasks = {
+      ...MOCK_REQUEST,
+      status: 'open',
+      tasks: [task(7), task(8, { description: 'Tâche 8' })],
+    };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: twoTasks, isPending: false, isError: false, error: null,
+    });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([JEAN]);
+    vi.spyOn(client, 'fetchTechnicianSuggestions').mockResolvedValue({
+      request_id: 1,
+      suggestions: [{
+        employee_id: 14, initials: 'JT', name: 'Jean Tech',
+        why: 'Historoire immeuble', is_en_route: false,
+      }],
+    });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />);
+    await waitFor(() => expect(screen.getByTestId('task-suggest-7')).toBeTruthy());
+    expect(screen.getByTestId('task-suggest-8')).toBeTruthy();
+    expect(screen.getByTestId('new-task-suggest')).toBeTruthy();
+    expect(screen.queryByTestId('tech-suggestions')).toBeNull();
+
+    await userEvent.click(screen.getByTestId('task-suggest-7-14'));
+    expect((screen.getByTestId('task-assign-7') as HTMLSelectElement).value).toBe('14');
+    expect((screen.getByTestId('task-assign-8') as HTMLSelectElement).value).toBe('');
   });
 
   it('adds a task with assignee and due date via POST /tasks', async () => {
@@ -231,7 +263,7 @@ describe('DetailPanel', () => {
 
   const COORD = { employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse;
   const proposalsReq = (status = 'triage_proposal', extra: Record<string, unknown>[] = []) => ({
-    ...MOCK_REQUEST, status,
+    ...MOCK_REQUEST, status, triage_model_version: 'claude-sonnet-4-6',
     tasks: [
       task(9, { accepted_at: null, source: 'ai_recommended', description: 'Proposé par IA' }),
       task(10, { accepted_at: null, source: 'ai_recommended', description: 'Autre proposition' }),
@@ -239,55 +271,81 @@ describe('DetailPanel', () => {
     ],
   });
 
-  it('proposals are listed with accept/reject and the add-task form stays enabled', () => {
+  const FEEDBACK_OK = {
+    feedback_id: 1, request_id: 1, employee_id: 4, level: 'utile' as const, reason: null,
+    triage_output: {}, triage_model_version: 'claude-sonnet-4-6', edit_history: [],
+    created_at: '2026-10-19T00:00:00Z', updated_at: '2026-10-19T00:00:00Z',
+  };
+
+  it('proposals are listed with reject; dispatch is via AI feedback', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    vi.spyOn(client, 'fetchFeedback').mockRejectedValue(new ApiError('NOT_FOUND', 'no feedback'));
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
     expect((screen.getByTestId('new-task-desc') as HTMLTextAreaElement).disabled).toBe(false);
     expect((screen.getByTestId('proposal-desc-9') as HTMLTextAreaElement).value).toBe('Proposé par IA');
-    expect(screen.getByTestId('proposal-accept-9')).toBeTruthy();
+    expect(screen.queryByTestId('proposal-accept-9')).toBeNull();
     expect(screen.getByTestId('proposal-reject-9')).toBeTruthy();
-    expect(screen.queryByTestId('task-assign-9')).toBeNull();
+    expect(screen.queryByTestId('proposals-accept-all')).toBeNull();
+    await waitFor(() => expect(screen.getByTestId('feedback-dispatch')).toBeTruthy());
   });
 
-  it('accepts a proposal as written', async () => {
+  it('Dispatch (utile) saves feedback then accepts every proposal', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    vi.spyOn(client, 'fetchFeedback').mockRejectedValue(new ApiError('NOT_FOUND', 'no feedback'));
+    const upsert = vi.spyOn(client, 'upsertFeedback').mockResolvedValue(FEEDBACK_OK);
     const accept = vi.spyOn(client, 'acceptTask').mockResolvedValue(task(9) as never);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
-    await userEvent.click(screen.getByTestId('proposal-accept-9'));
-    await waitFor(() => expect(accept).toHaveBeenCalledWith(9, {}));
+    await waitFor(() => screen.getByTestId('feedback-level-utile'));
+    await userEvent.click(screen.getByTestId('feedback-level-utile'));
+    await userEvent.click(screen.getByTestId('feedback-dispatch'));
+    await waitFor(() => expect(upsert).toHaveBeenCalledWith(1, { level: 'utile', reason: null }));
+    await waitFor(() => {
+      expect(accept).toHaveBeenCalledWith(9, {});
+      expect(accept).toHaveBeenCalledWith(10, {});
+    });
   });
 
-  it('accepts a re-worded proposal with the edited description', async () => {
-    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
-    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+  it('Dispatch applies edited proposal fields', async () => {
+    const req = {
+      ...MOCK_REQUEST, status: 'triage_proposal', triage_model_version: 'claude-sonnet-4-6',
+      tasks: [
+        task(9, {
+          accepted_at: null, source: 'ai_recommended', description: 'Fuite',
+          subcontractor_name: 'Fortin', urgency_tier: 'URGENT',
+        }),
+      ],
+    };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([JEAN]);
+    vi.spyOn(client, 'fetchFeedback').mockRejectedValue(new ApiError('NOT_FOUND', 'no feedback'));
+    vi.spyOn(client, 'upsertFeedback').mockResolvedValue(FEEDBACK_OK);
     const accept = vi.spyOn(client, 'acceptTask').mockResolvedValue(task(9) as never);
-    const acceptAll = vi.spyOn(client, 'acceptAllTasks');
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
-    fireEvent.change(screen.getByTestId('proposal-desc-9'), { target: { value: 'Réparer le robinet' } });
-    expect((screen.getByTestId('proposals-accept-all') as HTMLButtonElement).disabled).toBe(true);
-    await userEvent.click(screen.getByTestId('proposal-accept-9'));
-    await waitFor(() => expect(accept).toHaveBeenCalledWith(9, { description: 'Réparer le robinet' }));
-    expect(acceptAll).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.getByTestId('proposal-assign-9').querySelectorAll('option').length).toBeGreaterThan(1),
+    );
+    fireEvent.change(screen.getByTestId('proposal-sub-9'), { target: { value: 'Fortin Plomberie' } });
+    await userEvent.selectOptions(screen.getByTestId('proposal-assign-9'), '14');
+    fireEvent.change(screen.getByTestId('proposal-due-9'), { target: { value: '2026-10-25' } });
+    await userEvent.click(screen.getByTestId('feedback-level-utile'));
+    await userEvent.click(screen.getByTestId('feedback-dispatch'));
+    await waitFor(() => expect(accept).toHaveBeenCalledWith(9, {
+      subcontractor_name: 'Fortin Plomberie',
+      assigned_employee_id: 14,
+      due_at: '2026-10-25T08:00:00',
+    }));
   });
 
   it('rejects one proposal', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    vi.spyOn(client, 'fetchFeedback').mockRejectedValue(new ApiError('NOT_FOUND', 'no feedback'));
     const reject = vi.spyOn(client, 'rejectTask').mockResolvedValue(undefined);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
     await userEvent.click(screen.getByTestId('proposal-reject-10'));
     await waitFor(() => expect(reject).toHaveBeenCalledWith(10));
-  });
-
-  it('accept all calls the request endpoint', async () => {
-    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
-    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
-    const acceptAll = vi.spyOn(client, 'acceptAllTasks').mockResolvedValue([]);
-    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
-    await userEvent.click(screen.getByTestId('proposals-accept-all'));
-    await waitFor(() => expect(acceptAll).toHaveBeenCalledWith(1));
   });
 
   it('reject all warns that the call returns to clarification, and only runs when confirmed', async () => {
@@ -328,13 +386,17 @@ describe('DetailPanel', () => {
     })));
   });
 
-  it('shows the API error when accepting fails', async () => {
+  it('shows the API error when Dispatch accept fails', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: proposalsReq(), isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    vi.spyOn(client, 'fetchFeedback').mockRejectedValue(new ApiError('NOT_FOUND', 'no feedback'));
+    vi.spyOn(client, 'upsertFeedback').mockResolvedValue(FEEDBACK_OK);
     vi.spyOn(client, 'acceptTask').mockRejectedValue(new ApiError('CONFLICT', 'Task is already accepted'));
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
-    await userEvent.click(screen.getByTestId('proposal-accept-9'));
-    await waitFor(() => expect(screen.getByText('Task is already accepted')).toBeTruthy());
+    await waitFor(() => screen.getByTestId('feedback-level-utile'));
+    await userEvent.click(screen.getByTestId('feedback-level-utile'));
+    await userEvent.click(screen.getByTestId('feedback-dispatch'));
+    await waitFor(() => expect(screen.getByTestId('feedback-error').textContent).toMatch(/already accepted|déjà/i));
   });
 
   it('renders both Estimation (time bucket) and Coût estimé (cost) rows', () => {
@@ -371,15 +433,15 @@ describe('DetailPanel', () => {
     expect(screen.getByText('not urgent')).toBeTruthy();
   });
 
-  it('disables edit controls (except log) when status is closed', async () => {
+  it('disables edit controls when status is closed', async () => {
     const closedReq = { ...WITH_TASK, status: 'closed' };
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: closedReq, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
     expect((screen.getByTestId('task-assign-7') as HTMLSelectElement).disabled).toBe(true);
     expect((screen.getByTestId('new-task-desc') as HTMLTextAreaElement).disabled).toBe(true);
-    // Log Add button exists (section not gated by isClosed)
-    expect(screen.getByRole('button', { name: 'Ajouter' })).toBeTruthy();
+    expect((screen.getByTestId('next-steps-input') as HTMLTextAreaElement).disabled).toBe(true);
+    expect(screen.queryByTestId('log-text')).toBeNull();
   });
 
   it('formats entry_date as short month + day without timezone shift', () => {
@@ -499,6 +561,26 @@ describe('DetailPanel', () => {
     expect(screen.queryByTestId('dual-display')).toBeNull();
   });
 
+  it('does not show Animals on AI interpretation even when values differ', () => {
+    const withRaw = {
+      ...MOCK_REQUEST,
+      triage_model_version: 'gpt-4o-mini',
+      raw_caller_body: {
+        entry_permission: 'Accès autorisé',
+        animals: 'Oui — chien',
+        problems: 'Fuite',
+      },
+      entry_permission: 'Accès autorisé',
+      animals: 'Non',
+      problems: 'Fuite',
+    };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: withRaw, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
+    expect(screen.queryByTestId('dual-display')).toBeNull();
+    // Still shown on the Location card from lease/caller, not as AI compare.
+    expect(screen.getByText('Animaux')).toBeTruthy();
+  });
+
   it('a changed task date goes to POST /tasks/{id}/schedule', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: WITH_TASK, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
@@ -507,7 +589,7 @@ describe('DetailPanel', () => {
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />);
 
     fireEvent.change(screen.getByTestId('task-due-7'), { target: { value: '2026-11-01' } });
-    await userEvent.click(screen.getByTestId('task-save-7'));
+    await userEvent.click(screen.getByTestId('save-btn'));
     await justifyWith('Locataire demande une date plus tard');
 
     await waitFor(() => expect(schedule).toHaveBeenCalledWith(7, {
@@ -549,6 +631,25 @@ describe('DetailPanel', () => {
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
     const section = screen.getByTestId('ai-section');
     expect(section.textContent).toContain('Fuite sous le lavabo — < 30 min');
+    expect(screen.getByTestId('ai-notes-summary').textContent).toContain('Fuite sous le lavabo');
+  });
+
+  it('ai-section renders Important / Next as bullet sections', () => {
+    const req = {
+      ...MOCK_REQUEST,
+      triage_model_version: 'gpt-4',
+      problem_summary: 'Fuite évier',
+      other_notes: null,
+      ai_important_notes: ['RÉQUÉRANT ABSENT'],
+      ai_next_steps: ["Couper l'eau"],
+      ai_reasoning: 'Urgence élevée à cause de l’eau active.',
+    };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+    expect(screen.getByTestId('ai-notes-important').textContent).toContain('RÉQUÉRANT ABSENT');
+    expect(screen.getByTestId('ai-notes-next').textContent).toContain("Couper l'eau");
+    expect(screen.getByTestId('ai-reasoning').textContent).toContain('eau active');
+    expect(screen.queryByText(/Notes IA/)).toBeNull();
   });
 
   it('ai-section does not show when triage_summary is set but problem_summary is null', () => {
@@ -641,8 +742,8 @@ describe('en route assignment lock (fix 2026-10-19)', () => {
     expect(screen.getByTestId('task-locked-7').textContent).toContain(EN_ROUTE_MSG);
     expect(screen.queryByTestId('task-save-7')).toBeNull();
     expect(screen.queryByTestId('task-cancel-7')).toBeNull();
-    // The other dispatch controls stay usable (log textarea not disabled).
-    expect((screen.getByTestId('log-text') as HTMLTextAreaElement).disabled).toBe(false);
+    // Call notes stay usable while a task is in progress.
+    expect((screen.getByTestId('next-steps-input') as HTMLTextAreaElement).disabled).toBe(false);
   });
 
   it('shows the message when the API returns 409 ASSIGNEE_EN_ROUTE', async () => {
@@ -657,7 +758,7 @@ describe('en route assignment lock (fix 2026-10-19)', () => {
       expect(screen.getByTestId('task-assign-7').querySelectorAll('option').length).toBeGreaterThan(1)
     );
     await userEvent.selectOptions(screen.getByTestId('task-assign-7'), '14');
-    await userEvent.click(screen.getByTestId('task-save-7'));
+    await userEvent.click(screen.getByTestId('save-btn'));
     await justifyWith();
     await waitFor(() => expect(screen.getByText(/Technicien déjà en route/)).toBeTruthy());
   });
@@ -722,7 +823,7 @@ describe('decision justification (system-wide)', () => {
       expect(screen.getByTestId('task-assign-7').querySelectorAll('option').length).toBeGreaterThan(1)
     );
     await userEvent.selectOptions(screen.getByTestId('task-assign-7'), '14');
-    await userEvent.click(screen.getByTestId('task-save-7'));
+    await userEvent.click(screen.getByTestId('save-btn'));
     await waitFor(() => expect(screen.getByTestId('justification-dialog')).toBeTruthy());
     expect(screen.getByTestId('justification-dialog').textContent).toContain('Jean Tech');
     await userEvent.click(within(screen.getByTestId('justification-dialog')).getByRole('button', { name: 'Annuler' }));
@@ -734,7 +835,7 @@ describe('decision justification (system-wide)', () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Urgent' }));
+    fireEvent.change(screen.getByTestId('next-steps-input'), { target: { value: 'Commander la pièce' } });
     await userEvent.click(screen.getByTestId('save-btn'));
     await waitFor(() => expect(screen.getByTestId('justification-dialog')).toBeTruthy());
     const confirm = screen.getByTestId('justification-confirm') as HTMLButtonElement;
@@ -743,41 +844,42 @@ describe('decision justification (system-wide)', () => {
     fireEvent.change(screen.getByTestId('justification-text'), { target: { value: 'Dégât d’eau actif' } });
     expect(confirm.disabled).toBe(false);
   });
-  it('urgency, follow-up, next steps and cost go out in ONE save with ONE justification', async () => {
+  it('next steps and cost go out in ONE save with ONE justification', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: MOCK_REQUEST, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     const save = vi.spyOn(client, 'dispatchSave').mockResolvedValue(ok);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Urgent' }));
-    fireEvent.change(screen.getByTestId('follow-up-input'), { target: { value: '2026-11-03' } });
     fireEvent.change(screen.getByTestId('next-steps-input'), { target: { value: 'Commander la pièce' } });
     fireEvent.change(screen.getByTestId('cost-input'), { target: { value: '250' } });
-    expect(screen.getByTestId('save-bar').textContent).toMatch(/4 modifications non enregistrées/);
+    expect(screen.getByTestId('save-bar').textContent).toMatch(/2 modifications non enregistrées/);
 
     await userEvent.click(screen.getByTestId('save-btn'));
-    await waitFor(() => expect(screen.getByTestId('justification-changes').querySelectorAll('li')).toHaveLength(4));
+    await waitFor(() => expect(screen.getByTestId('justification-changes').querySelectorAll('li')).toHaveLength(2));
     await justifyWith('Dégât d’eau actif chez le locataire');
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     expect(save).toHaveBeenCalledWith(1, expect.objectContaining({
       changes: {
-        urgency_tier: 'URGENT',
-        next_follow_up_date: '2026-11-03',
         next_steps: 'Commander la pièce',
         estimated_cost: 250,
       },
       justification: expect.objectContaining({ input_method: 'typed' }),
     }));
   });
-  it('choosing the current value is not a change', async () => {
-    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({
-      data: { ...MOCK_REQUEST, urgency_tier: 'URGENT' }, isPending: false, isError: false, error: null,
-    });
-    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+  it('task urgency + subcontractor save via updateTask', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: WITH_TASK, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([JEAN]);
+    const upd = vi.spyOn(client, 'updateTask').mockResolvedValue(task(7) as never);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Urgent' }));
-    expect((screen.getByTestId('save-btn') as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByTestId('save-bar').textContent).toMatch(/Aucune modification/);
+    await waitFor(() => expect(screen.getByTestId('task-urgency-7')).toBeTruthy());
+    await userEvent.selectOptions(screen.getByTestId('task-urgency-7'), 'URGENT');
+    fireEvent.change(screen.getByTestId('task-sub-7'), { target: { value: 'Fortin' } });
+    await userEvent.click(screen.getByTestId('save-btn'));
+    await justifyWith('Urgence élevée, Fortin disponible');
+    await waitFor(() => expect(upd).toHaveBeenCalledWith(7, expect.objectContaining({
+      urgency_tier: 'URGENT',
+      subcontractor_name: 'Fortin',
+    })));
   });
 
   it('asks before closing with unsaved changes', async () => {
@@ -786,7 +888,7 @@ describe('decision justification (system-wide)', () => {
     const onClose = vi.fn();
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     wrap(<DetailPanel requestId={1} onClose={onClose} lang="fr" me={coord} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Urgent' }));
+    fireEvent.change(screen.getByTestId('next-steps-input'), { target: { value: 'Note' } });
     await userEvent.click(screen.getByRole('button', { name: 'Fermer' }));
     expect(confirmSpy).toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();

@@ -148,8 +148,7 @@ def apply_triage_escalation(parsed: dict, request_id: int) -> None:
             f" (palier {_BAND_FR.get(ev.band_name, ev.band_name)}) —"
             f" le chauffage est une obligation du locateur (art. 1864-1865 C.c.Q.)."
         )
-        parsed["other_notes"] = (
-            f"{parsed['other_notes']}\n{note}" if parsed.get("other_notes") else note
-        )
+        from backend.triage.ai_notes import append_important
+        append_important(parsed, note)
     except Exception:
         logger.exception("Weather escalation failed for request %s — triage unaffected", request_id)

@@ -101,6 +101,35 @@ def test_utile_no_reason_succeeds(ac, triaged):
     assert data["reason"] is None
 
 
+def test_utile_feedback_does_not_auto_accept(ac, db_conn):
+    """Feedback alone does not dispatch — accept is a separate gated step."""
+    from backend.modules.tasks.repository import insert_task
+
+    rid = db_conn.execute(
+        """INSERT INTO maintenance_request
+               (status, building_id, sector_id, start_date,
+                triage_model_version, problem_summary)
+           VALUES ('triage_proposal', %(bldg)s, %(sector)s, CURRENT_DATE,
+                   'claude-sonnet-4-6', 'Fuite')
+           RETURNING request_id""",
+        {"bldg": _BLDG, "sector": _SECTOR},
+    ).fetchone()["request_id"]
+    a = insert_task(
+        db_conn, request_id=rid, description="Réparer", source="ai_recommended",
+        accepted_at=None, assigned_employee_id=_TECH, urgency_tier="URGENT",
+    )["task_id"]
+    r = ac(_user(_COORD, "coordinator")).post(
+        f"/api/v1/requests/{rid}/feedback", json={"level": "utile"},
+    )
+    assert r.status_code == 200, r.text
+    assert db_conn.execute(
+        "SELECT accepted_at FROM dispatch_task WHERE task_id = %s", [a],
+    ).fetchone()["accepted_at"] is None
+    assert db_conn.execute(
+        "SELECT status::text AS s FROM maintenance_request WHERE request_id = %s", [rid],
+    ).fetchone()["s"] == "triage_proposal"
+
+
 def test_utile_with_reason_stored(ac, triaged):
     r = ac(_user(_COORD, "coordinator")).post(
         f"/api/v1/requests/{triaged}/feedback",

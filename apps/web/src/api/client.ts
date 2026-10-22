@@ -1,12 +1,14 @@
 import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse, TaskOut, TaskListResponse, TaskCloseoutOut } from './schema.d.ts';
 export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse };
 import { supabase } from '../lib/supabase';
+import { t, type Lang } from '../i18n';
 
 // Dev: same-origin (Vite proxies /api → backend). Prod: absolute API host.
 const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL ?? '');
 
-// The portal never shows English generic errors — unknown failures map to this.
+/** @deprecated Prefer apiErrorMessage(lang, err) — kept for call sites mid-migration. */
 export const GENERIC_ERROR_FR = 'Une erreur est survenue — réessayez';
+const GENERIC_ERROR_EN = 'Something went wrong — try again';
 
 export class ApiError extends Error {
   constructor(
@@ -18,6 +20,108 @@ export class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/** User-facing API error text in the active UI language. */
+export function apiErrorMessage(lang: Lang, err: unknown): string {
+  const fallback = t(lang, GENERIC_ERROR_FR, GENERIC_ERROR_EN);
+  if (!(err instanceof ApiError)) return fallback;
+
+  switch (err.code) {
+    case 'ASSIGNEE_EN_ROUTE':
+    case 'REQUEST_EN_ROUTE':
+      return t(
+        lang,
+        "Technicien déjà en route — clôturer d'abord",
+        'Technician already en route — close out first',
+      );
+    case 'REQUEST_CLOSED':
+      return t(lang, 'Aucune modification sur un appel fermé', 'No changes allowed on a closed request');
+    case 'STALE_DATA':
+      return t(
+        lang,
+        'Données modifiées par un autre utilisateur — actualisez',
+        'Request was modified by another user',
+      );
+    case 'PERMISSION_DENIED':
+    case 'HTTP_403':
+      return t(lang, 'Accès refusé', 'Access denied');
+    case 'STORAGE_ERROR':
+      return t(lang, "Échec de l'envoi de la photo — réessayez", 'Photo upload failed — try again');
+    case 'VALIDATION_FAILED':
+      if (/31 day/i.test(err.message)) {
+        return t(
+          lang,
+          'La plage de dates ne peut pas dépasser 31 jours.',
+          'Date range cannot exceed 31 days.',
+        );
+      }
+      if (/end_date/i.test(err.message)) {
+        return t(
+          lang,
+          'La date de fin ne peut pas précéder la date de début.',
+          'End date must not be before start date.',
+        );
+      }
+      if (/return date cannot be in the past|date de retour ne peut pas/i.test(err.message)) {
+        return t(lang, 'La date de retour ne peut pas être dans le passé', 'Return date cannot be in the past');
+      }
+      if (/return date is only allowed|date de retour n'est permise/i.test(err.message)) {
+        return t(
+          lang,
+          "Une date de retour n'est permise que pour « je dois revenir »",
+          'A return date is only allowed for « I need to come back »',
+        );
+      }
+      if (/urgent is only allowed|urgent.*expertises/i.test(err.message)) {
+        return t(lang, "« Urgent » n'est permis que pour les expertises", 'Urgent is only allowed for expertise outcomes');
+      }
+      if (/invalid photo|photo invalide/i.test(err.message)) {
+        return t(lang, "Photo invalide, d'un autre appel ou déjà utilisée", 'Invalid photo, from another call, or already used');
+      }
+      if (/parent task must be|tâche parente/i.test(err.message)) {
+        return t(
+          lang,
+          'La tâche parente doit être « expertise requise » ou « retour requis » sur cet appel',
+          'Parent task must be needs_expertise or return_visit on this call',
+        );
+      }
+      break;
+    default:
+      break;
+  }
+
+  // Task visit lifecycle — English wire + legacy French.
+  const legacy: Array<[RegExp | string, string, string]> = [
+    [/^(Aucune visite en cours pour cette tâche|No open visit for this task)$/,
+      'Aucune visite en cours pour cette tâche', 'No open visit for this task'],
+    [/^(La tâche n'est pas en route|Task is not en route)$/,
+      "La tâche n'est pas en route", 'Task is not en route'],
+    [/^(Marquez l'arrivée avant de clôturer|Mark arrived before closing out)$/,
+      "Marquez l'arrivée avant de clôturer", 'Mark arrived before closing out'],
+    [/^Tâche \d+ \(appel \d+\) déjà en route/,
+      err.message, err.message.replace(
+        /^Tâche (\d+) \(appel (\d+)\) déjà en route — clôturez-la d'abord$/,
+        'Task $1 (call $2) already en route — close it out first',
+      )],
+    [/^Task \d+ \(call \d+\) already en route/,
+      err.message.replace(
+        /^Task (\d+) \(call (\d+)\) already en route — close it out first$/,
+        "Tâche $1 (appel $2) déjà en route — clôturez-la d'abord",
+      ), err.message],
+    [/^Seul l'employé assigné/,
+      err.message, err.message.replace(/^Seul l'employé assigné/, 'Only the assigned employee')],
+    [/^Only the assigned employee/,
+      err.message.replace(/^Only the assigned employee/, "Seul l'employé assigné"), err.message],
+  ];
+  for (const [match, fr, en] of legacy) {
+    const hit = typeof match === 'string' ? err.message === match : match.test(err.message);
+    if (hit) return t(lang, fr, en);
+  }
+
+  // Prefer a bilingual generic when the envelope used the stock message.
+  if (err.message === GENERIC_ERROR_FR || err.message === GENERIC_ERROR_EN) return fallback;
+  return err.message || fallback;
 }
 
 export interface RequestListParams {
@@ -58,7 +162,8 @@ async function request<T>(path: string, method: string, body?: unknown): Promise
 
   if (!res.ok) {
     let code = `HTTP_${res.status}`;
-    let message = GENERIC_ERROR_FR;
+    // English default at the wire; UI maps via apiErrorMessage(lang, …).
+    let message = GENERIC_ERROR_EN;
     let traceId: string | undefined;
     let details: unknown;
     try {
@@ -180,8 +285,17 @@ export function followUpTask(taskId: number, body: { due_at?: string | null; des
   return apiPost(`/api/v1/tasks/${taskId}/follow-up`, body);
 }
 
-/** Accept an AI proposal; `description` re-words it. The first accept opens the call. */
-export function acceptTask(taskId: number, body: { description?: string } = {}): Promise<TaskOut> {
+/** Accept an AI proposal; optional overrides schedule it in the same step. First accept opens the call. */
+export function acceptTask(
+  taskId: number,
+  body: {
+    description?: string;
+    subcontractor_name?: string | null;
+    urgency_tier?: string | null;
+    assigned_employee_id?: number | null;
+    due_at?: string | null;
+  } = {},
+): Promise<TaskOut> {
   return apiPost(`/api/v1/tasks/${taskId}/accept`, body);
 }
 
@@ -209,6 +323,18 @@ export function scheduleTask(taskId: number, body: { due_at: string | null; just
   return apiPost(`/api/v1/tasks/${taskId}/schedule`, body);
 }
 
+/** Update urgency / subcontractor on an accepted editable task. */
+export function updateTask(
+  taskId: number,
+  body: {
+    urgency_tier?: string | null;
+    subcontractor_name?: string | null;
+    justification: Justification;
+  },
+): Promise<TaskOut> {
+  return apiPost(`/api/v1/tasks/${taskId}/update`, body);
+}
+
 /** Abandon a queued / scheduled / needs_expertise / return_visit task. May close the call. */
 export function cancelTask(taskId: number, body: { justification: Justification }): Promise<TaskOut> {
   return apiPost(`/api/v1/tasks/${taskId}/cancel`, body);
@@ -229,7 +355,7 @@ export async function uploadPhoto(id: number, file: File): Promise<{ attachment_
   if (session?.access_token) headers['authorization'] = `Bearer ${session.access_token}`;
   const res = await fetch(`${API_BASE}/api/v1/requests/${id}/photos`, { method: 'POST', headers, body: file });
   if (!res.ok) {
-    let message = GENERIC_ERROR_FR;
+    let message = GENERIC_ERROR_EN;
     try { message = (await res.json())?.error?.message ?? message; } catch { /* ignore */ }
     throw new ApiError(`HTTP_${res.status}`, message);
   }
@@ -309,6 +435,7 @@ export interface TechnicianSuggestion {
   name: string;
   why: string;
   is_en_route: boolean;
+  today_load?: number;
 }
 
 export function fetchTechnicianSuggestions(
@@ -632,7 +759,7 @@ export function fetchTenantTurnover(unitId: number, tenantId: number): Promise<T
 export async function fetchSurvey(token: string): Promise<SurveyPublic> {
   const res = await fetch(`${API_BASE}/api/v1/survey/${encodeURIComponent(token)}`);
   if (!res.ok) {
-    let message = GENERIC_ERROR_FR;
+    let message = GENERIC_ERROR_EN;
     try { message = (await res.json())?.error?.message ?? message; } catch { /* ignore */ }
     throw new ApiError(`HTTP_${res.status}`, message);
   }
@@ -649,7 +776,7 @@ export async function submitSurvey(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    let message = GENERIC_ERROR_FR;
+    let message = GENERIC_ERROR_EN;
     try { message = (await res.json())?.error?.message ?? message; } catch { /* ignore */ }
     throw new ApiError(`HTTP_${res.status}`, message);
   }

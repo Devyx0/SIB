@@ -28,10 +28,20 @@ def ac(app, db_conn):
 
 def _call(db_conn, status="triage_proposal") -> int:
     return db_conn.execute(
-        "INSERT INTO maintenance_request (status, raw_title, building_id, sector_id) "
-        "VALUES (%(s)s::request_status, 'Appel propositions', 3, 1) RETURNING request_id",
+        "INSERT INTO maintenance_request "
+        "(status, raw_title, building_id, sector_id, triage_model_version) "
+        "VALUES (%(s)s::request_status, 'Appel propositions', 3, 1, 'test-model') "
+        "RETURNING request_id",
         {"s": status},
     ).fetchone()["request_id"]
+
+
+def _feedback(db_conn, rid, employee_id=_COORD) -> None:
+    from backend.modules.feedback.repository import upsert_feedback
+    upsert_feedback(
+        db_conn, rid, employee_id, "utile", None,
+        {"problem_summary": "x"}, "test-model",
+    )
 
 
 def _proposal(db_conn, rid, description="Proposition IA") -> int:
@@ -55,8 +65,16 @@ def _count(db_conn, rid) -> int:
 
 # ── POST /tasks/{id}/accept ───────────────────────────────────────────────────
 
+def test_accept_without_feedback_422(ac, db_conn):
+    a = _proposal(db_conn, _call(db_conn))
+    r = ac().post(f"/api/v1/tasks/{a}/accept")
+    assert r.status_code == 422, r.text
+    assert get_task(db_conn, a)["accepted_at"] is None
+
+
 def test_accept_first_proposal_opens_call(ac, db_conn):
     rid = _call(db_conn)
+    _feedback(db_conn, rid)
     a, b = _proposal(db_conn, rid, "A"), _proposal(db_conn, rid, "B")
     r = ac().post(f"/api/v1/tasks/{a}/accept")
     assert r.status_code == 200, r.text
@@ -68,6 +86,7 @@ def test_accept_first_proposal_opens_call(ac, db_conn):
 
 def test_accept_second_proposal_keeps_call_open(ac, db_conn):
     rid = _call(db_conn)
+    _feedback(db_conn, rid)
     a, b = _proposal(db_conn, rid), _proposal(db_conn, rid)
     assert ac().post(f"/api/v1/tasks/{a}/accept").status_code == 200
     assert ac().post(f"/api/v1/tasks/{b}/accept").status_code == 200
@@ -76,6 +95,7 @@ def test_accept_second_proposal_keeps_call_open(ac, db_conn):
 
 def test_accept_with_edited_description(ac, db_conn):
     rid = _call(db_conn)
+    _feedback(db_conn, rid)
     a = _proposal(db_conn, rid, "Original")
     r = ac().post(f"/api/v1/tasks/{a}/accept", json={"description": "  Corrigé  "})
     assert r.status_code == 200, r.text
@@ -87,20 +107,50 @@ def test_accept_with_edited_description(ac, db_conn):
     ).fetchone() == {"previous_value": "Original", "ingested_value": "Corrigé"}
 
 
+def test_accept_with_planning_fields_and_assignee(ac, db_conn):
+    """Coordinator can edit AI prefill and schedule in the same Accept step."""
+    rid = _call(db_conn)
+    _feedback(db_conn, rid)
+    a = insert_task(
+        db_conn, request_id=rid, description="Fuite",
+        source="ai_recommended", accepted_at=None,
+        subcontractor_name="Fortin", urgency_tier="URGENT",
+    )["task_id"]
+    r = ac().post(f"/api/v1/tasks/{a}/accept", json={
+        "subcontractor_name": "Fortin Plomberie",
+        "urgency_tier": "Intermédiaire",
+        "assigned_employee_id": _TECH,
+        "due_at": "2026-10-25T12:00:00",
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["subcontractor_name"] == "Fortin Plomberie"
+    assert body["urgency_tier"] == "Intermédiaire"
+    assert body["assigned_employee_id"] == _TECH
+    assert body["due_at"] is not None
+    assert body["status"] == "scheduled"
+    assert body["accepted_at"] is not None
+
+
 def test_accept_blank_description_422(ac, db_conn):
-    a = _proposal(db_conn, _call(db_conn))
+    rid = _call(db_conn)
+    _feedback(db_conn, rid)
+    a = _proposal(db_conn, rid)
     assert ac().post(f"/api/v1/tasks/{a}/accept", json={"description": "   "}).status_code == 422
 
 
 def test_accept_on_open_call_leaves_status(ac, db_conn):
     rid = _call(db_conn, "open")
+    _feedback(db_conn, rid)
     a = _proposal(db_conn, rid)
     assert ac().post(f"/api/v1/tasks/{a}/accept").status_code == 200
     assert _status(db_conn, rid) == "open"
 
 
 def test_accept_twice_409(ac, db_conn):
-    a = _proposal(db_conn, _call(db_conn))
+    rid = _call(db_conn)
+    _feedback(db_conn, rid)
+    a = _proposal(db_conn, rid)
     assert ac().post(f"/api/v1/tasks/{a}/accept").status_code == 200
     assert ac().post(f"/api/v1/tasks/{a}/accept").status_code == 409
 
@@ -111,20 +161,30 @@ def test_accept_unknown_404(ac):
 
 def test_accept_on_closed_call_409(ac, db_conn):
     rid = _call(db_conn, "closed")
+    _feedback(db_conn, rid)
     a = _proposal(db_conn, rid)
     assert ac().post(f"/api/v1/tasks/{a}/accept").status_code == 409
     assert get_task(db_conn, a)["accepted_at"] is None
 
 
 def test_accept_forbidden_for_technician(ac, db_conn):
-    a = _proposal(db_conn, _call(db_conn))
+    rid = _call(db_conn)
+    _feedback(db_conn, rid)
+    a = _proposal(db_conn, rid)
     assert ac(_user(_TECH, "technician")).post(f"/api/v1/tasks/{a}/accept").status_code == 403
 
 
 # ── POST /requests/{id}/tasks/accept-all ──────────────────────────────────────
 
+def test_accept_all_without_feedback_422(ac, db_conn):
+    rid = _call(db_conn)
+    _proposal(db_conn, rid)
+    assert ac().post(f"/api/v1/requests/{rid}/tasks/accept-all").status_code == 422
+
+
 def test_accept_all(ac, db_conn):
     rid = _call(db_conn)
+    _feedback(db_conn, rid)
     ids = [_proposal(db_conn, rid, f"T{i}") for i in range(3)]
     r = ac().post(f"/api/v1/requests/{rid}/tasks/accept-all")
     assert r.status_code == 200, r.text
@@ -135,6 +195,7 @@ def test_accept_all(ac, db_conn):
 
 def test_accept_all_without_proposals_409(ac, db_conn):
     rid = _call(db_conn, "open")
+    _feedback(db_conn, rid)
     assert ac().post(f"/api/v1/requests/{rid}/tasks/accept-all").status_code == 409
 
 
@@ -144,6 +205,7 @@ def test_accept_all_unknown_request_404(ac):
 
 def test_accept_all_forbidden_for_technician(ac, db_conn):
     rid = _call(db_conn)
+    _feedback(db_conn, rid)
     _proposal(db_conn, rid)
     assert ac(_user(_TECH, "technician")).post(
         f"/api/v1/requests/{rid}/tasks/accept-all").status_code == 403
