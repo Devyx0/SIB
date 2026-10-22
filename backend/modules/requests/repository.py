@@ -7,7 +7,9 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from backend.core.config import settings
 from backend.core.provenance import write_provenance  # noqa: F401  (re-exported for callers)
+from backend.modules.analytics.constants import A_REDISPATCHER_SQL
 
 from .schemas import SORT_SQL, SOURCE_CALENDAR_LABELS
 
@@ -160,8 +162,9 @@ def list_requests(
         conditions.append("mr.source_calendar = %(source_calendar)s")
         params["source_calendar"] = source_calendar
     if redispatch:
-        # « À redispatcher »: closeout outcomes 3/4 → awaiting_redispatch.
-        conditions.append("mr.status::text = 'awaiting_redispatch'")
+        # « À redispatcher »: accepted task in needs_expertise / return_visit
+        # with no accepted follow-up (same predicate as the dashboard chip).
+        conditions.append(A_REDISPATCHER_SQL)
     if has_subcontractor is True:
         conditions.append(
             "mr.subcontractor_name IS NOT NULL AND btrim(mr.subcontractor_name) <> ''"
@@ -351,12 +354,11 @@ def is_valid_assignee(conn, employee_id: int) -> bool:
 
 
 def employee_has_open_en_route(conn, employee_id: int) -> bool:
-    """True if tech has an open visit (en_route or arrived)."""
+    """True if the employee has an open visit (en route or on site, not closed out)."""
     row = conn.execute(
         """
-        SELECT 1 FROM maintenance_request
-        WHERE assigned_employee_id = %(emp_id)s
-          AND status::text IN ('en_route', 'arrived')
+        SELECT 1 FROM request_visit
+        WHERE employee_id = %(emp_id)s AND closeout_at IS NULL
         LIMIT 1
         """,
         {"emp_id": employee_id},
@@ -413,7 +415,7 @@ def get_open_visit(conn, employee_id: int) -> dict | None:
     """The employee's open visit (closeout_at IS NULL) with its call title, if any."""
     row = conn.execute(
         """
-        SELECT v.visit_id, v.request_id, v.en_route_at, mr.raw_title
+        SELECT v.visit_id, v.request_id, v.task_id, v.en_route_at, mr.raw_title
         FROM request_visit v
         JOIN maintenance_request mr ON mr.request_id = v.request_id
         WHERE v.employee_id = %(employee_id)s AND v.closeout_at IS NULL
@@ -424,16 +426,17 @@ def get_open_visit(conn, employee_id: int) -> dict | None:
 
 
 def insert_visit(
-    conn, *, request_id: int, employee_id: int,
+    conn, *, request_id: int, task_id: int, employee_id: int,
     lat: float | None, lng: float | None,
 ) -> int:
     row = conn.execute(
         """
-        INSERT INTO request_visit (request_id, employee_id, en_route_lat, en_route_lng)
-        VALUES (%(request_id)s, %(employee_id)s, %(lat)s, %(lng)s)
+        INSERT INTO request_visit (request_id, task_id, employee_id, en_route_lat, en_route_lng)
+        VALUES (%(request_id)s, %(task_id)s, %(employee_id)s, %(lat)s, %(lng)s)
         RETURNING visit_id
         """,
-        {"request_id": request_id, "employee_id": employee_id, "lat": lat, "lng": lng},
+        {"request_id": request_id, "task_id": task_id, "employee_id": employee_id,
+         "lat": lat, "lng": lng},
     ).fetchone()
     return row["visit_id"]
 
@@ -486,10 +489,8 @@ def insert_photo(
 def get_photo(conn, request_id: int, attachment_id: int) -> dict | None:
     row = conn.execute(
         """
-        SELECT a.attachment_id, a.storage_path, a.uploaded_by_employee_id,
-               a.visit_id, mr.assigned_employee_id
+        SELECT a.attachment_id, a.storage_path, a.uploaded_by_employee_id, a.visit_id
         FROM maintenance_attachment a
-        JOIN maintenance_request mr ON mr.request_id = a.request_id
         WHERE a.attachment_id = %(aid)s AND a.request_id = %(rid)s
         """,
         {"aid": attachment_id, "rid": request_id},
@@ -577,7 +578,7 @@ def list_intake_photo_ids(conn, request_id: int) -> list[int]:
 def list_visits(conn, request_id: int) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT v.visit_id, v.employee_id, e.nom_employe AS employee_name,
+        SELECT v.visit_id, v.task_id, v.employee_id, e.nom_employe AS employee_name,
                v.en_route_at, v.arrived_at, v.closeout_at,
                v.travel_minutes, v.on_site_minutes, v.duration_minutes,
                v.outcome::text AS outcome,
@@ -860,9 +861,8 @@ def list_buildings(conn, sector_id: int | None) -> list[dict]:
 def list_employees(conn, role: str | None) -> list[dict]:
     en_route_flag = """
             EXISTS (
-                SELECT 1 FROM maintenance_request mr
-                WHERE mr.assigned_employee_id = e.employee_id
-                  AND mr.status::text IN ('en_route', 'arrived')
+                SELECT 1 FROM request_visit v
+                WHERE v.employee_id = e.employee_id AND v.closeout_at IS NULL
             ) AS is_en_route
     """
     if role is not None:
@@ -1015,18 +1015,42 @@ def list_technician_suggestion_candidates(
                   AND eba.building_id = %(building_id)s
             ) AS is_a5,
             EXISTS (
-                SELECT 1 FROM maintenance_request mr_er
-                WHERE mr_er.assigned_employee_id = e.employee_id
-                  AND mr_er.status::text IN ('en_route', 'arrived')
+                SELECT 1 FROM request_visit v_er
+                WHERE v_er.employee_id = e.employee_id AND v_er.closeout_at IS NULL
             ) AS is_en_route,
             COALESCE((
-                SELECT count(*)::int
-                FROM maintenance_request mr_h
-                WHERE mr_h.assigned_employee_id = e.employee_id
-                  AND %(building_id)s IS NOT NULL
-                  AND mr_h.building_id = %(building_id)s
-                  AND mr_h.status = 'closed'
-                  AND mr_h.start_date >= (CURRENT_DATE - INTERVAL '12 months')
+                -- Done tasks at this building in the last 12 months, plus
+                -- pre-task closed calls that never got an accepted task.
+                SELECT count(*)::int FROM (
+                    SELECT t_h.task_id
+                    FROM dispatch_task t_h
+                    JOIN maintenance_request mr_h ON mr_h.request_id = t_h.request_id
+                    WHERE t_h.assigned_employee_id = e.employee_id
+                      AND t_h.accepted_at IS NOT NULL
+                      AND t_h.status::text = 'done'
+                      AND %(building_id)s IS NOT NULL
+                      AND mr_h.building_id = %(building_id)s
+                      AND COALESCE(
+                            (t_h.due_at AT TIME ZONE %(tz)s)::date,
+                            (mr_h.closed_at AT TIME ZONE %(tz)s)::date,
+                            mr_h.start_date
+                          ) >= (CURRENT_DATE - INTERVAL '12 months')
+                    UNION ALL
+                    SELECT mr_h.request_id
+                    FROM maintenance_request mr_h
+                    WHERE mr_h.assigned_employee_id = e.employee_id
+                      AND %(building_id)s IS NOT NULL
+                      AND mr_h.building_id = %(building_id)s
+                      AND mr_h.status = 'closed'
+                      AND mr_h.start_date >= (CURRENT_DATE - INTERVAL '12 months')
+                      AND NOT EXISTS (
+                          SELECT 1 FROM dispatch_task t_x
+                          WHERE t_x.request_id = mr_h.request_id
+                            AND t_x.accepted_at IS NOT NULL
+                            AND t_x.assigned_employee_id = e.employee_id
+                            AND t_x.status::text = 'done'
+                      )
+                ) hist
             ), 0) AS history_count
         FROM employee e
         JOIN employee_role er ON er.employee_id = e.employee_id
@@ -1044,6 +1068,6 @@ def list_technician_suggestion_candidates(
             )
           )
         """,
-        {"building_id": building_id, "sector_id": sector_id},
+        {"building_id": building_id, "sector_id": sector_id, "tz": settings.TIMEZONE},
     ).fetchall()
     return [dict(r) for r in rows]

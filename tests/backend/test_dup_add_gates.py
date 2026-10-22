@@ -26,6 +26,7 @@ def _base(**kw):
         "vendor_id": None,
         "synergy_request_ids": [],
         "other_notes": None,
+        "recommended_tasks": [{"description": "Réparer le robinet"}],
     }
     d.update(kw)
     return d

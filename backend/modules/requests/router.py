@@ -13,14 +13,13 @@ from backend.core.security import CurrentUser
 
 from . import repository as repo
 from . import service
+from backend.modules.tasks import service as task_service
+from backend.modules.tasks.schemas import RejectAllOut, TaskOut
 from .schemas import (
     AddLogBody,
     AssignBody,
     BuildingLookup,
     EmployeeLookup,
-    CloseoutBody,
-    ArrivedBody,
-    EnRouteBody,
     ListResponse,
     PhotoUploadResponse,
     PhotoUrlResponse,
@@ -203,6 +202,22 @@ def request_trigger_triage(
     return {"request_id": request_id, "status": "triage_pending"}
 
 
+@router.post("/{request_id}/tasks/accept-all", operation_id="request_tasks_accept_all",
+             response_model=list[TaskOut])
+def request_tasks_accept_all(
+    request_id: int, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn),
+) -> list[TaskOut]:
+    return task_service.accept_all(conn, request_id, user)
+
+
+@router.post("/{request_id}/tasks/reject-all", operation_id="request_tasks_reject_all",
+             response_model=RejectAllOut)
+def request_tasks_reject_all(
+    request_id: int, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn),
+) -> RejectAllOut:
+    return task_service.reject_all(conn, request_id, user)
+
+
 @router.get(
     "/{request_id}/technician-suggestions",
     operation_id="request_technician_suggestions",
@@ -228,13 +243,14 @@ def request_route(
 
 
 @router.post("/{request_id}/en-route", operation_id="request_en_route", response_model=RequestDetail)
-def request_en_route(request_id: int, body: EnRouteBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
-    return service.action_en_route(conn, request_id, body, user)
+def request_en_route(request_id: int, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
+    # No body: always 410, whatever a legacy client sends.
+    return service.action_en_route(conn, request_id, user)
 
 
 @router.post("/{request_id}/arrived", operation_id="request_arrived", response_model=RequestDetail)
-def request_arrived(request_id: int, body: ArrivedBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
-    return service.action_arrived(conn, request_id, body, user)
+def request_arrived(request_id: int, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_arrived(conn, request_id, user)
 
 
 @router.post("/{request_id}/photos", operation_id="request_upload_photo",
@@ -251,8 +267,8 @@ def request_upload_photo(
 
 
 @router.post("/{request_id}/closeout", operation_id="request_closeout", response_model=RequestDetail)
-def request_closeout(request_id: int, body: CloseoutBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
-    return service.action_closeout(conn, request_id, body, user)
+def request_closeout(request_id: int, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_closeout(conn, request_id, user)
 
 
 @router.get("/{request_id}/photos/{attachment_id}", operation_id="request_photo_url", response_model=PhotoUrlResponse)

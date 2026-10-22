@@ -7,6 +7,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from backend.modules.tasks.schemas import JustificationBody, TaskOut
 from backend.modules.weather.schemas import WeatherEvaluation
 
 SOURCE_CALENDAR_LABELS: dict[str, str] = {
@@ -58,13 +59,8 @@ SortKey = Literal[
 StatusValue = Literal[
     "intake_received", "triage_pending", "triaged", "scheduled",
     "awaiting_redispatch", "triage_clarify", "triage_proposal", "triage_failed",
-    "en_route", "arrived", "closed",
+    "en_route", "arrived", "open", "closed",
 ]
-
-
-class JustificationBody(BaseModel):
-    text: str = Field(..., min_length=10)
-    input_method: Literal["voice", "typed"]
 
 
 class AssignBody(BaseModel):
@@ -83,34 +79,9 @@ class RescheduleBody(BaseModel):
     justification: JustificationBody
 
 
-class EnRouteBody(BaseModel):
-    current_status: str
-    current_start_date: Optional[date] = None
-    # Location point only if the browser granted it — null otherwise.
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-
-
-class ArrivedBody(BaseModel):
-    current_status: str
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-
-
-class CloseoutBody(BaseModel):
-    outcome: Literal["complete", "partial_reschedule", "partial_expertise", "failed"]
-    comment: str = Field(..., min_length=10)
-    input_method: Literal["voice", "typed"] = "typed"
-    attachment_ids: list[int] = Field(..., min_length=1)
-    next_date: Optional[date] = None   # outcome 2 only
-    urgent: bool = False               # outcomes 3/4 only
-    current_status: str                # stale check — must match, and be arrived
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-
-
 class VisitEntry(BaseModel):
     visit_id: int
+    task_id: Optional[int] = None
     employee_id: int
     employee_name: Optional[str] = None
     en_route_at: datetime
@@ -296,6 +267,7 @@ class RequestDetail(ListRow):
     # Coordinator / director only, like justification_log.
     status_history: list[StatusChange] = Field(default_factory=list)
     visits: list[VisitEntry] = Field(default_factory=list)
+    tasks: list[TaskOut] = Field(default_factory=list)
     # Photos attached at intake (new call form).
     intake_photo_ids: list[int] = Field(default_factory=list)
     # PII — null for tech/contractor unless they are the case-assigned employee

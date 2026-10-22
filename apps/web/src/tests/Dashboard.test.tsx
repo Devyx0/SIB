@@ -24,7 +24,7 @@ const base: DashboardResponse = {
     a_router: 0,
     a_redispatcher: 2,
     a_router_link: '/board?source_calendar=unrouted',
-    a_redispatcher_link: '/board?redispatch=1',
+    a_redispatcher_link: '/tasks?redispatch=1',
   },
   after_hours: null,
   weather: null,
@@ -91,7 +91,7 @@ describe('Dashboard', () => {
     expect((screen.getByTestId('link-a-router') as HTMLAnchorElement).getAttribute('href'))
       .toBe('/board?source_calendar=unrouted');
     expect((screen.getByTestId('link-a-redispatcher') as HTMLAnchorElement).getAttribute('href'))
-      .toBe('/board?redispatch=1');
+      .toBe('/tasks?redispatch=1');
   });
 
   it('territory untriaged header has status tooltip; zero queue shows 0', async () => {

@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from backend.core.db import get_db_conn
 from backend.core.security import CurrentUser, get_current_user
 from backend.core.utils import today_local
+from backend.modules.tasks.repository import insert_task
 
 _TECH = 24
 _COORD = 4
@@ -17,6 +18,13 @@ _CONTRACTOR = 20
 
 def _user(employee_id: int, *roles: str) -> CurrentUser:
     return CurrentUser(employee_id=employee_id, roles=frozenset(roles))
+
+
+def _task_for(db_conn, request_id: int) -> int:
+    """Visits hang off a task (request_visit.task_id is required on new rows)."""
+    return insert_task(db_conn, request_id=request_id, description="Visite",
+                       status="done", assigned_employee_id=_TECH,
+                       source="dispatcher", accepted_at=datetime.now(timezone.utc))["task_id"]
 
 
 @pytest.fixture
@@ -83,6 +91,35 @@ def test_import_closed_counts_via_start_date(ac, db_conn, building):
     assert row["calls_assigned"] >= 1
 
 
+def test_done_task_counts_without_request_assignee(ac, db_conn, building):
+    """A finished task counts even when the call has no assignee and no start_date."""
+    from datetime import time
+    from zoneinfo import ZoneInfo
+
+    from backend.core.config import settings
+
+    today = today_local()
+    due = datetime.combine(today, time(10, 0), tzinfo=ZoneInfo(settings.TIMEZONE))
+    c = ac(_user(_COORD, "coordinator"))
+    before = next(x for x in c.get(f"/api/v1/analytics/utilization?{_range_q()}").json()["rows"]
+                  if x["employee_id"] == _TECH)
+    rid = db_conn.execute(
+        "INSERT INTO maintenance_request (status, building_id, sector_id, raw_title, time_estimate_bucket) "
+        "VALUES ('open', %(b)s, %(s)s, 'Task only', 'UNDER_30_MIN') RETURNING request_id",
+        {"b": building["building_id"], "s": building["sector_id"]},
+    ).fetchone()["request_id"]
+    insert_task(
+        db_conn, request_id=rid, description="Fait", status="done",
+        assigned_employee_id=_TECH, due_at=due, source="dispatcher",
+        accepted_at=datetime.now(timezone.utc),
+    )
+    row = next(x for x in c.get(f"/api/v1/analytics/utilization?{_range_q()}").json()["rows"]
+               if x["employee_id"] == _TECH)
+    assert row["calls_assigned"] == before["calls_assigned"] + 1
+    assert row["calls_closed"] == before["calls_closed"] + 1
+    assert row["planned_minutes"] == before["planned_minutes"] + 20
+
+
 def test_closed_at_counts(ac, db_conn, building):
     today = today_local()
     now = datetime.now(timezone.utc)
@@ -128,9 +165,9 @@ def test_visit_minutes_and_outcome_mix(ac, db_conn, building):
     en = datetime.now(timezone.utc) - timedelta(hours=2)
     clo = datetime.now(timezone.utc) - timedelta(hours=1)
     db_conn.execute(
-        "INSERT INTO request_visit (request_id, employee_id, en_route_at, closeout_at, outcome) "
-        "VALUES (%(r)s, %(e)s, %(era)s, %(ca)s, 'complete')",
-        {"r": rid, "e": _TECH, "era": en, "ca": clo},
+        "INSERT INTO request_visit (request_id, task_id, employee_id, en_route_at, closeout_at, outcome) "
+        "VALUES (%(r)s, %(t)s, %(e)s, %(era)s, %(ca)s, 'complete')",
+        {"r": rid, "t": _task_for(db_conn, rid), "e": _TECH, "era": en, "ca": clo},
     )
     r = ac(_user(_COORD, "coordinator")).get(f"/api/v1/analytics/utilization?{_range_q()}")
     row = next(x for x in r.json()["rows"] if x["employee_id"] == _TECH)

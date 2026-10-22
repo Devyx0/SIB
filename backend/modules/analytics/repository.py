@@ -4,10 +4,12 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
+from backend.core.config import settings
+
 from .constants import (
-    A_REDISPATCHER_SQL,
     A_ROUTER_SQL,
     BUCKET_MIDPOINT_MINUTES,
+    REDISPATCH_TASK_SQL,
     UNTRIAGED_STATUSES,
 )
 
@@ -19,31 +21,38 @@ def _board_window(today: date) -> tuple[str, str]:
 
 
 def today_by_status(conn, today: date) -> list[dict]:
+    """Accepted tasks whose due day (platform timezone) is today, by task status."""
     rows = conn.execute(
         """
-        SELECT mr.status::text AS status, count(*)::int AS count
-        FROM maintenance_request mr
-        WHERE mr.start_date = %(today)s
-        GROUP BY mr.status::text
-        ORDER BY mr.status::text
+        SELECT t.status::text AS status, count(*)::int AS count
+        FROM dispatch_task t
+        WHERE t.accepted_at IS NOT NULL
+          AND (t.due_at AT TIME ZONE %(tz)s)::date = %(today)s
+        GROUP BY t.status::text
+        ORDER BY t.status::text
         """,
-        {"today": today},
+        {"today": today, "tz": settings.TIMEZONE},
     ).fetchall()
     return [dict(r) for r in rows]
 
 
 def load_today(conn, today: date) -> list[dict]:
-    """Assigned + en_route on board start_date=today; minutes from today's visits."""
+    """Accepted tasks due today, plus minutes from today's visits.
+
+    Assignment and en-route live on the task. A call with only
+    assigned_employee_id / start_date / status en_route does not count.
+    """
     rows = conn.execute(
         """
         WITH assigned AS (
             SELECT e.employee_id,
                    e.nom_employe,
                    count(*)::int AS assigned_count,
-                   count(*) FILTER (WHERE mr.status::text = 'en_route')::int AS en_route_count
+                   count(*) FILTER (WHERE t.status::text = 'en_route')::int AS en_route_count
             FROM employee e
-            JOIN maintenance_request mr ON mr.assigned_employee_id = e.employee_id
-            WHERE mr.start_date = %(today)s
+            JOIN dispatch_task t ON t.assigned_employee_id = e.employee_id
+            WHERE t.accepted_at IS NOT NULL
+              AND (t.due_at AT TIME ZONE %(tz)s)::date = %(today)s
             GROUP BY e.employee_id, e.nom_employe
         ),
         mins AS (
@@ -90,7 +99,7 @@ def load_today(conn, today: date) -> list[dict]:
         LEFT JOIN mins m ON m.employee_id = a.employee_id
         ORDER BY a.nom_employe
         """,
-        {"today": today},
+        {"today": today, "tz": settings.TIMEZONE},
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -136,21 +145,30 @@ def queue_counts(conn) -> dict[str, Any]:
         f"SELECT count(*)::int AS n FROM maintenance_request mr WHERE {A_ROUTER_SQL}"
     ).fetchone()["n"]
     a_redispatcher = conn.execute(
-        f"SELECT count(*)::int AS n FROM maintenance_request mr WHERE {A_REDISPATCHER_SQL}"
+        f"SELECT count(*)::int AS n FROM dispatch_task t WHERE {REDISPATCH_TASK_SQL}"
     ).fetchone()["n"]
     return {
         "a_router": a_router,
         "a_redispatcher": a_redispatcher,
         "a_router_link": "/board?source_calendar=unrouted",
-        "a_redispatcher_link": "/board?redispatch=1",
+        "a_redispatcher_link": "/tasks?redispatch=1",
     }
 
 
 def utilization_rows(conn, start: date, end: date) -> list[dict]:
-    """Active technicians/contractors plus anyone with assignments in the range."""
+    """Active technicians/contractors plus anyone with assignments in the range.
+
+    Live work is an accepted task (assignee + due day). Pre-task rows — a call
+    with assignee/start_date and no accepted task in the window — still count,
+    so historical imports stay on the page.
+    """
     case_sql = "CASE mr.time_estimate_bucket::text " + " ".join(
         f"WHEN '{k}' THEN {v}" for k, v in BUCKET_MIDPOINT_MINUTES.items()
     ) + " ELSE NULL END"
+    unknown_sql = (
+        "CASE WHEN mr.time_estimate_bucket IS NULL"
+        " OR mr.time_estimate_bucket::text = 'TBD_ON_SITE' THEN 1 ELSE 0 END"
+    )
 
     rows = conn.execute(
         f"""
@@ -164,36 +182,90 @@ def utilization_rows(conn, start: date, end: date) -> list[dict]:
             UNION
             SELECT DISTINCT e.employee_id, e.nom_employe, s.territoire
             FROM employee e
+            JOIN dispatch_task t ON t.assigned_employee_id = e.employee_id
+                                AND t.accepted_at IS NOT NULL
+            LEFT JOIN maintenance_request mr ON mr.request_id = t.request_id
+            LEFT JOIN sector s ON s.sector_id = COALESCE(mr.sector_id, e.sector_id)
+            WHERE (t.due_at AT TIME ZONE %(tz)s)::date BETWEEN %(start)s AND %(end)s
+            UNION
+            SELECT DISTINCT e.employee_id, e.nom_employe, s.territoire
+            FROM employee e
             JOIN maintenance_request mr ON mr.assigned_employee_id = e.employee_id
             LEFT JOIN sector s ON s.sector_id = COALESCE(mr.sector_id, e.sector_id)
             WHERE mr.start_date BETWEEN %(start)s AND %(end)s
+              AND NOT EXISTS (
+                  SELECT 1 FROM dispatch_task t
+                  WHERE t.request_id = mr.request_id
+                    AND t.accepted_at IS NOT NULL
+                    AND t.assigned_employee_id = mr.assigned_employee_id
+                    AND (t.due_at AT TIME ZONE %(tz)s)::date BETWEEN %(start)s AND %(end)s
+              )
         ),
         assigned AS (
-            SELECT mr.assigned_employee_id AS employee_id,
+            SELECT employee_id,
                    count(*)::int AS calls_assigned,
-                   coalesce(sum({case_sql}), 0)::int AS planned_minutes,
-                   count(*) FILTER (
-                       WHERE mr.time_estimate_bucket IS NULL
-                          OR mr.time_estimate_bucket::text = 'TBD_ON_SITE'
-                   )::int AS planned_unknown_count
-            FROM maintenance_request mr
-            WHERE mr.assigned_employee_id IS NOT NULL
-              AND mr.start_date BETWEEN %(start)s AND %(end)s
-            GROUP BY mr.assigned_employee_id
+                   coalesce(sum(planned), 0)::int AS planned_minutes,
+                   coalesce(sum(unknown_flag), 0)::int AS planned_unknown_count
+            FROM (
+                SELECT t.assigned_employee_id AS employee_id,
+                       {case_sql} AS planned,
+                       {unknown_sql} AS unknown_flag
+                FROM dispatch_task t
+                JOIN maintenance_request mr ON mr.request_id = t.request_id
+                WHERE t.accepted_at IS NOT NULL
+                  AND t.assigned_employee_id IS NOT NULL
+                  AND (t.due_at AT TIME ZONE %(tz)s)::date BETWEEN %(start)s AND %(end)s
+                UNION ALL
+                SELECT mr.assigned_employee_id,
+                       {case_sql},
+                       {unknown_sql}
+                FROM maintenance_request mr
+                WHERE mr.assigned_employee_id IS NOT NULL
+                  AND mr.start_date BETWEEN %(start)s AND %(end)s
+                  AND NOT EXISTS (
+                      SELECT 1 FROM dispatch_task t
+                      WHERE t.request_id = mr.request_id
+                        AND t.accepted_at IS NOT NULL
+                        AND t.assigned_employee_id IS NOT NULL
+                        AND (t.due_at AT TIME ZONE %(tz)s)::date BETWEEN %(start)s AND %(end)s
+                  )
+            ) assigned_rows
+            GROUP BY employee_id
         ),
         closed AS (
-            -- App closeouts use closed_at; Gravity/import rows are status=closed with
-            -- closed_at NULL — fall back to start_date so historical utilization isn't empty.
-            SELECT mr.assigned_employee_id AS employee_id,
-                   count(*)::int AS calls_closed
-            FROM maintenance_request mr
-            WHERE mr.assigned_employee_id IS NOT NULL
-              AND mr.status::text = 'closed'
-              AND COALESCE(
-                    (mr.closed_at AT TIME ZONE 'America/Toronto')::date,
-                    mr.start_date
-                  ) BETWEEN %(start)s AND %(end)s
-            GROUP BY mr.assigned_employee_id
+            -- Done tasks in the window (call closed_at, else the task's due day).
+            -- Gravity/import rows have no task: status=closed, closed_at NULL,
+            -- counted on start_date so historical utilization isn't empty.
+            SELECT employee_id, count(*)::int AS calls_closed
+            FROM (
+                SELECT t.assigned_employee_id AS employee_id
+                FROM dispatch_task t
+                JOIN maintenance_request mr ON mr.request_id = t.request_id
+                WHERE t.accepted_at IS NOT NULL
+                  AND t.assigned_employee_id IS NOT NULL
+                  AND t.status::text = 'done'
+                  AND COALESCE(
+                        (mr.closed_at AT TIME ZONE %(tz)s)::date,
+                        (t.due_at AT TIME ZONE %(tz)s)::date
+                      ) BETWEEN %(start)s AND %(end)s
+                UNION ALL
+                SELECT mr.assigned_employee_id
+                FROM maintenance_request mr
+                WHERE mr.assigned_employee_id IS NOT NULL
+                  AND mr.status::text = 'closed'
+                  AND COALESCE(
+                        (mr.closed_at AT TIME ZONE %(tz)s)::date,
+                        mr.start_date
+                      ) BETWEEN %(start)s AND %(end)s
+                  AND NOT EXISTS (
+                      SELECT 1 FROM dispatch_task t
+                      WHERE t.request_id = mr.request_id
+                        AND t.accepted_at IS NOT NULL
+                        AND t.status::text = 'done'
+                        AND t.assigned_employee_id = mr.assigned_employee_id
+                  )
+            ) closed_rows
+            GROUP BY employee_id
         ),
         visits AS (
             SELECT rv.employee_id,
@@ -260,7 +332,7 @@ def utilization_rows(conn, start: date, end: date) -> list[dict]:
         GROUP BY w.employee_id, w.nom_employe
         ORDER BY w.nom_employe
         """,
-        {"start": start, "end": end},
+        {"start": start, "end": end, "tz": settings.TIMEZONE},
     ).fetchall()
 
     out = []
