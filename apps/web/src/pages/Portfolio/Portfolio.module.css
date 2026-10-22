@@ -771,11 +771,12 @@ a.card:hover .arrow {
   min-width: 0;
 }
 
-/* Icon on the left of each figure, spanning label and value. */
+/* Icon on the left of each figure, vertically centred in its cell. */
 .totalIcon {
   position: absolute;
-  top: 18px;
+  top: 50%;
   left: 22px;
+  transform: translateY(-50%);
   display: inline-flex;
   color: var(--navy-800);
 }
@@ -2060,8 +2061,9 @@ a.btn {
   .page { padding: 20px 16px 28px; }
 
   .totals > div { padding: 14px 14px 14px 50px; }
-  .totalIcon { top: 14px; left: 16px; }
+  .totalIcon { left: 16px; }
   .totalIcon svg { width: 22px; height: 22px; }
+  .totalIconLg svg { width: 28px; height: 28px; }
   .title { font-size: 32px; }
   .totals dd { font-size: 20px; }
 }
