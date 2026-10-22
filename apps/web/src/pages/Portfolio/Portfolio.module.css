@@ -2062,8 +2062,7 @@ a.btn {
 
   .totals > div { padding: 14px 14px 14px 50px; }
   .totalIcon { left: 16px; }
-  .totalIcon svg { width: 22px; height: 22px; }
-  .totalIconLg svg { width: 28px; height: 28px; }
+  .totalIcon svg { width: 26px; height: 26px; }
   .title { font-size: 32px; }
   .totals dd { font-size: 20px; }
 }

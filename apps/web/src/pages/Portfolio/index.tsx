@@ -181,12 +181,12 @@ function SectorsView({ lang }: { lang: Lang }) {
       />
       {data && data.length > 0 && (
         <dl className={styles.totals} data-testid="portfolio-totals">
-          <div><dt><span className={`${styles.totalIcon} ${styles.totalIconLg}`}><CityIcon size={32} /></span>{t(lang, 'Secteurs', 'Sectors')}</dt><dd>{n(data.length)}</dd></div>
-          <div><dt><span className={`${styles.totalIcon} ${styles.totalIconLg}`}><DocumentIcon size={32} /></span>{t(lang, 'Projets', 'Projects')}</dt><dd>{n(sum('project_count'))}</dd></div>
-          <div><dt><span className={`${styles.totalIcon} ${styles.totalIconLg}`}><BuildingIcon size={32} /></span>{t(lang, 'Bâtiments', 'Buildings')}</dt><dd>{n(sum('building_count'))}</dd></div>
-          <div><dt><span className={styles.totalIcon}><UsersIcon size={24} /></span>{t(lang, 'Logements', 'Units')}</dt><dd>{n(units)}</dd></div>
+          <div><dt><span className={styles.totalIcon}><CityIcon size={32} /></span>{t(lang, 'Secteurs', 'Sectors')}</dt><dd>{n(data.length)}</dd></div>
+          <div><dt><span className={styles.totalIcon}><DocumentIcon size={32} /></span>{t(lang, 'Projets', 'Projects')}</dt><dd>{n(sum('project_count'))}</dd></div>
+          <div><dt><span className={styles.totalIcon}><BuildingIcon size={32} /></span>{t(lang, 'Bâtiments', 'Buildings')}</dt><dd>{n(sum('building_count'))}</dd></div>
+          <div><dt><span className={styles.totalIcon}><UsersIcon size={32} /></span>{t(lang, 'Logements', 'Units')}</dt><dd>{n(units)}</dd></div>
           <div>
-            <dt><span className={styles.totalIcon}><PieIcon /></span>{t(lang, 'Occupation', 'Occupancy')}</dt>
+            <dt><span className={styles.totalIcon}><PieIcon size={32} /></span>{t(lang, 'Occupation', 'Occupancy')}</dt>
             <dd className={styles.occLine}>
               <span>{pct(occupied, units)} %</span>
               <Link className={`${styles.totalsNote} ${styles.vacantLink}`} to={unitsPath({ occupation: 'vacant' })}
