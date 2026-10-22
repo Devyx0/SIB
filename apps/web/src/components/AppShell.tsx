@@ -122,21 +122,21 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
           )}
         </nav>
 
-        <div className={styles.bottom}>
-          <div className={styles.newCall} onClick={() => setMenuOpen(false)}>
-            {intakeOnly ? (
-              <NavLink to="/intake" data-testid="nav-nouvel-appel" className={navItemClass}>
-                <span className={styles.plus} aria-hidden="true">+</span>
-                {t(lang, 'Nouvel appel', 'New call')}
-              </NavLink>
-            ) : (
-              <Link to="/triage?nouvel-appel=1" data-testid="nav-nouvel-appel" className={styles.navItem}>
-                <span className={styles.plus} aria-hidden="true">+</span>
-                {t(lang, 'Nouvel appel', 'New call')}
-              </Link>
-            )}
-          </div>
+        <div className={styles.newCall} onClick={() => setMenuOpen(false)}>
+          {intakeOnly ? (
+            <NavLink to="/intake" data-testid="nav-nouvel-appel" className={navItemClass}>
+              <span className={styles.plus} aria-hidden="true">+</span>
+              {t(lang, 'Nouvel appel', 'New call')}
+            </NavLink>
+          ) : (
+            <Link to="/triage?nouvel-appel=1" data-testid="nav-nouvel-appel" className={styles.navItem}>
+              <span className={styles.plus} aria-hidden="true">+</span>
+              {t(lang, 'Nouvel appel', 'New call')}
+            </Link>
+          )}
+        </div>
 
+        <div className={styles.bottom}>
           {me && (
             <div className={styles.userInfo}>
               {demoUserSwitchEnabled() ? (
