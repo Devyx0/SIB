@@ -2123,25 +2123,3 @@ a.btn {
   .side .sideFacts { gap: 6px 12px; }
   .extras .facts dd + dt { margin-top: 0; }
 }
-
-/* A single occupancy figure (project / building level), same card as the portfolio totals. */
-.totals.totalsSingle {
-  grid-template-columns: minmax(0, 1fr);
-  max-width: 380px;
-}
-
-.totals.totalsSingle > div,
-.totals.totalsSingle > div:last-child {
-  grid-column: auto;
-  border-left: none;
-  border-top: none;
-}
-
-.linkBtn {
-  padding: 0;
-  border: none;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}

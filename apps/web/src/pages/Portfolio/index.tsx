@@ -119,41 +119,6 @@ function pct(part: number, whole: number): number {
   return whole > 0 ? Math.round((part / whole) * 100) : 0;
 }
 
-/** Overall occupancy for a project or building: the same figure as the portfolio totals,
- *  with the vacant count linking (or switching the unit filter) to the vacant units. */
-function OccupancyCard({ lang, units, occupied, vacantTo, onVacant }: {
-  lang: Lang; units: number; occupied: number; vacantTo?: string; onVacant?: () => void;
-}) {
-  if (units <= 0) return null;
-  const n = (v: number) => v.toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA');
-  const vacant = units - occupied;
-  const vacantLabel = t(lang, `${n(vacant)} vacant${vacant === 1 ? '' : 's'}`, `${n(vacant)} vacant`);
-  return (
-    <dl className={`${styles.totals} ${styles.totalsSingle}`} data-testid="occupancy-card">
-      <div>
-        <dt><span className={styles.totalIcon}><PieIcon size={32} /></span>{t(lang, 'Occupation', 'Occupancy')}</dt>
-        <dd className={styles.occLine}>
-          <span>{pct(occupied, units)} %</span>
-          {vacantTo ? (
-            <Link className={`${styles.totalsNote} ${styles.vacantLink}`} to={vacantTo} data-testid="occupancy-vacant">{vacantLabel}</Link>
-          ) : onVacant ? (
-            <button type="button" className={`${styles.totalsNote} ${styles.vacantLink} ${styles.linkBtn}`}
-                    onClick={onVacant} data-testid="occupancy-vacant">{vacantLabel}</button>
-          ) : (
-            <span className={styles.totalsNote}>{vacantLabel}</span>
-          )}
-        </dd>
-        <span className={styles.occBar} aria-hidden="true">
-          <span style={{ width: `${pct(occupied, units)}%` }} />
-        </span>
-        <span className={styles.totalsNote}>
-          {t(lang, `${n(occupied)} sur ${n(units)} logements occupés`, `${n(occupied)} of ${n(units)} units occupied`)}
-        </span>
-      </div>
-    </dl>
-  );
-}
-
 /** A sector: name and chevron, then projects / buildings / units, then its largest projects. */
 function SectorCard({ sector: s, lang }: { sector: PortfolioSectorSummary; lang: Lang }) {
   const n = (v: number) => v.toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA');
@@ -459,6 +424,11 @@ function ProjectView({ lang }: { lang: Lang }) {
         facts={data && [
           data.accounting_project_number && { key: 'number', icon: <HashIcon />, label: t(lang, `Projet N° ${data.accounting_project_number}`, `Project No. ${data.accounting_project_number}`) },
           { key: 'buildings', icon: <BuildingIcon />, label: plural(data.building_count, lang, BUILDING_FR, BUILDING_EN) },
+          occ && occ.total > 0 && {
+            key: 'occupancy', icon: <PieIcon />,
+            label: t(lang, `${pct(occ.total - occ.vacant_total, occ.total)} % occupé`, `${pct(occ.total - occ.vacant_total, occ.total)} % occupied`),
+            to: unitsPath({ secteur: sectorId, projet: projectId, occupation: 'vacant' }),
+          },
           sector && { key: 'sector', icon: <MapPinIcon />, label: sectorName(lang, sector.territoire, sectorId), to: portfolioPath.sector(sectorId) },
         ]}
         actions={data && (phone ? <div className={styles.headerActions}>{editProject}</div> : (
@@ -471,10 +441,6 @@ function ProjectView({ lang }: { lang: Lang }) {
         ))}
       />
       <LevelState isLoading={isLoading} error={error} lang={lang} onRetry={refetch} rows={3} />
-      {data && occ && (
-        <OccupancyCard lang={lang} units={occ.total} occupied={occ.total - occ.vacant_total}
-                       vacantTo={unitsPath({ secteur: sectorId, projet: projectId, occupation: 'vacant' })} />
-      )}
       {data && (
         <div className={styles.unitTools}>
           {data.buildings.length > 0 && (
@@ -592,9 +558,6 @@ function BuildingView({ lang }: { lang: Lang }) {
       />
       <LevelState isLoading={isLoading} error={error} lang={lang} onRetry={refetch} rows={3} />
       {data && (
-        <OccupancyCard lang={lang} units={data.units.length} occupied={occupied} onVacant={() => setOcc('vacant')} />
-      )}
-      {data && (
         <div className={styles.unitTools}>
           {data.units.length > 0 && (
             <SearchBox value={q} onChange={setQ}
@@ -694,8 +657,8 @@ function buildingFacts(b: PortfolioBuildingDetail, lang: Lang, occupied?: number
   const floors = b.nb_etages || null;
   return [
     { key: 'units', icon: <HomeIcon />, label: plural(b.unit_count, lang, UNIT_FR, UNIT_EN) },
-    occupied != null
-      ? { key: 'occupied', icon: <UsersIcon />, label: t(lang, `${occupied} occupé${occupied === 1 ? '' : 's'}`, `${occupied} occupied`) }
+    occupied != null && b.unit_count > 0
+      ? { key: 'occupied', icon: <PieIcon />, label: t(lang, `${pct(occupied, b.unit_count)} % occupé`, `${pct(occupied, b.unit_count)} % occupied`) }
       : null,
     floors
       ? { key: 'floors', icon: <LayersIcon />, label: t(lang, `${floors} étage${Number(floors) === 1 ? '' : 's'}`, `${floors} floor${Number(floors) === 1 ? '' : 's'}`) }
