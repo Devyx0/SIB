@@ -403,6 +403,20 @@ def tenant_active_on_lease(conn, lease_id: int, tenant_id: int, today) -> bool:
     return row is not None
 
 
+def count_active_tenancies(conn, lease_id: int, today) -> int:
+    row = conn.execute(
+        """
+        SELECT COUNT(*)::int AS n
+        FROM tenancy_record tr
+        WHERE tr.lease_id = %(lid)s
+          AND (tr.end_date IS NULL OR tr.end_date > %(today)s)
+          AND (tr.start_date IS NULL OR tr.start_date <= %(today)s)
+        """,
+        {"lid": lease_id, "today": today},
+    ).fetchone()
+    return int(row["n"]) if row else 0
+
+
 def _next_id(conn, table: str, pk: str) -> int:
     """Allocate an id past MAX(pk). Needed when tests insert explicit ids and
     the identity sequence lags behind."""

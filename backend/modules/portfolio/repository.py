@@ -288,7 +288,10 @@ def list_tenants(conn, lease_id: int, today: date) -> list[dict]:
             t.telephone,
             t.telephone_international,
             t.courriel,
-            tr.capacite::text AS capacite
+            tr.capacite::text AS capacite,
+            tr.start_date,
+            tr.end_date,
+            tr.reason_for_change
         FROM tenancy_record tr
         JOIN tenant t ON t.tenant_id = tr.tenant_id
         WHERE tr.lease_id = %(lease_id)s AND {_ACTIVE_TENANCY}

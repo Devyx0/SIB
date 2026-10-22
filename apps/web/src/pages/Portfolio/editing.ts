@@ -35,8 +35,30 @@ export function errorText(err: unknown, lang: Lang): string {
                      'Changed by someone else in the meantime — reload the page.');
     }
     if (e.code === 'VALIDATION_FAILED' || e.code === 'HTTP_422') {
-      return t(lang, 'Vérifiez les champs : une valeur est invalide ou manquante.',
-                     'Check the fields: a value is invalid or missing.');
+      return e.message || t(lang, 'Vérifiez les champs : une valeur est invalide ou manquante.',
+                                  'Check the fields: a value is invalid or missing.');
+    }
+    if (e.code === 'NO_CURRENT_LEASE') {
+      return t(lang, 'Aucun bail en cours sur ce logement.', 'No current lease on this unit.');
+    }
+    if (e.code === 'ALREADY_ON_LEASE') {
+      return t(lang, 'Ce locataire est déjà sur ce bail.', 'This tenant is already on this lease.');
+    }
+    if (e.code === 'TENANCY_NOT_ACTIVE') {
+      return t(lang, 'Cette occupation n’est plus active.', 'This occupancy is no longer active.');
+    }
+    if (e.code === 'LEASE_REQUIRES_TENANT') {
+      return t(lang,
+        'Impossible de retirer le dernier occupant — terminez le bail à la place.',
+        'Cannot remove the last occupant — end the lease instead.');
+    }
+    if (e.code === 'UNIT_AT_CAPACITY') {
+      return t(lang,
+        'Ce logement a atteint sa capacité d’occupants.',
+        'This unit has reached its occupant capacity.');
+    }
+    if (e.code === 'CONFLICT') {
+      return e.message || t(lang, 'Un bail est déjà en cours sur ce logement.', 'A lease is already current on this unit.');
     }
     if (e.message) return e.message;
   }

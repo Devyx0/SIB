@@ -8,6 +8,15 @@ export function parseDate(iso: string): Date {
   return new Date(y, m - 1, d);
 }
 
+/** Today's calendar date as `YYYY-MM-DD`, in the local timezone. */
+export function todayIso(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export function fmtDate(iso: string | null | undefined, lang: Lang): string | null {
   if (!iso) return null;
   return parseDate(iso).toLocaleDateString(locale(lang), { year: 'numeric', month: 'long', day: 'numeric' });

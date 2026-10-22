@@ -9,6 +9,7 @@ import { fmtDate, fmtMoney, fmtTime } from './format';
 import { MailIcon, PhoneIcon } from './icons';
 import styles from './Portfolio.module.css';
 import { formatPhone, telHref } from '../../lib/phone';
+import { capaciteOptionLabel as capaciteLabel } from './occupancy';
 
 type Pair = readonly [string, string];
 
@@ -33,16 +34,7 @@ const APPLIANCE: Record<string, Pair> = {
   secheuse: ['Sécheuse', 'Dryer'],
 };
 
-const CAPACITE: Record<string, Pair> = {
-  named_on_lease: ['Signataire du bail', 'Named on lease'],
-  took_over: ['Cessionnaire', 'Took over the lease'],
-};
-
-export function capaciteLabel(lang: Lang, v: string | null): string | null {
-  if (!v) return null;
-  const pair = CAPACITE[v];
-  return pair ? pair[lang === 'fr' ? 0 : 1] : v;
-}
+export { capaciteLabel };
 
 function label(map: Record<string, Pair>, lang: Lang, v: string | null): string | null {
   if (!v) return null;

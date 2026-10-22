@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Portfolio from '../pages/Portfolio';
+import { todayIso } from '../pages/Portfolio/format';
 import type {
   PortfolioBuildingDetail,
   PortfolioProjectDetail,
@@ -31,6 +32,12 @@ vi.mock('../api/client', () => ({
   updateBuilding: vi.fn(),
   createUnit: vi.fn(),
   updateUnit: vi.fn(),
+  updateTenancy: vi.fn(),
+  addOccupant: vi.fn(),
+  takeoverOccupant: vi.fn(),
+  endOccupant: vi.fn(),
+  endLease: vi.fn(),
+  startLease: vi.fn(),
   setFicheEntry: vi.fn(),
   createPaintSpec: vi.fn(),
   updatePaintSpec: vi.fn(),
@@ -57,6 +64,12 @@ import {
   createPaintSpec,
   updateBuilding,
   updateUnit,
+  updateTenancy,
+  addOccupant,
+  takeoverOccupant,
+  endOccupant,
+  endLease,
+  startLease,
 } from '../api/client';
 
 const sectors: PortfolioSectorSummary[] = [
@@ -129,13 +142,13 @@ const unit: PortfolioUnitDetail = {
   paint_notes: [{ label: 'Code de peinture', value: 'SW 7005' }],
   lease: { lease_id: 5, debut_bail: '2026-07-01', fin_bail: '2027-06-30', statut: 'Régulier', langue_bail: 'Français' },
   tenants: [{
-    tenant_id: 7, nom_complet: 'Ada Lovelace', telephone: '418-555-0199',
+    tenant_id: 7, tenancy_id: 70, nom_complet: 'Ada Lovelace', telephone: '418-555-0199',
     telephone_international: '+14185550199', courriel: 'ada@example.test', capacite: 'named_on_lease',
-    has_turnover: true,
+    start_date: '2026-07-01', end_date: null, reason_for_change: null, has_turnover: true,
   }, {
-    tenant_id: 8, nom_complet: 'Grace Hopper', telephone: null,
+    tenant_id: 8, tenancy_id: 71, nom_complet: 'Grace Hopper', telephone: null,
     telephone_international: null, courriel: null, capacite: 'named_on_lease',
-    has_turnover: false,
+    start_date: '2026-07-01', end_date: null, reason_for_change: null, has_turnover: false,
   }],
 };
 
@@ -640,5 +653,124 @@ describe('Portfolio', () => {
     expect(within(zones[0]).getByText('Ce logement')).toBeTruthy();
     expect(within(zones[0]).getByText('Property coq sw7005')).toBeTruthy();
     expect(within(paint).getByRole('link')).toHaveAttribute('href', '/portfolio/batiments/100/informations#fiche-technique');
+  });
+
+  it('edits a tenancy from the unit page without opening turnover', async () => {
+    vi.mocked(updateTenancy).mockReset().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    wrap('/portfolio/unites/1000');
+    const rows = await screen.findAllByTestId('tenant-row');
+    await user.click(within(rows[0]).getByTestId('edit-tenancy'));
+    expect(screen.queryByTestId('turnover-dialog')).toBeNull();
+    const dialog = screen.getByTestId('edit-tenancy-dialog');
+    await user.selectOptions(within(dialog).getByTestId('tenancy-capacite'), 'took_over');
+    await user.click(within(dialog).getByTestId('form-submit'));
+    expect(updateTenancy).toHaveBeenCalledWith(70, {
+      changes: { capacite: 'took_over' },
+      current: { capacite: 'named_on_lease' },
+    });
+  });
+
+  it('adds an occupant to the current lease', async () => {
+    vi.mocked(addOccupant).mockReset().mockResolvedValue({
+      tenant_id: 9, tenancy_id: 72, lease_id: 5, unit_id: 1000,
+      project_id: null, building_id: null, sector_id: null, paint_spec_id: null, document_id: null,
+    });
+    const user = userEvent.setup();
+    wrap('/portfolio/unites/1000');
+    await user.click(await screen.findByTestId('add-occupant'));
+    const dialog = screen.getByTestId('add-occupant-dialog');
+    await user.type(within(dialog).getByLabelText('Nom complet *'), 'Bob Roommate');
+    await user.click(within(dialog).getByTestId('form-submit'));
+    expect(addOccupant).toHaveBeenCalledWith(1000, expect.objectContaining({
+      capacite: 'added_occupant',
+      start_date: todayIso(),
+      new_tenant: expect.objectContaining({ nom_complet: 'Bob Roommate' }),
+    }));
+  });
+
+  it('takes over a tenancy and ends an occupant', async () => {
+    vi.mocked(takeoverOccupant).mockReset().mockResolvedValue({
+      tenant_id: 10, tenancy_id: 73, lease_id: 5, unit_id: 1000,
+      project_id: null, building_id: null, sector_id: null, paint_spec_id: null, document_id: null,
+    });
+    vi.mocked(endOccupant).mockReset().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    wrap('/portfolio/unites/1000');
+    const rows = await screen.findAllByTestId('tenant-row');
+    await user.click(within(rows[0]).getByTestId('takeover-occupant'));
+    const takeover = screen.getByTestId('takeover-dialog');
+    await user.type(within(takeover).getByLabelText('Nom complet *'), 'Cara Incoming');
+    await user.click(within(takeover).getByTestId('form-submit'));
+    expect(takeoverOccupant).toHaveBeenCalledWith(1000, expect.objectContaining({
+      outgoing_tenancy_id: 70,
+      effective_date: todayIso(),
+      new_tenant: expect.objectContaining({ nom_complet: 'Cara Incoming' }),
+    }));
+
+    await user.click(within(rows[1]).getByTestId('end-occupant'));
+    const end = screen.getByTestId('end-occupant-dialog');
+    await user.click(within(end).getByTestId('form-submit'));
+    expect(endOccupant).toHaveBeenCalledWith(1000, 71, expect.objectContaining({
+      end_date: todayIso(),
+      current_end_date: null,
+    }));
+  });
+
+  it('ends the current lease with optimistic current dates', async () => {
+    vi.mocked(endLease).mockReset().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    wrap('/portfolio/unites/1000');
+    await user.click(await screen.findByTestId('end-lease'));
+    const dialog = screen.getByTestId('end-lease-dialog');
+    await user.click(within(dialog).getByTestId('form-submit'));
+    expect(endLease).toHaveBeenCalledWith(1000, {
+      fin_bail: todayIso(),
+      statut: 'Terminé',
+      current_fin_bail: '2027-06-30',
+      current_statut: 'Régulier',
+      close_tenancies: true,
+    });
+  });
+
+  it('starts a lease on a vacant unit with a required occupant', async () => {
+    vi.mocked(fetchPortfolioUnit).mockResolvedValue({ ...unit, lease: null, tenants: [] });
+    vi.mocked(startLease).mockReset().mockResolvedValue({
+      lease_id: 8, unit_id: 1000, tenant_id: 11, tenancy_id: 80,
+      project_id: null, building_id: null, sector_id: null, paint_spec_id: null, document_id: null,
+    });
+    const user = userEvent.setup();
+    wrap('/portfolio/unites/1000');
+    await user.click(await screen.findByTestId('start-lease'));
+    const dialog = screen.getByTestId('start-lease-dialog');
+    expect(within(dialog).queryByTestId('end-previous-lease')).toBeNull();
+    // Dialog seeds one named occupant; fill and submit without going empty.
+    await user.type(within(dialog).getByLabelText('Nom complet *'), 'New Holder');
+    await user.click(within(dialog).getByTestId('form-submit'));
+    expect(startLease).toHaveBeenCalledWith(1000, expect.objectContaining({
+      debut_bail: todayIso(),
+      end_previous: false,
+      occupants: [expect.objectContaining({
+        capacite: 'named_on_lease',
+        new_tenant: expect.objectContaining({ nom_complet: 'New Holder' }),
+      })],
+    }));
+    expect(await screen.findByTestId('portfolio-toast')).toHaveTextContent(/Bail démarré|Lease started/);
+  });
+
+  it('blocks removing the last occupant client-side', async () => {
+    vi.mocked(fetchPortfolioUnit).mockResolvedValue({
+      ...unit,
+      tenants: [unit.tenants[0]!],
+    });
+    vi.mocked(endOccupant).mockReset().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    wrap('/portfolio/unites/1000');
+    const rows = await screen.findAllByTestId('tenant-row');
+    await user.click(within(rows[0]).getByTestId('end-occupant'));
+    const dialog = screen.getByTestId('end-occupant-dialog');
+    expect(within(dialog).getByTestId('last-occupant-hint')).toBeTruthy();
+    await user.click(within(dialog).getByTestId('form-submit'));
+    expect(endOccupant).not.toHaveBeenCalled();
   });
 });

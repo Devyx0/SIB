@@ -566,6 +566,9 @@ export interface PortfolioCreated {
   sector_id: number | null;
   paint_spec_id: number | null;
   document_id: number | null;
+  tenant_id?: number | null;
+  tenancy_id?: number | null;
+  lease_id?: number | null;
 }
 
 export interface PortfolioLease {
@@ -584,6 +587,10 @@ export interface PortfolioTenant {
   telephone_international: string | null;
   courriel: string | null;
   capacite: string | null;
+  /** ISO date; present on unit-detail occupants when the API returns it. */
+  start_date?: string | null;
+  end_date?: string | null;
+  reason_for_change?: string | null;
   /** True when at least one turnover on the unit names this tenant. */
   has_turnover: boolean;
 }

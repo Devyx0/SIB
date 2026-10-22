@@ -18,7 +18,7 @@ import { portfolioPath } from './shared';
 type Text = string | null | undefined;
 const v = (s: Text) => s ?? '';
 
-function useSubmit(lang: Lang, onDone: () => void) {
+export function useSubmit(lang: Lang, onDone: () => void) {
   const qc = useQueryClient();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +36,7 @@ function useSubmit(lang: Lang, onDone: () => void) {
       setSubmitting(false);
     }
   }
-  return { submitting, error, run };
+  return { submitting, error, setError, run };
 }
 
 // ── Project ──────────────────────────────────────────────────────────────────

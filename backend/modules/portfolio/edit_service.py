@@ -6,6 +6,7 @@ record each changed column in data_provenance.
 """
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 from typing import Any
 
@@ -14,10 +15,12 @@ from pydantic import BaseModel
 from backend.core.exceptions import (
     AlreadyOnLeaseError,
     ConflictError,
+    LeaseRequiresTenantError,
     NoCurrentLeaseError,
     NotFoundError,
     StaleDataError,
     TenancyNotActiveError,
+    UnitAtCapacityError,
     ValidationFailed,
 )
 from backend.core.provenance import write_provenance
@@ -305,6 +308,36 @@ def _tenancy_is_active(row: dict, today) -> bool:
     return True
 
 
+# Unit capacity is the leading integer of grandeur ("3 1/2" → 3, "4½" → 4).
+# Unparseable / missing grandeur → no hard cap (skip enforcement).
+_GRANDEUR_CAP = re.compile(r"^\s*(\d+)")
+
+
+def _max_occupants(grandeur: str | None) -> int | None:
+    if not grandeur:
+        return None
+    normalized = grandeur.replace("½", " 1/2")
+    m = _GRANDEUR_CAP.match(normalized)
+    if not m:
+        return None
+    n = int(m.group(1))
+    return n if n > 0 else None
+
+
+def _ensure_under_capacity(
+    unit: dict, *, active_count: int, adding: int = 0, removing: int = 0,
+) -> None:
+    cap = _max_occupants(unit.get("grandeur"))
+    if cap is None:
+        return
+    resulting = active_count - removing + adding
+    if resulting > cap:
+        raise UnitAtCapacityError(
+            f"Ce logement est limité à {cap} occupant(s) (grandeur {unit.get('grandeur')})",
+            details={"capacity": cap, "active": active_count, "grandeur": unit.get("grandeur")},
+        )
+
+
 def _resolve_tenant(conn, user: CurrentUser, *, tenant_id: int | None, new_tenant: TenantFields | None) -> int:
     if tenant_id is not None:
         row = repo.lock_tenant(conn, tenant_id)
@@ -339,11 +372,13 @@ def patch_tenancy(conn, tenancy_id: int, body: TenancyPatch, user: CurrentUser) 
 
 
 def add_occupant(conn, unit_id: int, body: AddOccupantBody, user: CurrentUser) -> CreatedOut:
-    _unit_in_scope(conn, user, unit_id)
+    unit = _unit_in_scope(conn, user, unit_id)
     today = today_local()
     lease = repo.lock_current_lease(conn, unit_id, today)
     if lease is None:
         raise NoCurrentLeaseError("Aucun bail courant sur ce logement")
+    active = repo.count_active_tenancies(conn, lease["lease_id"], today)
+    _ensure_under_capacity(unit, active_count=active, adding=1)
     tenant_id = _resolve_tenant(conn, user, tenant_id=body.tenant_id, new_tenant=body.new_tenant)
     if repo.tenant_active_on_lease(conn, lease["lease_id"], tenant_id, today):
         raise AlreadyOnLeaseError("Ce locataire est déjà sur ce bail")
@@ -367,7 +402,7 @@ def add_occupant(conn, unit_id: int, body: AddOccupantBody, user: CurrentUser) -
 
 
 def takeover_occupant(conn, unit_id: int, body: TakeoverBody, user: CurrentUser) -> CreatedOut:
-    _unit_in_scope(conn, user, unit_id)
+    unit = _unit_in_scope(conn, user, unit_id)
     today = today_local()
     lease = repo.lock_current_lease(conn, unit_id, today)
     if lease is None:
@@ -377,6 +412,16 @@ def takeover_occupant(conn, unit_id: int, body: TakeoverBody, user: CurrentUser)
         raise NotFoundError("Occupation sortante introuvable sur ce logement")
     if not _tenancy_is_active(outgoing, today):
         raise TenancyNotActiveError("L'occupation sortante n'est plus active")
+    # Net zero when outgoing ends on effective_date; still guard if capacity is tight
+    # and effective_date leaves both briefly overlapping as "active" today.
+    active = repo.count_active_tenancies(conn, lease["lease_id"], today)
+    ends_today = body.effective_date <= today
+    _ensure_under_capacity(
+        unit,
+        active_count=active,
+        adding=1,
+        removing=1 if ends_today else 0,
+    )
     tenant_id = _resolve_tenant(conn, user, tenant_id=body.tenant_id, new_tenant=body.new_tenant)
     if tenant_id == outgoing["tenant_id"]:
         raise ValidationFailed("Le locataire entrant doit être différent du sortant")
@@ -431,6 +476,13 @@ def end_occupant(conn, unit_id: int, tenancy_id: int, body: EndOccupantBody, use
     if _text(row["end_date"]) != _text(body.current_end_date):
         raise StaleDataError(_STALE, details={"field": "end_date"})
     end = body.end_date or today
+    # Reject removing the last active occupant — end the lease instead.
+    if repo.count_active_tenancies(conn, row["lease_id"], today) <= 1:
+        raise LeaseRequiresTenantError(
+            "Impossible de retirer le dernier occupant : terminez le bail à la place "
+            "(End the lease instead of removing the last occupant).",
+            details={"lease_id": row["lease_id"], "tenancy_id": tenancy_id},
+        )
     changes = {"end_date": end}
     if body.reason_for_change is not None:
         changes["reason_for_change"] = body.reason_for_change
@@ -476,7 +528,13 @@ def end_lease(conn, unit_id: int, body: EndLeaseBody, user: CurrentUser) -> None
 
 
 def start_lease(conn, unit_id: int, body: StartLeaseBody, user: CurrentUser) -> CreatedOut:
-    _unit_in_scope(conn, user, unit_id)
+    unit = _unit_in_scope(conn, user, unit_id)
+    if not body.occupants:
+        raise ValidationFailed(
+            "Au moins un occupant est requis pour démarrer un bail "
+            "(At least one occupant is required to start a lease).",
+        )
+    _ensure_under_capacity(unit, active_count=0, adding=len(body.occupants))
     today = today_local()
     current = repo.lock_current_lease(conn, unit_id, today)
     if current is not None:

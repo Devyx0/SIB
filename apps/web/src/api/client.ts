@@ -787,6 +787,79 @@ export function fetchTenantTurnover(unitId: number, tenantId: number): Promise<T
   return apiFetch(`/api/v1/portfolio/units/${unitId}/tenants/${tenantId}/turnover`);
 }
 
+export type TenancyCapacity = 'named_on_lease' | 'added_occupant' | 'took_over';
+
+export interface TenantContactFields {
+  nom_complet?: string | null;
+  telephone?: string | null;
+  telephone_international?: string | null;
+  courriel?: string | null;
+}
+
+export interface TenancyFields {
+  capacite?: TenancyCapacity | null;
+  reason_for_change?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+}
+
+export interface OccupantSeed {
+  tenant_id?: number;
+  new_tenant?: TenantContactFields;
+  capacite?: TenancyCapacity;
+}
+
+export function updateTenancy(tenancyId: number, patch: Patch<TenancyFields>): Promise<void> {
+  return apiPatch(`/api/v1/portfolio/tenancies/${tenancyId}`, patch);
+}
+
+export function addOccupant(unitId: number, body: OccupantSeed & {
+  start_date?: string | null;
+  reason_for_change?: string | null;
+}): Promise<PortfolioCreated> {
+  return apiPost(`/api/v1/portfolio/units/${unitId}/occupants`, body);
+}
+
+export function takeoverOccupant(unitId: number, body: {
+  outgoing_tenancy_id: number;
+  tenant_id?: number;
+  new_tenant?: TenantContactFields;
+  effective_date: string;
+  reason_for_change?: string | null;
+}): Promise<PortfolioCreated> {
+  return apiPost(`/api/v1/portfolio/units/${unitId}/occupants/takeover`, body);
+}
+
+export function endOccupant(unitId: number, tenancyId: number, body: {
+  end_date?: string | null;
+  reason_for_change?: string | null;
+  current_end_date?: string | null;
+}): Promise<void> {
+  return apiPost(`/api/v1/portfolio/units/${unitId}/occupants/${tenancyId}/end`, body);
+}
+
+export function endLease(unitId: number, body: {
+  fin_bail: string;
+  statut?: string | null;
+  current_fin_bail?: string | null;
+  current_statut?: string | null;
+  close_tenancies?: boolean;
+}): Promise<void> {
+  return apiPost(`/api/v1/portfolio/units/${unitId}/leases/end`, body);
+}
+
+export function startLease(unitId: number, body: {
+  debut_bail: string;
+  fin_bail?: string | null;
+  statut?: string | null;
+  langue_bail?: string | null;
+  occupants?: OccupantSeed[];
+  end_previous?: boolean;
+  previous_fin_bail?: string | null;
+}): Promise<PortfolioCreated> {
+  return apiPost(`/api/v1/portfolio/units/${unitId}/leases`, body);
+}
+
 /** Public survey — no auth header; do not redirect to login on 401. */
 export async function fetchSurvey(token: string): Promise<SurveyPublic> {
   const res = await fetch(`${API_BASE}/api/v1/survey/${encodeURIComponent(token)}`);

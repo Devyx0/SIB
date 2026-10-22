@@ -202,6 +202,9 @@ def test_drill_sector_to_tenant(ac, db_conn):
         "telephone_international": None,
         "courriel": "ada@example.test",
         "capacite": "named_on_lease",
+        "start_date": None,
+        "end_date": None,
+        "reason_for_change": None,
         "has_turnover": False,
     }]
 
@@ -607,13 +610,72 @@ def test_takeover_and_end_occupant(ac, db_conn):
     assert unit["tenants"][0]["capacite"] == "took_over"
     assert unit["tenants"][0]["tenancy_id"] == incoming["tenancy_id"]
 
+    # Last active occupant cannot leave while the lease stays current.
+    end_last = client.post(
+        f"/api/v1/portfolio/units/{seed['unit_id']}/occupants/{incoming['tenancy_id']}/end",
+        json={"end_date": today, "current_end_date": None},
+    )
+    assert end_last.status_code == 409
+    assert end_last.json()["error"]["code"] == "LEASE_REQUIRES_TENANT"
+
+    # With a second occupant, removing one (non-last) is fine.
+    roommate = client.post(f"/api/v1/portfolio/units/{seed['unit_id']}/occupants", json={
+        "new_tenant": {"nom_complet": "Bob Roommate"},
+        "capacite": "added_occupant",
+    })
+    assert roommate.status_code == 201
     end = client.post(
         f"/api/v1/portfolio/units/{seed['unit_id']}/occupants/{incoming['tenancy_id']}/end",
         json={"end_date": today, "current_end_date": None},
     )
     assert end.status_code == 204
-    vacant = client.get(f"/api/v1/portfolio/units/{seed['unit_id']}").json()
-    assert vacant["tenants"] == []
+    remaining = client.get(f"/api/v1/portfolio/units/{seed['unit_id']}").json()
+    assert len(remaining["tenants"]) == 1
+    assert remaining["tenants"][0]["nom_complet"] == "Bob Roommate"
+    assert remaining["lease"] is not None
+
+
+def test_end_occupant_rejects_last(ac, db_conn):
+    from backend.core.utils import today_local
+    seed = _seed(db_conn)
+    today = today_local().isoformat()
+    r = ac(_user(_DIRECTOR, "director")).post(
+        f"/api/v1/portfolio/units/{seed['unit_id']}/occupants/{seed['tenancy_id']}/end",
+        json={"end_date": today, "current_end_date": None},
+    )
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "LEASE_REQUIRES_TENANT"
+
+
+def test_start_lease_requires_occupants(ac, db_conn):
+    seed = _seed(db_conn)
+    # Vacate first so end_previous is not the blocker.
+    ac(_user(_DIRECTOR, "director")).post(
+        f"/api/v1/portfolio/units/{seed['unit_id']}/leases/end",
+        json={"fin_bail": "2026-10-01", "current_fin_bail": "2027-06-30", "close_tenancies": True},
+    )
+    r = ac(_user(_DIRECTOR, "director")).post(
+        f"/api/v1/portfolio/units/{seed['unit_id']}/leases",
+        json={"debut_bail": "2026-10-02", "occupants": []},
+    )
+    assert r.status_code == 422
+
+
+def test_add_occupant_rejects_over_capacity(ac, db_conn):
+    """grandeur '3 1/2' → max 3 active occupants."""
+    seed = _seed(db_conn)
+    client = ac(_user(_DIRECTOR, "director"))
+    assert client.post(f"/api/v1/portfolio/units/{seed['unit_id']}/occupants", json={
+        "new_tenant": {"nom_complet": "Two"},
+    }).status_code == 201
+    assert client.post(f"/api/v1/portfolio/units/{seed['unit_id']}/occupants", json={
+        "new_tenant": {"nom_complet": "Three"},
+    }).status_code == 201
+    over = client.post(f"/api/v1/portfolio/units/{seed['unit_id']}/occupants", json={
+        "new_tenant": {"nom_complet": "Four"},
+    })
+    assert over.status_code == 409
+    assert over.json()["error"]["code"] == "UNIT_AT_CAPACITY"
 
 
 def test_end_and_start_lease(ac, db_conn):
@@ -658,9 +720,13 @@ def test_start_lease_requires_end_previous(ac, db_conn):
     seed = _seed(db_conn)
     r = ac(_user(_DIRECTOR, "director")).post(
         f"/api/v1/portfolio/units/{seed['unit_id']}/leases",
-        json={"debut_bail": "2026-08-01", "occupants": []},
+        json={
+            "debut_bail": "2026-08-01",
+            "occupants": [{"new_tenant": {"nom_complet": "Overlap Holder"}, "capacite": "named_on_lease"}],
+        },
     )
     assert r.status_code == 409
+    assert r.json()["error"]["code"] == "CONFLICT"
 
 
 def test_occupancy_edits_403_technician(ac, db_conn):

@@ -115,6 +115,9 @@ class TenantOut(BaseModel):
     telephone_international: Optional[str] = None
     courriel: Optional[str] = None
     capacite: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    reason_for_change: Optional[str] = None
     # True when at least one turnover on the unit names this tenant.
     has_turnover: bool = False
 
@@ -617,6 +620,7 @@ class StartLeaseBody(BaseModel):
     fin_bail: Optional[date] = None
     statut: Optional[str] = Field(default="Actif", max_length=100)
     langue_bail: Optional[str] = Field(None, max_length=50)
-    occupants: list[OccupantSeed] = []
+    # A lease cannot exist without at least one tenancy_record.
+    occupants: list[OccupantSeed] = Field(min_length=1)
     end_previous: bool = False
     previous_fin_bail: Optional[date] = None

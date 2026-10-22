@@ -82,7 +82,7 @@ export default function TenantsListView({ lang }: { lang: Lang }) {
 
   return (
     <>
-      <Breadcrumbs items={[rootCrumb(lang), { label: t(lang, 'Locataires (test)', 'Tenants (test)') }]} lang={lang} />
+      <Breadcrumbs items={[rootCrumb(lang), { label: t(lang, 'Locataires', 'Tenants') }]} lang={lang} />
       <Header
         lang={lang}
         eyebrow={t(lang, 'TEMP — à retirer', 'TEMP — revert later')}

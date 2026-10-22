@@ -9,6 +9,32 @@
   padding: 24px 28px 36px;
 }
 
+/* Brief success flash after occupancy mutations (mirrors DispatchBoard okMsg). */
+.toast {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--color-success-t);
+  color: var(--color-success);
+  border: 1px solid var(--color-success-border);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.inlineHint {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--color-warning-t, #fff8e8);
+  color: var(--color-warning-ink, #8a5a00);
+  border: 1px solid var(--color-warning-border, #f3d9a8);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 /* ── Breadcrumb ─────────────────────────────────────────────────────────── */
 
 .crumbs {
@@ -132,22 +158,23 @@
 /* ── Level header ───────────────────────────────────────────────────────── */
 
 .header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px 24px;
   margin-bottom: 22px;
 }
 
-.header > div:first-child {
-  flex: 1 1 320px;
+/* Title left, page actions far right — same row as the h1, not the eyebrow. */
+.headerTitleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+.headerTitleRow .title {
+  flex: 1 1 0;
   min-width: 0;
 }
 
-/* Right column, pinned top and the same width on every level: the portfolio
-   search, then the page's buttons under it, right-aligned. Top-pinned so a
-   subtitle or extra chips on the left never push it down. */
 /* What the level holds: icon facts in a row, split by thin dividers. */
 .levelFacts {
   display: flex;
@@ -201,29 +228,14 @@
   .factIcon { flex: none; }
 }
 
-/* Portfolio home: the search row lines up with the « Secteurs » title
-   (skips the eyebrow above it, centred on the title's line). */
-.headerHome .headerSide {
-  margin-top: 24px;
-}
-
-@media (max-width: 1023px) {
-  .headerHome .headerSide { margin-top: 20px; }
-}
-
-@media (max-width: 639px) {
-  .headerHome .headerSide { margin-top: 0; }
-}
-
-/* Unit page (desktop): its button sits under the heading. */
-.headerBelow {
+/* Building page on a phone: keep the buttons in the header flow. */
+.headerBelow .headerTitleRow {
   flex-direction: column;
   align-items: flex-start;
   gap: 14px;
 }
 
-/* Stacked, the title block takes only its own height. */
-.headerBelow > div:first-child {
+.headerBelow .headerTitleRow .title {
   flex: none;
 }
 
@@ -266,19 +278,15 @@
   .headerSide .headerActions { justify-content: flex-start; }
 
   /* Phone: the header's buttons sit beside the title, never on a row of their own. */
-  .headerBelow { flex-direction: row; flex-wrap: nowrap; align-items: flex-start; }
-  .headerBelow > div:first-child { flex: 1 1 0; min-width: 0; }
+  .headerBelow .headerTitleRow { flex-direction: row; flex-wrap: nowrap; align-items: center; }
+  .headerBelow .headerTitleRow .title { flex: 1 1 0; min-width: 0; }
   .headerBelow .headerSide { flex: none; }
 
-  /* A single header button (the unit's pencil) sits beside the title
-     instead of taking a row of its own. */
-  .header:has(.headerSide:not(.headerSideSearch) .headerActions > :only-child) {
+  /* A single header button (the unit's pencil) stays on the title row. */
+  .headerTitleRow:has(.headerSide:not(.headerSideSearch) .headerActions > :only-child) {
     flex-wrap: nowrap;
   }
-  .header:has(.headerSide:not(.headerSideSearch) .headerActions > :only-child) > div:first-child {
-    flex: 1 1 0;
-  }
-  .header:has(.headerSide:not(.headerSideSearch) .headerActions > :only-child) .headerSide {
+  .headerTitleRow:has(.headerSide:not(.headerSideSearch) .headerActions > :only-child) .headerSide {
     flex: none;
   }
 }
@@ -1101,17 +1109,16 @@ a.card:hover .arrow {
   color: var(--color-warning-ink);
 }
 
-/* Lease on the left, building paint on the right when there is room. */
-.leaseGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-}
-
-@media (min-width: 900px) {
-  .leaseGrid {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+@media (max-width: 899px) {
+  .tenantRow {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+  }
+  .tenantContacts {
+    grid-column: 2 / -1;
+  }
+  .tenantActions {
+    grid-column: 3;
+    grid-row: 1;
   }
 }
 
@@ -1191,6 +1198,53 @@ a.card:hover .arrow {
   color: var(--color-neutral-700);
 }
 
+.panelHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.panelHead .panelTitle { margin: 0; }
+
+.panelActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.btnDanger {
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+}
+
+.btnDanger:hover {
+  background: var(--color-danger-t);
+  border-color: var(--color-danger);
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+.checkRow input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--navy-800);
+}
+
+.wideAction {
+  grid-column: 1 / -1;
+}
+
 /* Label column capped so a long label (e.g. a paint zone · surface) can't
    squeeze the value into a one-letter column. */
 .facts {
@@ -1242,7 +1296,7 @@ a.card:hover .arrow {
 .tenantRow {
   position: relative;
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1.6fr) auto;
+  grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1.4fr) auto;
   align-items: center;
   gap: 6px 16px;
   padding: 14px 18px;
@@ -1407,6 +1461,32 @@ a.card:hover .arrow {
 .tenantRow:hover .rowArrow {
   color: var(--navy-700);
   transform: translateX(2px);
+}
+
+.tenantActions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tenantActions .toolBtn {
+  color: var(--color-neutral-600);
+  border-color: var(--color-border);
+  background: var(--color-surface);
+}
+
+.tenantActions .toolBtn:hover {
+  color: var(--navy-800);
+  border-color: var(--navy-200);
+  background: var(--navy-50);
+}
+
+.toolBtnDanger:hover {
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-t);
 }
 
 /* ── States ─────────────────────────────────────────────────────────────── */
@@ -1785,7 +1865,7 @@ a.card:hover .arrow {
 }
 
 .unitPaint {
-  /* Its own card now (beside the lease), so no divider above it. */
+  /* Own full-width card under the lease — no divider above it. */
   display: block;
 }
 
@@ -1830,8 +1910,9 @@ a.card:hover .arrow {
 
 .paintItem {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-  gap: 2px 16px;
+  /* Cap the surface column so product codes sit nearby on a full-width card. */
+  grid-template-columns: minmax(8rem, 22rem) minmax(0, 1fr);
+  gap: 2px 24px;
   padding: 7px 0;
 }
 
@@ -2092,7 +2173,8 @@ a.btn {
   .avatar { width: 40px; height: 40px; font-size: 14px; }
   .tenantContacts { grid-column: 2 / -1; grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .contactNone { display: none; }
-  .rowArrow { grid-column: 3; grid-row: 1; }
+  .rowArrow, .tenantActions { grid-column: 3; grid-row: 1; }
+  .panelHead .btn { min-height: 38px; }
   .leaseDates { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .paintItem { grid-template-columns: minmax(0, 1fr); }
   /* Phone: the turnover window rises as a sheet from the bottom edge. */
@@ -2118,8 +2200,6 @@ a.btn {
   .facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .facts dd + dt { margin-top: 8px; }
   /* Short lease labels (Début, Fin…) still fit beside their value. */
-  .leaseGrid .facts { grid-template-columns: fit-content(42%) minmax(0, 1fr); gap: 6px 14px; }
-  .leaseGrid .facts dd + dt { margin-top: 0; }
   .side .sideFacts { gap: 6px 12px; }
   .extras .facts dd + dt { margin-top: 0; }
 }

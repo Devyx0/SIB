@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -18,8 +18,12 @@ import BuildingInfo from './BuildingInfo';
 import { BuildingDialog, ProjectDialog, UnitDialog } from './forms';
 import {
   BuildingIcon, CalendarIcon, CityIcon, DocumentIcon, EyeIcon, GridIcon, ListIcon, FolderIcon, HashIcon, HomeIcon, LayersIcon, MailIcon, MapPinIcon,
-  PencilIcon, PhoneIcon, PieIcon, PlusIcon, UsersIcon,
+  PencilIcon, PhoneIcon, PieIcon, PlusIcon, SwapIcon, UserMinusIcon, UsersIcon,
 } from './icons';
+import {
+  AddOccupantDialog, EditTenancyDialog, EndLeaseDialog, EndOccupantDialog, StartLeaseDialog, TakeoverDialog,
+  maxOccupantsFromGrandeur,
+} from './occupancy';
 import TurnoverDialog, { capaciteLabel } from './TurnoverDialog';
 import UnitsListView, { unitsPath } from './UnitsList';
 import TenantsListView from './TenantsList';
@@ -181,7 +185,7 @@ function SectorsView({ lang }: { lang: Lang }) {
             </Link>
             {/* TEMP — scratch link for GET /portfolio/tenants; revert with TenantsList */}
             <Link className={styles.btn} to="/portfolio/locataires" data-testid="all-tenants-link">
-              {t(lang, 'Locataires (test)', 'Tenants (test)')}
+              {t(lang, 'Locataires', 'Tenants')}
             </Link>
           </div>
         }
@@ -733,8 +737,29 @@ function BuildingInfoView({ lang }: { lang: Lang }) {
 // ── Level 5: the unit, its lease and tenants (tenant → turnover window) ──────
 
 /** The unit's current lease: months left up front, then the timeline. */
-function LeaseCard({ lease, lang }: { lease: PortfolioLease | null | undefined; lang: Lang }) {
-  const title = <h2 id="lease-title" className={styles.panelTitle}>{t(lang, 'Bail en cours', 'Current lease')}</h2>;
+function LeaseCard({ lease, lang, onStart, onEnd }: {
+  lease: PortfolioLease | null | undefined; lang: Lang;
+  onStart: () => void; onEnd: () => void;
+}) {
+  const title = (
+    <div className={styles.panelHead}>
+      <h2 id="lease-title" className={styles.panelTitle}>{t(lang, 'Bail en cours', 'Current lease')}</h2>
+      {lease ? (
+        <div className={styles.panelActions}>
+          <button type="button" className={styles.btn} onClick={onStart} data-testid="start-lease">
+            {t(lang, 'Nouveau bail', 'New lease')}
+          </button>
+          <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={onEnd} data-testid="end-lease">
+            {t(lang, 'Terminer', 'End lease')}
+          </button>
+        </div>
+      ) : (
+        <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={onStart} data-testid="start-lease">
+          {t(lang, 'Démarrer un bail', 'Start a lease')}
+        </button>
+      )}
+    </div>
+  );
   if (!lease) {
     return (
       <section className={styles.panel} aria-labelledby="lease-title" data-testid="lease-card">
@@ -882,9 +907,30 @@ function UnitView({ lang }: { lang: Lang }) {
   const name = data ? unitName(lang, data) : '…';
   const lease = data?.lease;
   const [editing, setEditing] = useState(false);
+  type OccupancyDialog =
+    | { kind: 'add' }
+    | { kind: 'edit'; tenant: NonNullable<PortfolioUnitDetail['tenants']>[number] }
+    | { kind: 'takeover'; tenant: NonNullable<PortfolioUnitDetail['tenants']>[number] }
+    | { kind: 'endOccupant'; tenant: NonNullable<PortfolioUnitDetail['tenants']>[number] }
+    | { kind: 'endLease' }
+    | { kind: 'startLease' };
+  const [occupancy, setOccupancy] = useState<OccupancyDialog | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+  const flashToast = useCallback((message: string) => {
+    setToast(message);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
+  }, []);
+  const activeCount = data?.tenants.length ?? 0;
+  const maxOccupants = maxOccupantsFromGrandeur(data?.grandeur);
 
   return (
     <>
+      {toast && (
+        <p className={styles.toast} role="status" data-testid="portfolio-toast">{toast}</p>
+      )}
       <Breadcrumbs items={data ? [
         rootCrumb(lang),
         { label: sectorName(lang, data.territoire, data.sector_id), to: portfolioPath.sector(data.sector_id) },
@@ -903,7 +949,6 @@ function UnitView({ lang }: { lang: Lang }) {
           { key: 'building', icon: <BuildingIcon />, label: buildingName(lang, data), to: portfolioPath.building(data.building_id) },
           data.unique_unit_number && { key: 'ref', icon: <HashIcon />, label: t(lang, `Réf. ${data.unique_unit_number}`, `Ref. ${data.unique_unit_number}`) },
         ]}
-        actionsBelow
         actions={data && (
           <div className={styles.headerActions}>
             <EditButton lang={lang} label={t(lang, 'Modifier le logement', 'Edit unit')} testId="edit-unit"
@@ -919,9 +964,17 @@ function UnitView({ lang }: { lang: Lang }) {
       {data && (
         <div className={styles.unitLayout}>
           <section aria-labelledby="tenants-title">
-            <h2 id="tenants-title" className={styles.panelTitle}>
-              {t(lang, 'Locataires', 'Tenants')}
-            </h2>
+            <div className={styles.panelHead}>
+              <h2 id="tenants-title" className={styles.panelTitle}>
+                {t(lang, 'Locataires', 'Tenants')}
+              </h2>
+              {lease && (
+                <button type="button" className={`${styles.btn} ${styles.btnIcon}`} data-testid="add-occupant"
+                        onClick={() => setOccupancy({ kind: 'add' })}>
+                  <PlusIcon /> {t(lang, 'Ajouter un occupant', 'Add occupant')}
+                </button>
+              )}
+            </div>
             {data.tenants.length === 0 ? (
               <Empty>{t(lang, 'Aucun locataire actuel.', 'No current tenant.')}</Empty>
             ) : (
@@ -972,23 +1025,44 @@ function UnitView({ lang }: { lang: Lang }) {
                         </span>
                       )}
                     </div>
-                    <svg className={styles.rowArrow} viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"
-                         fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8 5l5 5-5 5" />
-                    </svg>
+                    {tn.tenancy_id != null && (
+                      <div className={styles.tenantActions} data-testid="tenant-actions">
+                        <button type="button" className={styles.toolBtn} data-testid="edit-tenancy"
+                                aria-label={t(lang, 'Modifier l’occupation', 'Edit occupancy')}
+                                title={t(lang, 'Modifier l’occupation', 'Edit occupancy')}
+                                onClick={() => setOccupancy({ kind: 'edit', tenant: tn })}>
+                          <PencilIcon />
+                        </button>
+                        <button type="button" className={styles.toolBtn} data-testid="takeover-occupant"
+                                aria-label={t(lang, 'Céder le bail', 'Take over the lease')}
+                                title={t(lang, 'Céder le bail', 'Take over the lease')}
+                                onClick={() => setOccupancy({ kind: 'takeover', tenant: tn })}>
+                          <SwapIcon />
+                        </button>
+                        <button type="button" className={`${styles.toolBtn} ${styles.toolBtnDanger}`}
+                                data-testid="end-occupant"
+                                aria-label={t(lang, 'Retirer l’occupant', 'Remove occupant')}
+                                title={t(lang, 'Retirer l’occupant', 'Remove occupant')}
+                                onClick={() => setOccupancy({ kind: 'endOccupant', tenant: tn })}>
+                          <UserMinusIcon />
+                        </button>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
             )}
           </section>
 
-          {/* Lease and the building's paint codes: side by side when there is room. */}
-          <div className={styles.leaseGrid}>
-            <LeaseCard lease={lease} lang={lang} />
-            <section className={styles.panel} aria-label={t(lang, 'Peinture du bâtiment', 'Building paint')}>
-              <UnitPaint unit={data} lang={lang} />
-            </section>
-          </div>
+          {/* Lease first (full width), then the building paint chart below it.
+              A side-by-side grid left a dead left column once the short lease
+              card ended and the paint list kept going. */}
+          <LeaseCard lease={lease} lang={lang}
+                     onStart={() => setOccupancy({ kind: 'startLease' })}
+                     onEnd={() => setOccupancy({ kind: 'endLease' })} />
+          <section className={styles.panel} aria-label={t(lang, 'Peinture du bâtiment', 'Building paint')}>
+            <UnitPaint unit={data} lang={lang} />
+          </section>
         </div>
       )}
 
@@ -1000,6 +1074,31 @@ function UnitView({ lang }: { lang: Lang }) {
           lang={lang}
           onClose={closeTenant}
         />
+      )}
+      {occupancy?.kind === 'add' && (
+        <AddOccupantDialog unitId={unitId} activeCount={activeCount} maxOccupants={maxOccupants}
+                           lang={lang} onClose={() => setOccupancy(null)} onToast={flashToast} />
+      )}
+      {occupancy?.kind === 'edit' && (
+        <EditTenancyDialog tenant={occupancy.tenant} lang={lang}
+                           onClose={() => setOccupancy(null)} onToast={flashToast} />
+      )}
+      {occupancy?.kind === 'takeover' && (
+        <TakeoverDialog unitId={unitId} outgoing={occupancy.tenant}
+                        activeCount={activeCount} maxOccupants={maxOccupants}
+                        lang={lang} onClose={() => setOccupancy(null)} onToast={flashToast} />
+      )}
+      {occupancy?.kind === 'endOccupant' && (
+        <EndOccupantDialog unitId={unitId} tenant={occupancy.tenant} activeCount={activeCount}
+                           lang={lang} onClose={() => setOccupancy(null)} onToast={flashToast} />
+      )}
+      {occupancy?.kind === 'endLease' && lease && (
+        <EndLeaseDialog unitId={unitId} lease={lease} lang={lang}
+                        onClose={() => setOccupancy(null)} onToast={flashToast} />
+      )}
+      {occupancy?.kind === 'startLease' && (
+        <StartLeaseDialog unitId={unitId} currentLease={lease ?? null} maxOccupants={maxOccupants}
+                          lang={lang} onClose={() => setOccupancy(null)} onToast={flashToast} />
       )}
     </>
   );

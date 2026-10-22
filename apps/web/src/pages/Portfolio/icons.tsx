@@ -122,3 +122,16 @@ export function GridIcon({ size = 18 }: P) {
 export function ListIcon({ size = 18 }: P) {
   return <svg {...base(size)}><path d="M7 5h10M7 10h10M7 15h10M3.5 5h.01M3.5 10h.01M3.5 15h.01" /></svg>;
 }
+
+export function SwapIcon({ size = 16 }: P) {
+  return <svg {...base(size)}><path d="M4 7h10l-2.5-2.5M16 13H6l2.5 2.5" /></svg>;
+}
+
+export function UserMinusIcon({ size = 16 }: P) {
+  return (
+    <svg {...base(size)}>
+      <circle cx="8" cy="6.5" r="2.6" />
+      <path d="M3.5 16c.5-2.6 2.4-4 4.5-4s4 1.4 4.5 4M12.5 10.5h4" />
+    </svg>
+  );
+}

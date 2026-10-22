@@ -99,9 +99,10 @@ function Facts({ facts }: { facts: Fact[] }) {
   );
 }
 
-/** Title on the left; the page's buttons on the right, pinned to the top.
- *  `globalSearch` (Portfolio home only) puts the portfolio-wide search on the
- *  same row, left of the buttons. Inner pages search their own list instead. */
+/** Eyebrow above; title and the page's buttons share the next row (title left,
+ *  actions far right). Subtitle / facts stay under the title so they never
+ *  push the buttons down. `globalSearch` (Portfolio home) puts the
+ *  portfolio-wide search on that same row, left of the buttons. */
 export function Header({ lang, eyebrow, title, subtitle, chips, facts, actions, globalSearch = false, actionsBelow = false }: {
   lang: Lang;
   eyebrow: string;
@@ -117,21 +118,21 @@ export function Header({ lang, eyebrow, title, subtitle, chips, facts, actions, 
 }) {
   return (
     <header className={`${styles.header} ${actionsBelow ? styles.headerBelow : ''} ${globalSearch ? styles.headerHome : ''}`}>
-      <div>
-        <p className={styles.eyebrow}>{eyebrow}</p>
+      <p className={styles.eyebrow}>{eyebrow}</p>
+      <div className={styles.headerTitleRow}>
         <h1 className={styles.title}>{title}</h1>
-        {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
-        {facts && facts.some(Boolean) && <Facts facts={facts.filter(Boolean) as Fact[]} />}
-        {chips && chips.some(Boolean) && (
-          <div className={styles.chips}>
-            {chips.filter(Boolean).map((c) => <span key={c} className={styles.chip}>{c}</span>)}
+        {(globalSearch || actions) && (
+          <div className={`${styles.headerSide} ${globalSearch ? styles.headerSideSearch : ''}`}>
+            {globalSearch && <div role="search" className={styles.headerSearch}><PortfolioSearch lang={lang} /></div>}
+            {actions}
           </div>
         )}
       </div>
-      {(globalSearch || actions) && (
-        <div className={`${styles.headerSide} ${globalSearch ? styles.headerSideSearch : ''}`}>
-          {globalSearch && <div role="search" className={styles.headerSearch}><PortfolioSearch lang={lang} /></div>}
-          {actions}
+      {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
+      {facts && facts.some(Boolean) && <Facts facts={facts.filter(Boolean) as Fact[]} />}
+      {chips && chips.some(Boolean) && (
+        <div className={styles.chips}>
+          {chips.filter(Boolean).map((c) => <span key={c} className={styles.chip}>{c}</span>)}
         </div>
       )}
     </header>

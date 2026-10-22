@@ -78,6 +78,17 @@ class TenancyNotActiveError(ConflictError):
     detail = "Tenancy is not active"
 
 
+class LeaseRequiresTenantError(ConflictError):
+    """Last active occupant cannot leave while the lease stays current."""
+    code = "LEASE_REQUIRES_TENANT"
+    detail = "Cannot remove the last occupant; end the lease instead"
+
+
+class UnitAtCapacityError(ConflictError):
+    code = "UNIT_AT_CAPACITY"
+    detail = "Unit is at occupant capacity"
+
+
 class RequestClosedError(ConflictError):
     code = "REQUEST_CLOSED"
     detail = "No changes allowed on a closed request"
