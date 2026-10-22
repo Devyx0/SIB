@@ -21,6 +21,7 @@ import {
   PencilIcon, PhoneIcon, PieIcon, PlusIcon, UsersIcon,
 } from './icons';
 import TurnoverDialog, { capaciteLabel } from './TurnoverDialog';
+import MapView, { mapPath } from './MapView';
 import UnitsListView, { unitsPath } from './UnitsList';
 import { fmtDate, matches, parseDate, plural, sentenceCase } from './format';
 import type { Fact } from './shared';
@@ -115,6 +116,15 @@ const unitFields = (u: Pick<PortfolioUnitSummary, 'numero_appartement' | 'rue' |
 
 // ── Level 1: sectors ─────────────────────────────────────────────────────────
 
+/** Link to the map, scoped to a sector or project. */
+function MapLink({ lang, scope }: { lang: Lang; scope?: { secteur?: number; projet?: number } }) {
+  return (
+    <Link className={`${styles.btn} ${styles.btnIcon}`} to={mapPath(scope)} data-testid="open-map">
+      <MapPinIcon /> {t(lang, 'Carte', 'Map')}
+    </Link>
+  );
+}
+
 function pct(part: number, whole: number): number {
   return whole > 0 ? Math.round((part / whole) * 100) : 0;
 }
@@ -174,6 +184,7 @@ function SectorsView({ lang }: { lang: Lang }) {
         globalSearch
         actions={
           <div className={styles.headerActions}>
+            <MapLink lang={lang} />
             <Link className={styles.btn} to={unitsPath()} data-testid="all-units-link">
               {t(lang, 'Tous les logements', 'All units')}
             </Link>
@@ -255,6 +266,7 @@ function SectorView({ lang }: { lang: Lang }) {
   const viewUnits = (
     <Link className={styles.btn} to={unitsPath({ secteur: sectorId })}>{t(lang, 'Voir les logements', 'View units')}</Link>
   );
+  const viewMap = <MapLink lang={lang} scope={{ secteur: sectorId }} />;
 
   return (
     <>
@@ -273,7 +285,7 @@ function SectorView({ lang }: { lang: Lang }) {
             to: unitsPath({ secteur: sectorId, occupation: 'vacant' }),
           },
         ]}
-        actions={!phone && data && <div className={styles.headerActions}>{viewUnits}{addProject}</div>}
+        actions={!phone && data && <div className={styles.headerActions}>{viewMap}{viewUnits}{addProject}</div>}
       />
       <LevelState isLoading={isLoading} error={error} lang={lang} onRetry={refetch} />
       {data && (
@@ -282,7 +294,7 @@ function SectorView({ lang }: { lang: Lang }) {
             <SearchBox value={q} onChange={setQ}
                        placeholder={t(lang, 'Rechercher un projet…', 'Search projects…')} />
           )}
-          {phone && <div className={styles.headerActions}>{viewUnits}</div>}
+          {phone && <div className={styles.headerActions}>{viewMap}{viewUnits}</div>}
           {data.projects.length > 0 && (
             <div className={styles.listControls}>
               <Select className={`${styles.select} ${size !== 'all' ? styles.selectActive : ''}`} value={size}
@@ -443,6 +455,7 @@ function ProjectView({ lang }: { lang: Lang }) {
         ]}
         actions={data && (phone ? <div className={styles.headerActions}>{editProject}</div> : (
           <div className={styles.headerActions}>
+            <MapLink lang={lang} scope={{ secteur: sectorId, projet: projectId }} />
             <Link className={styles.btn} to={unitsPath({ secteur: sectorId, projet: projectId })}>
               {t(lang, 'Voir les logements', 'View units')}
             </Link>
@@ -459,6 +472,7 @@ function ProjectView({ lang }: { lang: Lang }) {
           )}
           {phone && (
             <div className={styles.headerActions}>
+              <MapLink lang={lang} scope={{ secteur: sectorId, projet: projectId }} />
               <Link className={styles.btn} to={unitsPath({ secteur: sectorId, projet: projectId })}>
                 {t(lang, 'Voir les logements', 'View units')}
               </Link>
@@ -1005,6 +1019,7 @@ export default function Portfolio({ lang = 'fr' }: { lang?: Lang }) {
       <Routes>
         <Route index element={<SectorsView lang={lang} />} />
         <Route path="logements" element={<UnitsListView lang={lang} />} />
+        <Route path="carte" element={<MapView lang={lang} />} />
         <Route path="secteurs/:sectorId" element={<SectorView lang={lang} />} />
         <Route path="secteurs/:sectorId/projets/:projectId" element={<ProjectView lang={lang} />} />
         <Route path="batiments/:buildingId" element={<BuildingView lang={lang} />} />

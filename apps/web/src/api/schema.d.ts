@@ -463,6 +463,32 @@ export interface PortfolioUnitSummary {
   lease_statut: string | null;
 }
 
+/** One building with a location, for the portfolio map. */
+export interface PortfolioMapBuilding {
+  building_id: number;
+  project_id: number;
+  sector_id: number;
+  adresse: string | null;
+  ville: string | null;
+  code_postal: string | null;
+  web_building_name: string | null;
+  nom_unique_projet: string | null;
+  territoire: string | null;
+  /** Sector colour (hex), the same one the dispatch board uses. */
+  color_code: string | null;
+  latitude: number;
+  longitude: number;
+  unit_count: number;
+  /** Units with a current lease that has at least one tenant. */
+  occupied_unit_count: number;
+}
+
+/** Only buildings that have coordinates; `missing_coordinates` counts the rest. */
+export interface PortfolioMapData {
+  buildings: PortfolioMapBuilding[];
+  missing_coordinates: number;
+}
+
 export interface PortfolioSectorDetail {
   sector_id: number;
   territoire: string | null;

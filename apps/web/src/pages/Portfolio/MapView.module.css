@@ -1,0 +1,383 @@
+/* Portfolio map: drill-down panel on the left, map on the right. */
+
+.layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+  height: clamp(460px, calc(100dvh - 250px), 820px);
+  margin-bottom: 8px;
+}
+
+/* ── Panel ──────────────────────────────────────────────────────────────── */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-card);
+  overflow: hidden;
+}
+
+.panelHead {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+h2.panelTitle {
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--color-text);
+}
+
+.back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px 2px 0;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--navy-700);
+}
+
+.back:hover { color: var(--navy-900); }
+.back:focus-visible { outline: none; box-shadow: var(--ring); border-radius: var(--r-sm); }
+
+.search {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-bg-alt);
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--color-text);
+  box-sizing: border-box;
+}
+
+.search:focus { outline: none; border-color: var(--navy-400); background: #fff; box-shadow: var(--ring); }
+
+.list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: var(--r-md);
+  background: none;
+  text-align: left;
+  color: var(--color-text);
+}
+
+.row:hover { background: var(--navy-50); }
+.row:focus-visible { outline: none; box-shadow: var(--ring); }
+.rowActive, .rowActive:hover { background: var(--navy-100); }
+
+.rowDot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.rowIcon {
+  flex-shrink: 0;
+  display: inline-flex;
+  color: var(--navy-700);
+}
+
+.rowMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rowName {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowSub {
+  font-size: 12px;
+  color: var(--color-neutral-600);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowCount {
+  flex-shrink: 0;
+  min-width: 28px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--navy-50);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--navy-800);
+  font-variant-numeric: tabular-nums;
+}
+
+.none { padding: 14px 10px; font-size: 13px; color: var(--color-neutral-600); }
+
+.note {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--color-divider);
+  font-size: 12px;
+  color: var(--color-neutral-600);
+}
+
+/* ── Map ────────────────────────────────────────────────────────────────── */
+
+.mapWrap {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-card);
+  overflow: hidden;
+  background: var(--navy-50);
+}
+
+/* Two classes: MapLibre's own stylesheet sets position: relative on the container. */
+.mapWrap .canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+.mapLoading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--color-neutral-600);
+}
+
+/* Markers. MapLibre positions each marker with a transform, so every effect
+   lives on an inner element. Zoomed out: sector bubbles; zoomed in: pins. */
+.canvas[data-level='sectors'] .pin { display: none; }
+.canvas:not([data-level='sectors']) .bubble { display: none; }
+
+.pin { cursor: pointer; }
+.pinSelected { z-index: 3; }
+
+.pinDot {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--pin);
+  border: 2.5px solid #fff;
+  box-shadow: 0 1px 4px rgb(16 24 40 / 0.45);
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+
+.pin:hover .pinDot { transform: scale(1.3); }
+
+.pinSelected .pinDot,
+.pinSelected:hover .pinDot {
+  transform: scale(1.6);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--pin) 28%, transparent), 0 2px 8px rgb(16 24 40 / 0.4);
+}
+
+.bubble { cursor: pointer; }
+
+.bubbleBody {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 4px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: var(--sh-raised);
+  border: 1px solid var(--color-border);
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+
+.bubble:hover .bubbleBody { transform: translateY(-2px); box-shadow: 0 4px 14px rgb(16 24 40 / 0.22); }
+
+.bubbleCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--pin);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+}
+
+.bubbleName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+/* ── Selected building card ─────────────────────────────────────────────── */
+
+.card {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 5;
+  width: min(320px, calc(100% - 28px));
+  box-sizing: border-box;
+  padding: 16px 16px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-pop);
+}
+
+.cardClose {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--r-md);
+  background: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--color-neutral-600);
+}
+
+.cardClose:hover { background: var(--navy-50); color: var(--color-text); }
+.cardClose:focus-visible { outline: none; box-shadow: var(--ring); }
+
+.cardSector {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+.cardTitle {
+  margin: 6px 28px 2px 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+
+.cardSub { margin: 0; font-size: 13px; color: var(--color-neutral-600); }
+
+.cardProject {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--navy-800);
+}
+
+.cardOcc {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.cardOccLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.cardOccUnits { font-size: 12.5px; color: var(--color-neutral-600); font-variant-numeric: tabular-nums; }
+
+.bar {
+  display: block;
+  height: 4px;
+  margin: 8px 0 14px;
+  border-radius: 999px;
+  background: var(--navy-100);
+  overflow: hidden;
+}
+
+.bar > span { display: block; height: 100%; background: var(--navy-700); }
+
+.cardOpen { display: flex; align-items: center; justify-content: center; width: 100%; box-sizing: border-box; }
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 56px 24px;
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--r-lg);
+  text-align: center;
+  color: var(--navy-700);
+}
+
+.empty h2 { margin: 4px 0 0; font-size: 18px; color: var(--color-text); }
+.empty p { margin: 0 0 8px; max-width: 420px; font-size: 14px; color: var(--color-neutral-600); }
+
+/* ── Small screens: map on top, panel below ─────────────────────────────── */
+
+@media (max-width: 899px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(360px, 58dvh) auto;
+    height: auto;
+  }
+  .mapWrap { order: -1; }
+  .panel { max-height: 50dvh; }
+}
