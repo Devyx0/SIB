@@ -111,7 +111,6 @@ function decisionChange(e: JustificationEntry, lang: Lang): Change {
   const a = e.after_value ?? {};
   const label = L(lang, DECISION_LABELS[e.decision_type], e.decision_type);
   const nobody = t(lang, 'Personne', 'Nobody');
-  const none = t(lang, 'Aucune', 'None');
   switch (e.decision_type) {
     case 'assign': {
       const who = (v: Record<string, unknown>) =>
