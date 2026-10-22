@@ -107,6 +107,37 @@ describe('buildTimeline', () => {
     }, 'fr');
     expect(items.map((i) => i.key)).toEqual(['f2', 'd1', 'f1']);
   });
+
+  it('renders task_create / task_update in words, not raw JSON', () => {
+    const items = buildTimeline({
+      visits: [], followups: [], statusChanges: [],
+      decisions: [
+        decision({
+          id: 10, decision_type: 'task_create', before_value: null,
+          after_value: {
+            task_id: 2, description: 'mouse in the pantry',
+            due_at: '2026-10-22T08:00:00-04:00', assigned_employee_id: 24, parent_task_id: null,
+          },
+          justification_text: 'best fit for the job',
+        }),
+        decision({
+          id: 11, decision_type: 'task_update', created_at: '2026-10-17T14:01:00+00:00',
+          before_value: { task_id: 2, urgency_tier: null },
+          after_value: { task_id: 2, urgency_tier: 'Intermédiaire' },
+          justification_text: 'tenant requested urgency',
+        }),
+      ],
+    }, 'fr');
+    expect(items).toHaveLength(2);
+    const [update, create] = items;
+    expect(update.title).toBe('Tâche modifiée');
+    expect(update.changes?.[0]).toEqual({ label: 'Urgence', before: 'Aucune', after: 'Intermédiaire' });
+    expect(JSON.stringify(update.changes)).not.toMatch(/task_id/);
+    expect(create.title).toBe('Tâche créée');
+    expect(create.changes?.[0].before).toBe('—');
+    expect(create.changes?.[0].after).toMatch(/mouse in the pantry/);
+    expect(create.changes?.[0].after).not.toMatch(/\{/);
+  });
 });
 
 describe('HistoryTimeline', () => {

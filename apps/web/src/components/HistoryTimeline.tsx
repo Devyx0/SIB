@@ -52,6 +52,12 @@ const DECISION_LABELS: Record<string, [string, string]> = {
   cost: ['Coût estimé', 'Estimated cost'],
   route: ['Acheminement', 'Routing'],
   closeout: ['Clôture', 'Closeout'],
+  task_create: ['Tâche créée', 'Task created'],
+  task_update: ['Tâche modifiée', 'Task updated'],
+  task_assign: ['Assignation (tâche)', 'Task assignment'],
+  task_schedule: ['Date prévue (tâche)', 'Task scheduled date'],
+  task_cancel: ['Tâche annulée', 'Task cancelled'],
+  call_cancel: ['Appel annulé', 'Call cancelled'],
 };
 
 const locale = (lang: Lang) => (lang === 'fr' ? 'fr-CA' : 'en-CA');
@@ -105,6 +111,20 @@ function short(s: unknown, n = 90): string {
   return str.length > n ? `${str.slice(0, n - 1)}…` : str;
 }
 
+function formatDueAt(iso: unknown, lang: Lang): string {
+  if (iso == null || iso === '') return '—';
+  const d = new Date(String(iso));
+  if (Number.isNaN(d.getTime())) return short(iso);
+  return new Intl.DateTimeFormat(locale(lang), {
+    timeZone: TZ, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  }).format(d);
+}
+
+function assigneeOf(v: Record<string, unknown>, nobody: string): string {
+  return (v.assigned_employee_name as string | undefined)
+    ?? (v.assigned_employee_id != null ? `#${v.assigned_employee_id}` : nobody);
+}
+
 /** Before → after values of one decision, in words. */
 function decisionChange(e: JustificationEntry, lang: Lang): Change {
   const b = e.before_value ?? {};
@@ -112,12 +132,9 @@ function decisionChange(e: JustificationEntry, lang: Lang): Change {
   const label = L(lang, DECISION_LABELS[e.decision_type], e.decision_type);
   const nobody = t(lang, 'Personne', 'Nobody');
   switch (e.decision_type) {
-    case 'assign': {
-      const who = (v: Record<string, unknown>) =>
-        (v.assigned_employee_name as string | undefined)
-        ?? (v.assigned_employee_id != null ? `#${v.assigned_employee_id}` : nobody);
-      return { label, before: who(b), after: who(a) };
-    }
+    case 'assign':
+    case 'task_assign':
+      return { label, before: assigneeOf(b, nobody), after: assigneeOf(a, nobody) };
     case 'reschedule':
       return { label, before: formatEntryDate(b.start_date as string, lang), after: formatEntryDate(a.start_date as string, lang) };
     case 'urgency': {
@@ -139,6 +156,52 @@ function decisionChange(e: JustificationEntry, lang: Lang): Change {
     case 'closeout':
       return { label, before: b.status ? statusLabel(lang, String(b.status)) : '—',
                after: a.status ? statusLabel(lang, String(a.status)) : closeoutOutcomeLabel(lang, a.closeout_outcome as string) };
+    case 'task_create': {
+      const parts = [
+        short(a.description, 60),
+        a.due_at ? formatDueAt(a.due_at, lang) : null,
+        a.assigned_employee_id != null ? assigneeOf(a, nobody) : null,
+      ].filter((p): p is string => !!p && p !== '—');
+      return { label, before: '—', after: parts.join(' · ') || '—' };
+    }
+    case 'task_update': {
+      // One justification row may carry urgency and/or subcontractor.
+      const urgChanged = 'urgency_tier' in a || 'urgency_tier' in b;
+      const subChanged = 'subcontractor_name' in a || 'subcontractor_name' in b;
+      if (urgChanged && !subChanged) {
+        return {
+          label: L(lang, DECISION_LABELS.urgency, 'urgency'),
+          before: urgencyLabel(lang, (b.urgency_tier as string | null) ?? null),
+          after: urgencyLabel(lang, (a.urgency_tier as string | null) ?? null),
+        };
+      }
+      if (subChanged && !urgChanged) {
+        return {
+          label: t(lang, 'Sous-traitant', 'Subcontractor'),
+          before: short(b.subcontractor_name) === '—' ? none : short(b.subcontractor_name),
+          after: short(a.subcontractor_name) === '—' ? none : short(a.subcontractor_name),
+        };
+      }
+      const parts: string[] = [];
+      if (urgChanged) {
+        parts.push(`${L(lang, DECISION_LABELS.urgency, 'urgency')}: ${urgencyLabel(lang, (a.urgency_tier as string | null) ?? null)}`);
+      }
+      if (subChanged) {
+        parts.push(`${t(lang, 'Sous-traitant', 'Subcontractor')}: ${short(a.subcontractor_name)}`);
+      }
+      return { label, before: '—', after: parts.join(' · ') || '—' };
+    }
+    case 'task_schedule':
+      return { label, before: formatDueAt(b.due_at, lang), after: formatDueAt(a.due_at, lang) };
+    case 'task_cancel':
+    case 'call_cancel':
+      return {
+        label,
+        before: b.status ? statusLabel(lang, String(b.status)) : '—',
+        after: a.request_status
+          ? `${statusLabel(lang, String(a.status))} → ${statusLabel(lang, String(a.request_status))}`
+          : (a.status ? statusLabel(lang, String(a.status)) : '—'),
+      };
     default:
       return { label, before: short(JSON.stringify(b)), after: short(JSON.stringify(a)) };
   }

@@ -10,6 +10,7 @@ export const TRIAGE_STATUSES = [
   'triage_clarify',
   'triage_proposal',
   'triaged',
+  'closed',
 ] as const;
 
 /** Task statuses offered on /tasks. */
