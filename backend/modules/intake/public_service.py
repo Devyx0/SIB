@@ -77,6 +77,11 @@ def _read_session(token: str) -> dict[str, Any]:
     return payload
 
 
+# Roof / antenna revenue leases (Bell Mobility, Telus, …) must not bind the
+# public tenant form — they share building emails but are not housing units.
+_ANTENNA_NAME_APT = r"antenne|antenna"
+
+
 def _find_active_tenant_units(conn, *, phone: str | None, email: str | None) -> list[dict]:
     today = today_local()
     phone_d = _digits(phone) if phone else ""
@@ -128,6 +133,9 @@ def _find_active_tenant_units(conn, *, phone: str | None, email: str | None) -> 
         WHERE ({' OR '.join(clauses)})
           AND (l.debut_bail IS NULL OR l.debut_bail <= %(today)s)
           AND (l.fin_bail IS NULL OR l.fin_bail >= %(today)s)
+          AND t.nom_complet !~* '{_ANTENNA_NAME_APT}'
+          AND COALESCE(u.numero_appartement, '') !~* '{_ANTENNA_NAME_APT}'
+          AND lower(trim(COALESCE(u.numero_appartement, ''))) <> 'toit'
         ORDER BY t.tenant_id, u.unit_id
     """
     return [dict(r) for r in conn.execute(sql, params).fetchall()]

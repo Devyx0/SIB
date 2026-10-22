@@ -51,6 +51,9 @@ def _seed_tenant(db_conn) -> dict:
         WHERE b.sector_id IS NOT NULL
           AND (l.debut_bail IS NULL OR l.debut_bail <= CURRENT_DATE)
           AND (l.fin_bail IS NULL OR l.fin_bail >= CURRENT_DATE)
+          AND t.nom_complet !~* 'antenne|antenna'
+          AND COALESCE(u.numero_appartement, '') !~* 'antenne|antenna'
+          AND lower(trim(COALESCE(u.numero_appartement, ''))) <> 'toit'
         LIMIT 1
         """
     ).fetchone()
@@ -72,6 +75,106 @@ def _seed_tenant(db_conn) -> dict:
         "phone": phone,
         "email": email,
     }
+
+
+def _nxt_id(db_conn, table: str, col: str) -> int:
+    return db_conn.execute(
+        f"SELECT COALESCE(MAX({col}), 0) + 1 AS n FROM {table}"
+    ).fetchone()["n"]
+
+
+def _seed_antenna_lease(db_conn, *, email: str, phone: str = "4185550188") -> dict:
+    """Active roof/antenna lease on a real building — must not bind public lookup."""
+    b = db_conn.execute(
+        """
+        SELECT building_id, sector_id FROM building
+        WHERE sector_id IS NOT NULL LIMIT 1
+        """
+    ).fetchone()
+    assert b is not None, "need a building with sector_id"
+    # Explicit PKs: identity sequences often lag after ingest with fixed ids.
+    unit_id = _nxt_id(db_conn, "unit", "unit_id")
+    tenant_id = _nxt_id(db_conn, "tenant", "tenant_id")
+    lease_id = _nxt_id(db_conn, "lease", "lease_id")
+    tenancy_id = _nxt_id(db_conn, "tenancy_record", "tenancy_id")
+    db_conn.execute(
+        """
+        INSERT INTO unit (unit_id, building_id, rue, numero_appartement)
+        VALUES (%(uid)s, %(bid)s, 'toit test', 'TOIT')
+        """,
+        {"uid": unit_id, "bid": b["building_id"]},
+    )
+    db_conn.execute(
+        """
+        INSERT INTO tenant (tenant_id, nom_complet, courriel, telephone)
+        VALUES (%(tid)s, 'Bell Mobility (antenne)', %(email)s, %(phone)s)
+        """,
+        {"tid": tenant_id, "email": email, "phone": phone},
+    )
+    db_conn.execute(
+        """
+        INSERT INTO lease (lease_id, unit_id, debut_bail, fin_bail, droit_animaux)
+        VALUES (%(lid)s, %(uid)s, CURRENT_DATE - 30, CURRENT_DATE + 365, false)
+        """,
+        {"lid": lease_id, "uid": unit_id},
+    )
+    db_conn.execute(
+        """
+        INSERT INTO tenancy_record (tenancy_id, lease_id, tenant_id, capacite)
+        VALUES (%(tr)s, %(lid)s, %(tid)s, 'named_on_lease')
+        """,
+        {"tr": tenancy_id, "lid": lease_id, "tid": tenant_id},
+    )
+    return {
+        "tenant_id": tenant_id,
+        "unit_id": unit_id,
+        "building_id": b["building_id"],
+        "email": email,
+        "phone": phone,
+    }
+
+
+def test_lookup_excludes_antenna_lease(client, db_conn):
+    """Antenna / TOIT leases must not bind the tenant form (Bell Mobility case)."""
+    antenna = _seed_antenna_lease(
+        db_conn, email="antenna.only@bgis.test", phone="4185550177",
+    )
+    r = client.post(
+        "/api/v1/public/intake/lookup",
+        json={"email": antenna["email"], "turnstile_token": "tok"},
+    )
+    assert r.status_code == 404, r.text
+
+
+def test_lookup_prefers_housing_over_antenna(client, db_conn):
+    """Same contact on antenna + residential → bind the housing unit only."""
+    shared_email = "shared.antenna.housing@example.com"
+    shared_phone = "4185550166"
+    housing = _seed_tenant(db_conn)
+    db_conn.execute(
+        """
+        UPDATE tenant
+        SET courriel = %(email)s, telephone = %(phone)s
+        WHERE tenant_id = %(id)s
+        """,
+        {
+            "email": shared_email,
+            "phone": shared_phone,
+            "id": housing["tenant_id"],
+        },
+    )
+    _seed_antenna_lease(db_conn, email=shared_email, phone=shared_phone)
+
+    r = client.post(
+        "/api/v1/public/intake/lookup",
+        json={"email": shared_email, "turnstile_token": "tok"},
+    )
+    assert r.status_code == 200, r.text
+    token = r.json()["session_token"]
+    sess = public_service._read_session(token)
+    assert sess["tid"] == housing["tenant_id"]
+    assert sess["uid"] == housing["unit_id"]
+    assert sess["bid"] == housing["building_id"]
 
 
 def test_lookup_by_phone_and_submit(client, db_conn):
