@@ -1,4 +1,4 @@
-/* Centered dialog: header pinned on top, two-column body that scrolls. */
+/* Centered dialog: header + tabs pinned, body scrolls. */
 .backdrop {
   position: fixed;
   inset: 0;
@@ -22,6 +22,8 @@
   pointer-events: auto;
   width: 100%;
   max-width: 1080px;
+  /* Fixed height so tab switches don't resize the card (phone uses 100% below). */
+  height: min(90vh, 90dvh);
   max-height: min(90vh, 90dvh);
   display: flex;
   flex-direction: column;
@@ -44,6 +46,11 @@
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
+}
+
+/* Tabs sit under the header — avoid a double rule. */
+.panel:has([data-testid='detail-tabs']) .header {
+  border-bottom: none;
 }
 
 .headMain {
@@ -176,6 +183,52 @@
   background: var(--navy-50);
   border-color: var(--navy-300);
   color: var(--navy-800);
+}
+
+/* ── Tabs ───────────────────────────────────────────────────────── */
+
+.tabList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-alt);
+  flex-shrink: 0;
+}
+
+.tab {
+  appearance: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--color-neutral-600);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 12px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--navy-800);
+}
+
+.tabActive {
+  color: var(--navy-900);
+  border-bottom-color: var(--navy-800);
+}
+
+.tabPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tabPanel[hidden] {
+  display: none;
 }
 
 /* ── Body ───────────────────────────────────────────────────────── */
@@ -497,9 +550,30 @@
 }
 
 .editLabel {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
   font-size: 14px;
   font-weight: 600;
   color: var(--color-text);
+}
+
+.taskNum {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  background: var(--navy-100);
+  color: var(--navy-800);
 }
 
 .editInput {

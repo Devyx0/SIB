@@ -48,7 +48,10 @@ const LOC_FR: Record<string, string> = { quebec: 'Québec', levis: 'Lévis' };
 // Calls where per-task technician suggestions help pick assignees.
 const SUGGEST_STATUSES = new Set(['triaged', 'triage_proposal', 'open', 'awaiting_redispatch']);
 
+type DetailTab = 'call' | 'tenant' | 'tasks' | 'history';
+
 export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = 'fr', me }: Props) {
+  const [tab, setTab] = useState<DetailTab>('call');
   const [polling, setPolling] = useState(false);
   const [triageTimeout, setTriageTimeout] = useState(false);
   const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -100,6 +103,14 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
   useEffect(() => () => {
     if (okTimerRef.current) clearTimeout(okTimerRef.current);
   }, []);
+
+  // Fresh card → start on Call Info.
+  useEffect(() => { setTab('call'); }, [requestId]);
+  // Tasks tab is editor-only — fall back if role changes while open.
+  useEffect(() => {
+    if (tab === 'tasks' && !isEditor) setTab('call');
+  }, [tab, isEditor]);
+
   const [nextSteps, setNextSteps] = useState<string | null>(null);
   const [cost, setCost] = useState<string | null>(null);
   const weatherEnabled = !!me?.weather_escalation_enabled;
@@ -346,6 +357,32 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
             </button>
           </header>
 
+          {data && (
+            <div className={styles.tabList} role="tablist" aria-label={t(lang, 'Sections de l\'appel', 'Call sections')} data-testid="detail-tabs">
+              {([
+                { id: 'call' as const, fr: 'Info appel', en: 'Call info' },
+                { id: 'tenant' as const, fr: 'Locataire & unité', en: 'Tenant & unit' },
+                ...(isEditor ? [{ id: 'tasks' as const, fr: 'Tâches', en: 'Tasks' }] : []),
+                { id: 'history' as const, fr: 'Histororique', en: 'History' },
+              ]).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  id={`detail-tab-${item.id}`}
+                  aria-selected={tab === item.id}
+                  aria-controls={`detail-panel-${item.id}`}
+                  tabIndex={tab === item.id ? 0 : -1}
+                  className={`${styles.tab} ${tab === item.id ? styles.tabActive : ''}`}
+                  data-testid={`detail-tab-${item.id}`}
+                  onClick={() => setTab(item.id)}
+                >
+                  {t(lang, item.fr, item.en)}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className={styles.body}>
             {isPending && <p className={styles.loading}>{t(lang, 'Chargement…', 'Loading…')}</p>}
             {isError && <p className={styles.error}>{errorText()}</p>}
@@ -354,9 +391,15 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
 
             {data && (
               <>
-              <div className={styles.grid}>
-                {/* ── Left: what happened ───────────────────────────── */}
-                <div className={styles.colMain}>
+                {/* Panels stay mounted (hidden) so TaskEditor / save bar keep state. */}
+                <div
+                  className={styles.tabPanel}
+                  role="tabpanel"
+                  id="detail-panel-call"
+                  aria-labelledby="detail-tab-call"
+                  hidden={tab !== 'call'}
+                  data-testid="tab-panel-call"
+                >
                   {(data.raw_caller_body?.problems || data.problems) && (
                     <section className={styles.card} data-testid="problems-section">
                       <h3 className={styles.cardTitle}>{t(lang, 'Problème décrit', 'Reported problem')}</h3>
@@ -365,8 +408,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                     </section>
                   )}
 
-                  {/* AI interpretation comparison — only when AI ran AND values differ from tenant's.
-                      Animals stay on the Location card (lease/caller); never compared here (hallucination risk). */}
                   {data.triage_model_version && data.raw_caller_body && (() => {
                     const accessDiffers = data.raw_caller_body.entry_permission !== data.entry_permission;
                     const problemsDiffer = !!data.problems && data.raw_caller_body?.problems !== data.problems;
@@ -395,9 +436,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                     );
                   })()}
 
-                  {/* AI section — important notes, next steps, reasoning; coord/dir only.
-                      The summary bullets are left out (the header already says it)
-                      and the feedback moved to the footer beside « Enregistrer ». */}
                   {isEditor && data.triage_model_version && (() => {
                     const ai = parseAiNotes(data.other_notes, data.problem_summary, data.ai_important_notes, data.ai_next_steps);
                     return ai.important.length + ai.next.length > 0 || !!data.ai_reasoning?.trim();
@@ -467,21 +505,170 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                     </section>
                   )}
 
-                  <section className={`${styles.card} ${styles.historyCard}`}>
-                    <HistoryTimeline
-                      requestId={data.request_id}
-                      visits={data.visits ?? []}
-                      followups={data.followup_log}
-                      decisions={data.justification_log}
-                      statusChanges={data.status_history ?? []}
-                      lang={lang}
-                    />
+                  <section className={styles.card}>
+                    <h3 className={styles.cardTitle}>{t(lang, 'Planification', 'Planning')}</h3>
+                    <dl className={styles.facts}>
+                      <dt>{t(lang, 'Employé', 'Employee')}</dt>
+                      <dd>
+                        {taskAssignees.length
+                          ? taskAssignees.map(employeeName).join(', ')
+                          : (data.assigned_employee_name ?? '—')}
+                      </dd>
+                      <dt>{t(lang, 'Sous-traitant', 'Subcontractor')}</dt>
+                      <dd>{(() => {
+                        const fromTasks = [...new Set(
+                          (data.tasks ?? [])
+                            .map((x) => x.subcontractor_name)
+                            .filter((x): x is string => !!x),
+                        )];
+                        if (fromTasks.length) return fromTasks.join(', ');
+                        return data.subcontractor_name ?? '—';
+                      })()}
+                      </dd>
+                      <dt>{t(lang, 'Urgence', 'Urgency')}</dt>
+                      <dd>{(() => {
+                        const fromTasks = [...new Set(
+                          (data.tasks ?? [])
+                            .map((x) => x.urgency_tier)
+                            .filter((x): x is string => !!x),
+                        )];
+                        if (fromTasks.length) {
+                          return fromTasks.map((u) => urgencyLabel(lang, u)).join(', ');
+                        }
+                        return urgencyLabel(lang, data.urgency_tier);
+                      })()}
+                      </dd>
+                      <dt>{t(lang, 'Estimation', 'Est. time')}</dt>
+                      <dd>{timeEstimateLabel(lang, data.time_estimate_bucket)}</dd>
+                      {!isEditor && (
+                        <>
+                          <dt>{t(lang, 'Coût estimé', 'Est. cost')}</dt>
+                          <dd>{data.estimated_cost != null ? formatCost(data.estimated_cost, lang) : '—'}</dd>
+                        </>
+                      )}
+                    </dl>
                   </section>
+
+                  {isEditor && (
+                    <section className={`${styles.card} ${styles.notesCard}`} data-testid="edit-controls">
+                      <h3 className={styles.cardTitle}>
+                        {t(lang, 'Notes d\'appel', 'Call notes')}
+                      </h3>
+
+                      {isClosed && (
+                        <p className={styles.closedNotice}>
+                          {t(lang, 'Demande fermée — notes non modifiables.', 'Closed — notes are read-only.')}
+                        </p>
+                      )}
+
+                      <div className={styles.actionsGrid}>
+                        <div className={`${styles.editField} ${changedKeys.has('next_steps') ? styles.editFieldChanged : ''}`}>
+                          <StepsList
+                            lang={lang}
+                            label={t(lang, 'Prochaines étapes', 'Next steps')}
+                            value={nextSteps ?? data.next_steps ?? ''}
+                            onChange={setNextSteps}
+                            disabled={isClosed}
+                            inputTestId="next-steps-input"
+                          />
+                        </div>
+
+                        <div className={`${styles.editField} ${changedKeys.has('estimated_cost') ? styles.editFieldChanged : ''}`}>
+                          <label className={styles.editLabel}>{t(lang, 'Coût estimé ($)', 'Est. cost ($)')}</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className={styles.editInput}
+                            value={cost ?? (data.estimated_cost != null ? String(data.estimated_cost) : '')}
+                            disabled={isClosed}
+                            onChange={(e) => setCost(e.target.value)}
+                            data-testid="cost-input"
+                          />
+                        </div>
+                      </div>
+                    </section>
+                  )}
+
+                  {isEditor && weatherEnabled && data.weather_evaluation?.status === 'ok' && (() => {
+                    const ev = data.weather_evaluation;
+                    const bandFr = ev.band_name ? (BAND_FR[ev.band_name] ?? ev.band_name) : '';
+                    const locFr = ev.location ? (LOC_FR[ev.location] ?? ev.location) : '';
+                    return (
+                      <section className={styles.card} data-testid="weather-section">
+                        <h3 className={styles.cardTitle}>{t(lang, 'Météo', 'Weather')}</h3>
+                        <div className={styles.weatherResult} data-testid="weather-result">
+                          <p className={styles.weatherContext}>
+                            {t(lang, 'Météo', 'Weather')} — {locFr} : {ev.min_forecast_temp_24h_c}&nbsp;°C {t(lang, 'prévu (24 h)', 'forecast (24 h)')}, {t(lang, 'palier', 'band')} {bandFr}
+                          </p>
+                          {ev.evaluated_at && (
+                            <p className={styles.weatherTime}>
+                              {t(lang, 'évalué le', 'evaluated')} {new Date(ev.evaluated_at).toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')}
+                            </p>
+                          )}
+                          {ev.is_critical && (
+                            <span className={styles.astreinteBadge} data-testid="weather-astreinte">
+                              {t(lang, 'Astreinte / garde', 'On-call')}
+                            </span>
+                          )}
+                          <p className={styles.weatherDraft}>
+                            {t(lang, 'Seuils provisoires — à valider', 'Provisional thresholds — to validate')}
+                          </p>
+                          <p className={styles.weatherLicence} data-testid="weather-licence">
+                            {t(lang, 'Source : Environnement et Changement climatique Canada', 'Source: Environment and Climate Change Canada')}
+                          </p>
+                        </div>
+                      </section>
+                    );
+                  })()}
+
+                  {isEditor && (data.status === 'intake_received' || data.status === 'triage_failed' || data.status === 'triage_pending') && (
+                    <section className={styles.card} data-testid="triage-section">
+                      <h3 className={styles.cardTitle}>{t(lang, 'Triage automatique', 'Auto triage')}</h3>
+                      {data.status === 'triage_pending' && !triageTimeout ? (
+                        <p className={styles.loading} data-testid="triage-pending-msg">
+                          {t(lang, 'Triage en cours…', 'Triage in progress…')}
+                        </p>
+                      ) : (
+                        <>
+                          {data.status === 'triage_failed' && (
+                            <p className={styles.error}>{t(lang, 'Triage échoué — réessayez.', 'Triage failed — retry.')}</p>
+                          )}
+                          {triageTimeout && (
+                            <p className={styles.error} data-testid="triage-timeout-msg">
+                              {t(lang, 'Triage toujours en cours après 3 min — réessayez si nécessaire.', 'Triage still running after 3 min — retry if needed.')}
+                            </p>
+                          )}
+                          <button
+                            className={styles.applyBtn}
+                            data-testid="triage-btn"
+                            onClick={async () => {
+                              setTriageTimeout(false);
+                              try {
+                                await triggerTriage(requestId, { lang });
+                                qc.invalidateQueries({ queryKey: ['request', requestId] });
+                                setPolling(true);
+                              } catch (err) {
+                                setStaleMsg(apiErrorMessage(lang, err));
+                              }
+                            }}
+                          >
+                            {t(lang, 'Lancer le triage', 'Run triage')}
+                          </button>
+                        </>
+                      )}
+                    </section>
+                  )}
                 </div>
 
-                {/* ── Right: reference facts + actions ──────────────── */}
-                <div className={styles.colSide}>
-                  {/* Where + who in one card: the caller sits under a thin divider. */}
+                <div
+                  className={styles.tabPanel}
+                  role="tabpanel"
+                  id="detail-panel-tenant"
+                  aria-labelledby="detail-tab-tenant"
+                  hidden={tab !== 'tenant'}
+                  data-testid="tab-panel-tenant"
+                >
                   <section className={styles.card}>
                     <h3 className={styles.cardTitle}>{t(lang, 'Lieu et appelant', 'Location & caller')}</h3>
                     <dl className={styles.facts}>
@@ -533,188 +720,54 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                       </dd>
                     </dl>
                   </section>
-
-                  <section className={styles.card}>
-                    <h3 className={styles.cardTitle}>{t(lang, 'Planification', 'Planning')}</h3>
-                    <dl className={styles.facts}>
-                      <dt>{t(lang, 'Employé', 'Employee')}</dt>
-                      <dd>
-                        {taskAssignees.length
-                          ? taskAssignees.map(employeeName).join(', ')
-                          : (data.assigned_employee_name ?? '—')}
-                      </dd>
-                      <dt>{t(lang, 'Sous-traitant', 'Subcontractor')}</dt>
-                      <dd>{(() => {
-                        const fromTasks = [...new Set(
-                          (data.tasks ?? [])
-                            .map((x) => x.subcontractor_name)
-                            .filter((x): x is string => !!x),
-                        )];
-                        if (fromTasks.length) return fromTasks.join(', ');
-                        return data.subcontractor_name ?? '—';
-                      })()}
-                      </dd>
-                      <dt>{t(lang, 'Urgence', 'Urgency')}</dt>
-                      <dd>{(() => {
-                        const fromTasks = [...new Set(
-                          (data.tasks ?? [])
-                            .map((x) => x.urgency_tier)
-                            .filter((x): x is string => !!x),
-                        )];
-                        if (fromTasks.length) {
-                          return fromTasks.map((u) => urgencyLabel(lang, u)).join(', ');
-                        }
-                        return urgencyLabel(lang, data.urgency_tier);
-                      })()}
-                      </dd>
-                      <dt>{t(lang, 'Estimation', 'Est. time')}</dt>
-                      <dd>{timeEstimateLabel(lang, data.time_estimate_bucket)}</dd>
-                      {/* Editors set the cost in « Notes d'appel » below; show it once. */}
-                      {!isEditor && (
-                        <>
-                          <dt>{t(lang, 'Coût estimé', 'Est. cost')}</dt>
-                          <dd>{data.estimated_cost != null ? formatCost(data.estimated_cost, lang) : '—'}</dd>
-                        </>
-                      )}
-                    </dl>
-                  </section>
-
-                  {/* Call notes sit with the planning facts they belong to. */}
-                  {isEditor && (
-                    <section className={`${styles.card} ${styles.notesCard}`} data-testid="edit-controls">
-                      <h3 className={styles.cardTitle}>
-                        {t(lang, 'Notes d\'appel', 'Call notes')}
-                      </h3>
-
-                      {isClosed && (
-                        <p className={styles.closedNotice}>
-                          {t(lang, 'Demande fermée — notes non modifiables.', 'Closed — notes are read-only.')}
-                        </p>
-                      )}
-
-                      <div className={styles.actionsGrid}>
-                        <div className={`${styles.editField} ${changedKeys.has('next_steps') ? styles.editFieldChanged : ''}`}>
-                          <StepsList
-                            lang={lang}
-                            label={t(lang, 'Prochaines étapes', 'Next steps')}
-                            value={nextSteps ?? data.next_steps ?? ''}
-                            onChange={setNextSteps}
-                            disabled={isClosed}
-                            inputTestId="next-steps-input"
-                          />
-                        </div>
-
-                        <div className={`${styles.editField} ${changedKeys.has('estimated_cost') ? styles.editFieldChanged : ''}`}>
-                          <label className={styles.editLabel}>{t(lang, 'Coût estimé ($)', 'Est. cost ($)')}</label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            className={styles.editInput}
-                            value={cost ?? (data.estimated_cost != null ? String(data.estimated_cost) : '')}
-                            disabled={isClosed}
-                            onChange={(e) => setCost(e.target.value)}
-                            data-testid="cost-input"
-                          />
-                        </div>
-                      </div>
-
-                    </section>
-                  )}
-                  {/* Weather summary — read-only; the evaluation runs at triage (or via the
-                      weather-check endpoint) and the escalation is applied automatically. */}
-                  {isEditor && weatherEnabled && data.weather_evaluation?.status === 'ok' && (() => {
-                    const ev = data.weather_evaluation;
-                    const bandFr = ev.band_name ? (BAND_FR[ev.band_name] ?? ev.band_name) : '';
-                    const locFr = ev.location ? (LOC_FR[ev.location] ?? ev.location) : '';
-                    return (
-                      <section className={styles.card} data-testid="weather-section">
-                        <h3 className={styles.cardTitle}>{t(lang, 'Météo', 'Weather')}</h3>
-                        <div className={styles.weatherResult} data-testid="weather-result">
-                          <p className={styles.weatherContext}>
-                            {t(lang, 'Météo', 'Weather')} — {locFr} : {ev.min_forecast_temp_24h_c}&nbsp;°C {t(lang, 'prévu (24 h)', 'forecast (24 h)')}, {t(lang, 'palier', 'band')} {bandFr}
-                          </p>
-                          {ev.evaluated_at && (
-                            <p className={styles.weatherTime}>
-                              {t(lang, 'évalué le', 'evaluated')} {new Date(ev.evaluated_at).toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')}
-                            </p>
-                          )}
-                          {ev.is_critical && (
-                            <span className={styles.astreinteBadge} data-testid="weather-astreinte">
-                              {t(lang, 'Astreinte / garde', 'On-call')}
-                            </span>
-                          )}
-                          <p className={styles.weatherDraft}>
-                            {t(lang, 'Seuils provisoires — à valider', 'Provisional thresholds — to validate')}
-                          </p>
-                          <p className={styles.weatherLicence} data-testid="weather-licence">
-                            {t(lang, 'Source : Environnement et Changement climatique Canada', 'Source: Environment and Climate Change Canada')}
-                          </p>
-                        </div>
-                      </section>
-                    );
-                  })()}
-
-                  {/* Triage button — intake_received or triage_failed */}
-                  {isEditor && (data.status === 'intake_received' || data.status === 'triage_failed' || data.status === 'triage_pending') && (
-                    <section className={styles.card} data-testid="triage-section">
-                      <h3 className={styles.cardTitle}>{t(lang, 'Triage automatique', 'Auto triage')}</h3>
-                      {data.status === 'triage_pending' && !triageTimeout ? (
-                        <p className={styles.loading} data-testid="triage-pending-msg">
-                          {t(lang, 'Triage en cours…', 'Triage in progress…')}
-                        </p>
-                      ) : (
-                        <>
-                          {data.status === 'triage_failed' && (
-                            <p className={styles.error}>{t(lang, 'Triage échoué — réessayez.', 'Triage failed — retry.')}</p>
-                          )}
-                          {triageTimeout && (
-                            <p className={styles.error} data-testid="triage-timeout-msg">
-                              {t(lang, 'Triage toujours en cours après 3 min — réessayez si nécessaire.', 'Triage still running after 3 min — retry if needed.')}
-                            </p>
-                          )}
-                          <button
-                            className={styles.applyBtn}
-                            data-testid="triage-btn"
-                            onClick={async () => {
-                              setTriageTimeout(false);
-                              try {
-                                await triggerTriage(requestId, { lang });
-                                qc.invalidateQueries({ queryKey: ['request', requestId] });
-                                setPolling(true);
-                              } catch (err) {
-                                setStaleMsg(apiErrorMessage(lang, err));
-                              }
-                            }}
-                          >
-                            {t(lang, 'Lancer le triage', 'Run triage')}
-                          </button>
-                        </>
-                      )}
-                    </section>
-                  )}
-
                 </div>
-              </div>
 
                 {isEditor && (
-                  <section className={`${styles.card} ${styles.actionsCard}`}>
-                    <h3 className={styles.cardTitle}>{t(lang, 'Tâches', 'Tasks')}</h3>
-                    <TaskEditor
-                      ref={taskEditorRef}
-                      lang={lang}
-                      requestId={requestId}
-                      callStatus={data.status}
-                      tasks={data.tasks ?? []}
-                      employees={employees ?? []}
-                      suggestions={techSuggestions?.suggestions ?? []}
-                      onError={flashErr}
-                      onSuccess={flashOk}
-                      onDirtyChange={onTaskDirty}
-                    />
-                  </section>
+                  <div
+                    className={styles.tabPanel}
+                    role="tabpanel"
+                    id="detail-panel-tasks"
+                    aria-labelledby="detail-tab-tasks"
+                    hidden={tab !== 'tasks'}
+                    data-testid="tab-panel-tasks"
+                  >
+                    <section className={`${styles.card} ${styles.actionsCard}`}>
+                      <h3 className={styles.cardTitle}>{t(lang, 'Tâches', 'Tasks')}</h3>
+                      <TaskEditor
+                        ref={taskEditorRef}
+                        lang={lang}
+                        requestId={requestId}
+                        callStatus={data.status}
+                        tasks={data.tasks ?? []}
+                        employees={employees ?? []}
+                        suggestions={techSuggestions?.suggestions ?? []}
+                        onError={flashErr}
+                        onSuccess={flashOk}
+                        onDirtyChange={onTaskDirty}
+                      />
+                    </section>
+                  </div>
                 )}
 
+                <div
+                  className={styles.tabPanel}
+                  role="tabpanel"
+                  id="detail-panel-history"
+                  aria-labelledby="detail-tab-history"
+                  hidden={tab !== 'history'}
+                  data-testid="tab-panel-history"
+                >
+                  <section className={`${styles.card} ${styles.historyCard}`}>
+                    <HistoryTimeline
+                      requestId={data.request_id}
+                      visits={data.visits ?? []}
+                      followups={data.followup_log}
+                      decisions={data.justification_log}
+                      statusChanges={data.status_history ?? []}
+                      lang={lang}
+                    />
+                  </section>
+                </div>
               </>
             )}
           </div>

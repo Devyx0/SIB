@@ -50,11 +50,55 @@ async function justifyWith(text = 'Technicien le plus proche du secteur') {
   await userEvent.click(screen.getByTestId('justification-confirm'));
 }
 
+async function openDetailTab(id: 'call' | 'tenant' | 'tasks' | 'history') {
+  await userEvent.click(screen.getByTestId(`detail-tab-${id}`));
+}
+
 describe('DetailPanel', () => {
   it('renders detail-panel testid', () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: null, isPending: true, isError: false, error: null });
     wrap(<DetailPanel requestId={42} onClose={vi.fn()} />);
     expect(screen.getByTestId('detail-panel')).toBeTruthy();
+  });
+
+  it('shows Call / Tenant / History tabs; Tasks only for editors', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: MOCK_REQUEST, isPending: false, isError: false, error: null,
+    });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
+    expect(screen.getByTestId('detail-tabs')).toBeTruthy();
+    expect(screen.getByTestId('detail-tab-call')).toBeTruthy();
+    expect(screen.getByTestId('detail-tab-tenant')).toBeTruthy();
+    expect(screen.getByTestId('detail-tab-history')).toBeTruthy();
+    expect(screen.queryByTestId('detail-tab-tasks')).toBeNull();
+    expect(screen.getByTestId('tab-panel-call').hidden).toBe(false);
+    expect(screen.getByTestId('tab-panel-tenant').hidden).toBe(true);
+
+    await openDetailTab('tenant');
+    expect(screen.getByTestId('tab-panel-tenant').hidden).toBe(false);
+    expect(screen.getByTestId('tab-panel-call').hidden).toBe(true);
+
+    await openDetailTab('history');
+    expect(screen.getByTestId('tab-panel-history').hidden).toBe(false);
+  });
+
+  it('shows Tasks tab for coordinators and keeps editors mounted when switching away', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: WITH_TASK, isPending: false, isError: false, error: null,
+    });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([JEAN]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />);
+    expect(screen.getByTestId('detail-tab-tasks')).toBeTruthy();
+    expect(screen.getByTestId('tab-panel-tasks').hidden).toBe(true);
+
+    await openDetailTab('tasks');
+    expect(screen.getByTestId('tab-panel-tasks').hidden).toBe(false);
+    expect(screen.getByTestId('new-task-btn')).toBeTruthy();
+
+    await openDetailTab('call');
+    // Still in the DOM (hidden) so TaskEditor state survives.
+    expect(screen.getByTestId('tab-panel-tasks').hidden).toBe(true);
+    expect(screen.getByTestId('new-task-btn')).toBeTruthy();
   });
 
   it('shows loading state', () => {
