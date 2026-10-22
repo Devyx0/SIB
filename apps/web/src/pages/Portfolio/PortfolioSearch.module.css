@@ -1,7 +1,7 @@
+/* Sits in the sectors page header (see .headerTools), full width of that slot. */
 .box {
   position: relative;
-  max-width: 640px;
-  margin-bottom: 16px;
+  width: 100%;
 }
 
 .icon {
@@ -130,6 +130,5 @@
 }
 
 @media (max-width: 639px) {
-  .box { max-width: none; }
   .kbd { display: none; }
 }

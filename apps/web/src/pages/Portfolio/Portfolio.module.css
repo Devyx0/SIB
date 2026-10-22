@@ -1,6 +1,10 @@
+/* flex-shrink: 0 — the app's main area is a column flexbox that scrolls; the
+   page must grow with its content, not be squeezed to the screen height
+   (which shrank long tables like Tous les logements to a tiny inner scroller). */
 .page {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   min-height: 100%;
   padding: 24px 28px 36px;
 }
@@ -92,6 +96,41 @@
 
 /* Page header scale, sized around the 38px title. The turnover window
    reuses .eyebrow and .chip at their base sizes. */
+/* Sectors page: global search with « Tous les logements » under it, on the right. */
+.headerTools {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  flex: 0 1 360px;
+  min-width: 260px;
+}
+
+/* Room for three buttons on one row (building page). */
+.headerToolsWide {
+  flex-basis: 580px;
+}
+
+/* A page search stacked above its buttons fills the column's width. */
+.headerTools > .search {
+  flex: none;
+  width: 100%;
+}
+
+/* The title side gives way first (the subtitle wraps), so the search stays
+   beside it on laptop widths instead of dropping to the next line. */
+.header:has(.headerTools) > div:first-child {
+  flex: 1 1 300px;
+  min-width: 0;
+}
+
+@media (max-width: 639px) {
+  .headerTools {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+}
+
 .header .eyebrow {
   margin-bottom: 4px;
   font-size: 12.5px;
@@ -483,7 +522,11 @@ a.card:hover .arrow {
 
 /* ── Unit table ─────────────────────────────────────────────────────────── */
 
+/* position: relative anchors absolutely-positioned bits inside (the .srOnly
+   header label) so they can't escape the sideways scroller and widen the
+   whole page on phones. */
 .tableWrap {
+  position: relative;
   overflow-x: auto;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -556,10 +599,11 @@ a.card:hover .arrow {
 
 /* ── Unit detail ────────────────────────────────────────────────────────── */
 
+/* Unit page: Tenants first, then the current lease — stacked, full width. */
 .unitLayout {
   display: grid;
-  grid-template-columns: minmax(240px, 320px) 1fr;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
   align-items: start;
 }
 
@@ -580,9 +624,11 @@ a.card:hover .arrow {
   color: var(--color-neutral-700);
 }
 
+/* Label column capped so a long label (e.g. a paint zone · surface) can't
+   squeeze the value into a one-letter column. */
 .facts {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: fit-content(45%) minmax(0, 1fr);
   gap: 8px 14px;
   margin: 0;
   font-size: 13.5px;
@@ -1065,6 +1111,33 @@ a.card:hover .arrow {
 
 .filterField .search { flex: none; width: 260px; }
 
+/* Search + 4 dropdowns share the row evenly (search a bit wider), so they stay
+   on one line at laptop widths instead of wrapping by content width. */
+.filterGrid {
+  display: grid;
+  /* Recherche · Secteur · Projet · Grandeur · Fin de bail (short values get less). */
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.9fr);
+  gap: 10px 14px;
+  align-items: end;
+}
+
+.filterGrid .filterField { min-width: 0; }
+
+.filterGrid .filterField .search,
+.filterGrid .select {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Narrower windows: 3 + 2 rather than 4 + a lone one; phones: one per row. */
+@media (max-width: 1279px) {
+  .filterGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 639px) {
+  .filterGrid { grid-template-columns: minmax(0, 1fr); }
+}
+
 .filterLabel {
   font-size: 11.5px;
   font-weight: 600;
@@ -1167,7 +1240,14 @@ a.card:hover .arrow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+}
+
+/* Search boxes and buttons in a header line up at one height. */
+.headerActions > *,
+.headerTools > .search {
+  min-height: 38px;
 }
 
 a.btn {
@@ -1186,7 +1266,7 @@ a.btn {
 
 @media (max-width: 1023px) {
   .page { padding: 20px 16px 28px; }
-  .unitLayout { grid-template-columns: 1fr; }
+
   .totals > div { padding: 12px 14px; }
   .title { font-size: 32px; }
   .totals dd { font-size: 20px; }
@@ -1214,4 +1294,10 @@ a.btn {
   /* Same street on most rows — drop it so the tenant column fits. */
   .hideNarrow { display: none; }
   .btnText { display: none; }
+  /* Tighter cells so the unit tables fit the phone without sideways scroll. */
+  .table thead th { padding: 9px 8px; letter-spacing: 0.02em; }
+  .table tbody td { padding: 10px 8px; }
+  /* Label above value: there is no room for two columns. */
+  .facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .facts dd + dt { margin-top: 8px; }
 }

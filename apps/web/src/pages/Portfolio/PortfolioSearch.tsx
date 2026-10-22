@@ -38,7 +38,7 @@ function groups(data: PortfolioSearchResult, lang: Lang, q: string): Group[] {
       label: t(lang, 'Fiche technique', 'Building info'),
       hits: data.facts.map((f, i) => ({
         key: `f${i}`,
-        href: `${portfolioPath.building(f.building_id)}#fiche-technique`,
+        href: `${portfolioPath.buildingInfo(f.building_id)}#fiche-technique`,
         primary: `${f.label} : ${snippet(f.value, q)}`,
         secondary: f.building_adresse ?? f.web_building_name,
         tag: f.source === 'paint_spec' ? t(lang, 'Peinture', 'Paint') : null,
@@ -177,8 +177,9 @@ export default function PortfolioSearch({ lang }: { lang: Lang }) {
         type="search"
         className={styles.input}
         value={text}
-        placeholder={t(lang, 'Rechercher : adresse, logement, locataire, code de peinture…',
-                             'Search: address, unit, tenant, paint code…')}
+        placeholder={t(lang, 'Adresse, logement, locataire…', 'Address, unit, tenant…')}
+        title={t(lang, 'Adresse, logement, locataire, code de peinture…',
+                       'Address, unit, tenant, paint code…')}
         aria-label={t(lang, 'Rechercher dans le portfolio', 'Search the portfolio')}
         role="combobox"
         aria-expanded={showList}

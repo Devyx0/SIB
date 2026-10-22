@@ -101,7 +101,7 @@ export default function UnitsListView({ lang }: { lang: Lang }) {
       />
 
       <div className={styles.filters} data-testid="units-filters">
-        <div className={styles.filterRow}>
+        <div className={styles.filterGrid}>
           <label className={styles.filterField}>
             <span className={styles.filterLabel}>{t(lang, 'Recherche', 'Search')}</span>
             <input type="search" className={styles.search} value={draft}
