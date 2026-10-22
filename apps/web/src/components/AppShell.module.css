@@ -173,6 +173,7 @@
 
 .newCallBtn .plus {
   background: transparent;
+  color: var(--navy-800);
   width: auto;
   height: auto;
   font-size: 18px;
