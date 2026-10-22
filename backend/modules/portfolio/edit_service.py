@@ -6,33 +6,56 @@ record each changed column in data_provenance.
 """
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 from pydantic import BaseModel
 
-from backend.core.exceptions import ConflictError, NotFoundError, StaleDataError, ValidationFailed
+from backend.core.exceptions import (
+    AlreadyOnLeaseError,
+    ConflictError,
+    NoCurrentLeaseError,
+    NotFoundError,
+    StaleDataError,
+    TenancyNotActiveError,
+    ValidationFailed,
+)
 from backend.core.provenance import write_provenance
 from backend.core.security import CurrentUser
+from backend.core.utils import today_local
 from backend.modules.intake.service import allowed_sector_ids
 
 from . import edit_repository as repo
 from .schemas import (
+    AddOccupantBody,
     BuildingCreateBody,
     BuildingPatch,
     CreatedOut,
     DocumentCreateBody,
+    EndLeaseBody,
+    EndOccupantBody,
     FicheEntryBody,
     PaintSpecFields,
     PaintSpecPatch,
     ProjectCreateBody,
     ProjectPatch,
+    StartLeaseBody,
+    TakeoverBody,
+    TenantFields,
+    TenantPatch,
+    TenancyPatch,
     UnitCreateBody,
     UnitPatch,
 )
 from .service import _in_scope
 
 _STALE = "Modifié entre-temps par quelqu'un d'autre — rechargez la page."
-_REQUIRED = {"building": {"adresse"}, "unit": {"numero_appartement"}, "project": {"nom_unique_projet"}}
+_REQUIRED = {
+    "building": {"adresse"},
+    "unit": {"numero_appartement"},
+    "project": {"nom_unique_projet"},
+    "tenant": {"nom_complet"},
+}
 
 
 def _text(v: Any) -> str | None:
@@ -222,3 +245,269 @@ def delete_document(conn, document_id: int, user: CurrentUser) -> None:
     write_provenance(conn, target_table="building_document", target_pk=str(document_id),
                      target_column="*deleted*", employee_id=user.employee_id,
                      previous_value=row["url"], new_value=None)
+
+
+# ── Tenants / tenancies / occupancy ───────────────────────────────────────────
+
+def _unit_in_scope(conn, user: CurrentUser, unit_id: int) -> dict:
+    row = repo.lock_unit(conn, unit_id)
+    if row is None or not _in_scope(allowed_sector_ids(conn, user), row["sector_id"]):
+        raise NotFoundError("Unité introuvable")
+    return row
+
+
+def _tenancy_in_scope(conn, user: CurrentUser, tenancy_id: int) -> dict:
+    row = repo.lock_tenancy(conn, tenancy_id)
+    if row is None or not _in_scope(allowed_sector_ids(conn, user), row["sector_id"]):
+        raise NotFoundError("Bail / locataire introuvable")
+    return row
+
+
+def _tenancy_is_active(row: dict, today) -> bool:
+    # end_date is exclusive of "still active" (see _ACTIVE_TENANCY).
+    if row["end_date"] is not None and row["end_date"] <= today:
+        return False
+    if row["start_date"] is not None and row["start_date"] > today:
+        return False
+    return True
+
+
+def _resolve_tenant(conn, user: CurrentUser, *, tenant_id: int | None, new_tenant: TenantFields | None) -> int:
+    if tenant_id is not None:
+        row = repo.lock_tenant(conn, tenant_id)
+        if row is None:
+            raise NotFoundError("Locataire introuvable")
+        return tenant_id
+    assert new_tenant is not None
+    values = {k: v for k, v in new_tenant.model_dump().items() if v is not None}
+    tid = repo.insert_tenant(conn, values)
+    _record_create(conn, user, "tenant", tid, values)
+    return tid
+
+
+def patch_tenant(conn, tenant_id: int, body: TenantPatch, user: CurrentUser) -> None:
+    row = repo.lock_tenant(conn, tenant_id)
+    allowed = allowed_sector_ids(conn, user)
+    if row is None or not repo.tenant_in_scope_sector(conn, tenant_id, allowed):
+        raise NotFoundError("Locataire introuvable")
+    _apply(conn, user, "tenant", tenant_id, row, body)
+
+
+def patch_tenancy(conn, tenancy_id: int, body: TenancyPatch, user: CurrentUser) -> None:
+    row = _tenancy_in_scope(conn, user, tenancy_id)
+    today = today_local()
+    if not _tenancy_is_active(row, today):
+        raise TenancyNotActiveError("Seules les occupations actives peuvent être modifiées")
+    # Lease must still be current for capacity edits.
+    lease = repo.lock_current_lease(conn, row["unit_id"], today)
+    if lease is None or lease["lease_id"] != row["lease_id"]:
+        raise NoCurrentLeaseError("Aucun bail courant pour cette occupation")
+    _apply(conn, user, "tenancy_record", tenancy_id, row, body)
+
+
+def add_occupant(conn, unit_id: int, body: AddOccupantBody, user: CurrentUser) -> CreatedOut:
+    _unit_in_scope(conn, user, unit_id)
+    today = today_local()
+    lease = repo.lock_current_lease(conn, unit_id, today)
+    if lease is None:
+        raise NoCurrentLeaseError("Aucun bail courant sur ce logement")
+    tenant_id = _resolve_tenant(conn, user, tenant_id=body.tenant_id, new_tenant=body.new_tenant)
+    if repo.tenant_active_on_lease(conn, lease["lease_id"], tenant_id, today):
+        raise AlreadyOnLeaseError("Ce locataire est déjà sur ce bail")
+    start = body.start_date or today
+    tenancy_id = repo.insert_tenancy(
+        conn,
+        lease_id=lease["lease_id"],
+        tenant_id=tenant_id,
+        capacite=body.capacite,
+        start_date=start,
+        reason_for_change=body.reason_for_change,
+    )
+    _record_create(conn, user, "tenancy_record", tenancy_id, {
+        "lease_id": lease["lease_id"],
+        "tenant_id": tenant_id,
+        "capacite": body.capacite,
+        "start_date": start,
+        "reason_for_change": body.reason_for_change,
+    })
+    return CreatedOut(tenant_id=tenant_id, tenancy_id=tenancy_id, lease_id=lease["lease_id"], unit_id=unit_id)
+
+
+def takeover_occupant(conn, unit_id: int, body: TakeoverBody, user: CurrentUser) -> CreatedOut:
+    _unit_in_scope(conn, user, unit_id)
+    today = today_local()
+    lease = repo.lock_current_lease(conn, unit_id, today)
+    if lease is None:
+        raise NoCurrentLeaseError("Aucun bail courant sur ce logement")
+    outgoing = _tenancy_in_scope(conn, user, body.outgoing_tenancy_id)
+    if outgoing["unit_id"] != unit_id or outgoing["lease_id"] != lease["lease_id"]:
+        raise NotFoundError("Occupation sortante introuvable sur ce logement")
+    if not _tenancy_is_active(outgoing, today):
+        raise TenancyNotActiveError("L'occupation sortante n'est plus active")
+    tenant_id = _resolve_tenant(conn, user, tenant_id=body.tenant_id, new_tenant=body.new_tenant)
+    if tenant_id == outgoing["tenant_id"]:
+        raise ValidationFailed("Le locataire entrant doit être différent du sortant")
+    if repo.tenant_active_on_lease(conn, lease["lease_id"], tenant_id, today):
+        raise AlreadyOnLeaseError("Ce locataire est déjà sur ce bail")
+
+    # End outgoing (capacite unchanged); open incoming as took_over.
+    if outgoing["end_date"] is None or outgoing["end_date"] != body.effective_date:
+        repo.update_columns(conn, "tenancy_record", body.outgoing_tenancy_id, {
+            "end_date": body.effective_date,
+            **({"reason_for_change": body.reason_for_change} if body.reason_for_change else {}),
+        })
+        write_provenance(
+            conn, target_table="tenancy_record", target_pk=str(body.outgoing_tenancy_id),
+            target_column="end_date", employee_id=user.employee_id,
+            previous_value=_text(outgoing["end_date"]), new_value=_text(body.effective_date),
+        )
+        if body.reason_for_change:
+            write_provenance(
+                conn, target_table="tenancy_record", target_pk=str(body.outgoing_tenancy_id),
+                target_column="reason_for_change", employee_id=user.employee_id,
+                previous_value=_text(outgoing["reason_for_change"]),
+                new_value=_text(body.reason_for_change),
+            )
+
+    tenancy_id = repo.insert_tenancy(
+        conn,
+        lease_id=lease["lease_id"],
+        tenant_id=tenant_id,
+        capacite="took_over",
+        start_date=body.effective_date,
+        reason_for_change=body.reason_for_change,
+    )
+    _record_create(conn, user, "tenancy_record", tenancy_id, {
+        "lease_id": lease["lease_id"],
+        "tenant_id": tenant_id,
+        "capacite": "took_over",
+        "start_date": body.effective_date,
+        "reason_for_change": body.reason_for_change,
+    })
+    return CreatedOut(tenant_id=tenant_id, tenancy_id=tenancy_id, lease_id=lease["lease_id"], unit_id=unit_id)
+
+
+def end_occupant(conn, unit_id: int, tenancy_id: int, body: EndOccupantBody, user: CurrentUser) -> None:
+    _unit_in_scope(conn, user, unit_id)
+    today = today_local()
+    row = _tenancy_in_scope(conn, user, tenancy_id)
+    if row["unit_id"] != unit_id:
+        raise NotFoundError("Occupation introuvable sur ce logement")
+    if not _tenancy_is_active(row, today):
+        raise TenancyNotActiveError("Cette occupation est déjà terminée")
+    if _text(row["end_date"]) != _text(body.current_end_date):
+        raise StaleDataError(_STALE, details={"field": "end_date"})
+    end = body.end_date or today
+    changes = {"end_date": end}
+    if body.reason_for_change is not None:
+        changes["reason_for_change"] = body.reason_for_change
+    repo.update_columns(conn, "tenancy_record", tenancy_id, changes)
+    for col, value in changes.items():
+        write_provenance(
+            conn, target_table="tenancy_record", target_pk=str(tenancy_id),
+            target_column=col, employee_id=user.employee_id,
+            previous_value=_text(row[col]), new_value=_text(value),
+        )
+
+
+def end_lease(conn, unit_id: int, body: EndLeaseBody, user: CurrentUser) -> None:
+    _unit_in_scope(conn, user, unit_id)
+    today = today_local()
+    lease = repo.lock_current_lease(conn, unit_id, today)
+    if lease is None:
+        raise NoCurrentLeaseError("Aucun bail courant sur ce logement")
+    if _text(lease["fin_bail"]) != _text(body.current_fin_bail):
+        raise StaleDataError(_STALE, details={"field": "fin_bail"})
+    if body.current_statut is not None and _text(lease["statut"]) != _text(body.current_statut):
+        raise StaleDataError(_STALE, details={"field": "statut"})
+    # Current-lease rule is fin_bail >= today; clamp so the lease drops out immediately.
+    fin = body.fin_bail if body.fin_bail < today else today - timedelta(days=1)
+    changes: dict = {"fin_bail": fin}
+    if body.statut is not None:
+        changes["statut"] = body.statut
+    repo.update_columns(conn, "lease", lease["lease_id"], changes)
+    for col, value in changes.items():
+        write_provenance(
+            conn, target_table="lease", target_pk=str(lease["lease_id"]),
+            target_column=col, employee_id=user.employee_id,
+            previous_value=_text(lease[col]), new_value=_text(value),
+        )
+    if body.close_tenancies:
+        closed = repo.close_open_tenancies(conn, lease["lease_id"], fin)
+        for r in closed:
+            write_provenance(
+                conn, target_table="tenancy_record", target_pk=str(r["tenancy_id"]),
+                target_column="end_date", employee_id=user.employee_id,
+                previous_value=_text(r["end_date"]), new_value=_text(fin),
+            )
+
+
+def start_lease(conn, unit_id: int, body: StartLeaseBody, user: CurrentUser) -> CreatedOut:
+    _unit_in_scope(conn, user, unit_id)
+    today = today_local()
+    current = repo.lock_current_lease(conn, unit_id, today)
+    if current is not None:
+        if not body.end_previous:
+            raise ConflictError(
+                "Un bail courant existe déjà — passez end_previous=true pour le clôturer",
+                details={"lease_id": current["lease_id"]},
+            )
+        fin = body.previous_fin_bail if body.previous_fin_bail is not None else (
+            body.debut_bail - timedelta(days=1)
+        )
+        repo.update_columns(conn, "lease", current["lease_id"], {"fin_bail": fin})
+        write_provenance(
+            conn, target_table="lease", target_pk=str(current["lease_id"]),
+            target_column="fin_bail", employee_id=user.employee_id,
+            previous_value=_text(current["fin_bail"]), new_value=_text(fin),
+        )
+        closed = repo.close_open_tenancies(conn, current["lease_id"], fin)
+        for r in closed:
+            write_provenance(
+                conn, target_table="tenancy_record", target_pk=str(r["tenancy_id"]),
+                target_column="end_date", employee_id=user.employee_id,
+                previous_value=_text(r["end_date"]), new_value=_text(fin),
+            )
+
+    lease_id = repo.insert_lease(
+        conn,
+        unit_id=unit_id,
+        debut_bail=body.debut_bail,
+        fin_bail=body.fin_bail,
+        statut=body.statut,
+        langue_bail=body.langue_bail,
+    )
+    _record_create(conn, user, "lease", lease_id, {
+        "unit_id": unit_id,
+        "debut_bail": body.debut_bail,
+        "fin_bail": body.fin_bail,
+        "statut": body.statut,
+        "langue_bail": body.langue_bail,
+    })
+
+    first_tenant_id = None
+    first_tenancy_id = None
+    for occ in body.occupants:
+        tid = _resolve_tenant(conn, user, tenant_id=occ.tenant_id, new_tenant=occ.new_tenant)
+        tenancy_id = repo.insert_tenancy(
+            conn,
+            lease_id=lease_id,
+            tenant_id=tid,
+            capacite=occ.capacite,
+            start_date=body.debut_bail,
+        )
+        _record_create(conn, user, "tenancy_record", tenancy_id, {
+            "lease_id": lease_id,
+            "tenant_id": tid,
+            "capacite": occ.capacite,
+            "start_date": body.debut_bail,
+        })
+        if first_tenant_id is None:
+            first_tenant_id, first_tenancy_id = tid, tenancy_id
+
+    return CreatedOut(
+        lease_id=lease_id,
+        unit_id=unit_id,
+        tenant_id=first_tenant_id,
+        tenancy_id=first_tenancy_id,
+    )

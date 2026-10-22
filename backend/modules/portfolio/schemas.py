@@ -5,7 +5,7 @@ from datetime import date, time
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class SectorSummary(BaseModel):
@@ -104,6 +104,8 @@ class LeaseOut(BaseModel):
 
 class TenantOut(BaseModel):
     tenant_id: int
+    # Present for active occupants on unit detail; omitted on turnover-only hits.
+    tenancy_id: Optional[int] = None
     nom_complet: Optional[str] = None
     telephone: Optional[str] = None
     telephone_international: Optional[str] = None
@@ -282,6 +284,40 @@ class UnitListPage(BaseModel):
     # Vacant units under the same filters, ignoring the occupancy filter.
     vacant_total: int
     grandeur_options: list[str]
+    page: int
+    page_size: int
+
+
+# ── Filtered tenant list (current occupants only) ─────────────────────────────
+
+class TenantListRow(BaseModel):
+    tenant_id: int
+    tenancy_id: int
+    nom_complet: Optional[str] = None
+    telephone: Optional[str] = None
+    telephone_international: Optional[str] = None
+    courriel: Optional[str] = None
+    capacite: Optional[str] = None
+    unit_id: int
+    building_id: int
+    project_id: int
+    sector_id: int
+    numero_appartement: Optional[str] = None
+    unique_unit_number: Optional[str] = None
+    building_adresse: Optional[str] = None
+    nom_unique_projet: Optional[str] = None
+    territoire: Optional[str] = None
+    lease_id: int
+    lease_statut: Optional[str] = None
+    debut_bail: Optional[date] = None
+    fin_bail: Optional[date] = None
+    # True when at least one turnover on the unit names this tenant by id.
+    has_turnover: bool = False
+
+
+class TenantListPage(BaseModel):
+    items: list[TenantListRow]
+    total: int
     page: int
     page_size: int
 
@@ -472,3 +508,111 @@ class CreatedOut(BaseModel):
     sector_id: Optional[int] = None
     paint_spec_id: Optional[int] = None
     document_id: Optional[int] = None
+    tenant_id: Optional[int] = None
+    tenancy_id: Optional[int] = None
+    lease_id: Optional[int] = None
+
+
+# ── Tenant / tenancy / occupancy edits ────────────────────────────────────────
+
+TenancyCapacity = Literal["named_on_lease", "added_occupant", "took_over"]
+
+
+class TenantFields(_Fields):
+    nom_complet: Optional[str] = Field(None, max_length=200)
+    telephone: Optional[str] = Field(None, max_length=50)
+    telephone_international: Optional[str] = Field(None, max_length=50)
+    courriel: Optional[str] = Field(None, max_length=200)
+
+
+class TenantPatch(BaseModel):
+    changes: TenantFields
+    current: TenantFields = TenantFields()
+
+
+class TenancyFields(_Fields):
+    capacite: Optional[TenancyCapacity] = None
+    reason_for_change: Optional[str] = Field(None, max_length=500)
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+
+
+class TenancyPatch(BaseModel):
+    changes: TenancyFields
+    current: TenancyFields = TenancyFields()
+
+
+class AddOccupantBody(BaseModel):
+    tenant_id: Optional[int] = None
+    new_tenant: Optional[TenantFields] = None
+    capacite: TenancyCapacity = "added_occupant"
+    start_date: Optional[date] = None
+    reason_for_change: Optional[str] = Field(None, max_length=500)
+
+    @model_validator(mode="after")
+    def _one_source(self):
+        has_id = self.tenant_id is not None
+        has_new = self.new_tenant is not None
+        if has_id == has_new:
+            raise ValueError("Provide exactly one of tenant_id or new_tenant")
+        if has_new and not (self.new_tenant.nom_complet or "").strip():
+            raise ValueError("new_tenant.nom_complet is required")
+        return self
+
+
+class TakeoverBody(BaseModel):
+    outgoing_tenancy_id: int
+    tenant_id: Optional[int] = None
+    new_tenant: Optional[TenantFields] = None
+    effective_date: date
+    reason_for_change: Optional[str] = Field(None, max_length=500)
+
+    @model_validator(mode="after")
+    def _one_source(self):
+        has_id = self.tenant_id is not None
+        has_new = self.new_tenant is not None
+        if has_id == has_new:
+            raise ValueError("Provide exactly one of tenant_id or new_tenant")
+        if has_new and not (self.new_tenant.nom_complet or "").strip():
+            raise ValueError("new_tenant.nom_complet is required")
+        return self
+
+
+class EndOccupantBody(BaseModel):
+    end_date: Optional[date] = None
+    reason_for_change: Optional[str] = Field(None, max_length=500)
+    current_end_date: Optional[date] = None
+
+
+class EndLeaseBody(BaseModel):
+    fin_bail: date
+    statut: Optional[str] = Field(None, max_length=100)
+    current_fin_bail: Optional[date] = None
+    current_statut: Optional[str] = None
+    close_tenancies: bool = True
+
+
+class OccupantSeed(BaseModel):
+    tenant_id: Optional[int] = None
+    new_tenant: Optional[TenantFields] = None
+    capacite: TenancyCapacity = "named_on_lease"
+
+    @model_validator(mode="after")
+    def _one_source(self):
+        has_id = self.tenant_id is not None
+        has_new = self.new_tenant is not None
+        if has_id == has_new:
+            raise ValueError("Provide exactly one of tenant_id or new_tenant")
+        if has_new and not (self.new_tenant.nom_complet or "").strip():
+            raise ValueError("new_tenant.nom_complet is required")
+        return self
+
+
+class StartLeaseBody(BaseModel):
+    debut_bail: date
+    fin_bail: Optional[date] = None
+    statut: Optional[str] = Field(default="Actif", max_length=100)
+    langue_bail: Optional[str] = Field(None, max_length=50)
+    occupants: list[OccupantSeed] = []
+    end_previous: bool = False
+    previous_fin_bail: Optional[date] = None

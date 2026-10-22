@@ -16,9 +16,15 @@ _CURRENT_LEASE = """
     ) cl ON true
 """
 
-# Everyone on the current lease `cl`, lease holder first. A unit is occupied
-# when occupant_count > 0.
-_OCCUPANTS = """
+# Active occupants on the current lease `cl`, lease holder first. A unit is
+# occupied when occupant_count > 0. end_date is the last day occupied
+# (exclusive next day): end_date = today means gone as of today.
+_ACTIVE_TENANCY = (
+    "(tr.end_date IS NULL OR tr.end_date > %(today)s) "
+    "AND (tr.start_date IS NULL OR tr.start_date <= %(today)s)"
+)
+
+_OCCUPANTS = f"""
     LEFT JOIN LATERAL (
         SELECT
             ARRAY_AGG(
@@ -34,7 +40,7 @@ _OCCUPANTS = """
             COUNT(*)::int AS occupant_count
         FROM tenancy_record tr
         JOIN tenant t ON t.tenant_id = tr.tenant_id
-        WHERE tr.lease_id = cl.lease_id
+        WHERE tr.lease_id = cl.lease_id AND {_ACTIVE_TENANCY}
     ) occ ON true
 """
 
@@ -268,10 +274,12 @@ def get_unit(conn, unit_id: int, today: date) -> dict | None:
     return dict(row) if row else None
 
 
-def list_tenants(conn, lease_id: int) -> list[dict]:
+def list_tenants(conn, lease_id: int, today: date) -> list[dict]:
+    """Active tenancies on this lease (ended rows are omitted)."""
     rows = conn.execute(
-        """
+        f"""
         SELECT
+            tr.tenancy_id,
             t.tenant_id,
             t.nom_complet,
             t.telephone,
@@ -280,7 +288,7 @@ def list_tenants(conn, lease_id: int) -> list[dict]:
             tr.capacite::text AS capacite
         FROM tenancy_record tr
         JOIN tenant t ON t.tenant_id = tr.tenant_id
-        WHERE tr.lease_id = %(lease_id)s
+        WHERE tr.lease_id = %(lease_id)s AND {_ACTIVE_TENANCY}
         ORDER BY
             CASE tr.capacite::text
                 WHEN 'named_on_lease' THEN 0
@@ -289,7 +297,7 @@ def list_tenants(conn, lease_id: int) -> list[dict]:
             END,
             t.nom_complet
         """,
-        {"lease_id": lease_id},
+        {"lease_id": lease_id, "today": today},
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -585,7 +593,7 @@ def search_tenants(conn, tokens, sector_ids, today: date, limit: int) -> list[di
             {_CURRENT_LEASE}
             JOIN tenancy_record tr ON tr.lease_id = cl.lease_id
             JOIN tenant t ON t.tenant_id = tr.tenant_id
-            WHERE {_scope_sql(sector_ids, params)} AND {where}
+            WHERE {_scope_sql(sector_ids, params)} AND {_ACTIVE_TENANCY} AND {where}
             ORDER BY t.tenant_id, cl.debut_bail DESC NULLS LAST
         ) hits
         ORDER BY nom_complet NULLS LAST, tenant_id
@@ -746,3 +754,109 @@ def _grandeur_key(g: str) -> tuple:
         return (0, float(head), g)
     except ValueError:
         return (1, 0.0, g)
+
+
+_TENANT_HAY = (
+    "concat_ws(' ', t.nom_complet, t.telephone, t.telephone_international, t.courriel, "
+    "u.unique_unit_number, u.numero_appartement, b.adresse, b.web_building_name)"
+)
+
+
+def list_tenants_filtered(
+    conn,
+    *,
+    sector_ids: frozenset[int] | None,
+    today: date,
+    sector_id: int | None,
+    project_id: int | None,
+    building_id: int | None,
+    unit_id: int | None,
+    capacite: str | None,
+    lease_ending_within_days: int | None,
+    tokens: list[list[str]],
+    limit: int,
+    offset: int,
+) -> dict:
+    """One page of current occupants across the portfolio."""
+    params: dict = {"today": today, "lim": limit, "off": offset}
+    where = [_scope_sql(sector_ids, params)]
+    if sector_id is not None:
+        where.append("b.sector_id = %(sector_id)s")
+        params["sector_id"] = sector_id
+    if project_id is not None:
+        where.append("b.project_id = %(project_id)s")
+        params["project_id"] = project_id
+    if building_id is not None:
+        where.append("b.building_id = %(building_id)s")
+        params["building_id"] = building_id
+    if unit_id is not None:
+        where.append("u.unit_id = %(unit_id)s")
+        params["unit_id"] = unit_id
+    if capacite:
+        where.append("tr.capacite::text = %(capacite)s")
+        params["capacite"] = capacite
+    if lease_ending_within_days is not None:
+        where.append("cl.fin_bail BETWEEN %(today)s AND %(lease_end_by)s")
+        params["lease_end_by"] = today + timedelta(days=lease_ending_within_days)
+    if tokens:
+        where.append(_tokens_sql(_TENANT_HAY, tokens, params, "t"))
+
+    where_sql = " AND ".join(where)
+    cte = f"""
+        WITH rows AS (
+            SELECT
+                t.tenant_id,
+                tr.tenancy_id,
+                t.nom_complet,
+                t.telephone,
+                t.telephone_international,
+                t.courriel,
+                tr.capacite::text AS capacite,
+                u.unit_id,
+                u.building_id,
+                b.project_id,
+                b.sector_id,
+                u.numero_appartement,
+                u.unique_unit_number,
+                b.adresse AS building_adresse,
+                p.nom_unique_projet,
+                s.territoire,
+                cl.lease_id,
+                cl.statut AS lease_statut,
+                cl.debut_bail,
+                cl.fin_bail,
+                EXISTS (
+                    SELECT 1 FROM unit_turnover ut
+                    WHERE ut.unit_id = u.unit_id
+                      AND t.tenant_id IN (ut.incoming_tenant_id, ut.outgoing_tenant_id)
+                ) AS has_turnover
+            FROM unit u
+            JOIN building b ON b.building_id = u.building_id
+            LEFT JOIN project p ON p.project_id = b.project_id
+            LEFT JOIN sector s ON s.sector_id = b.sector_id
+            {_CURRENT_LEASE}
+            JOIN tenancy_record tr ON tr.lease_id = cl.lease_id AND {_ACTIVE_TENANCY}
+            JOIN tenant t ON t.tenant_id = tr.tenant_id
+            WHERE {where_sql}
+        )
+    """
+    totals = conn.execute(
+        cte + "SELECT COUNT(*)::int AS total FROM rows",
+        params,
+    ).fetchone()
+    items = conn.execute(
+        cte + """
+        SELECT * FROM rows
+        ORDER BY
+            lower(nom_complet) NULLS LAST,
+            building_adresse NULLS LAST,
+            unit_id,
+            tenant_id
+        LIMIT %(lim)s OFFSET %(off)s
+        """,
+        params,
+    ).fetchall()
+    return {
+        "items": [dict(r) for r in items],
+        "total": totals["total"],
+    }

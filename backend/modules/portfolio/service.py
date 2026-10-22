@@ -29,6 +29,8 @@ from .schemas import (
     SearchTenantHit,
     SearchUnitHit,
     SectorSummary,
+    TenantListPage,
+    TenantListRow,
     TenantOut,
     TenantTurnover,
     TurnoverFurnitureOut,
@@ -119,7 +121,8 @@ def get_unit(conn, unit_id: int, user: CurrentUser) -> UnitDetail:
             statut=row["statut"],
             langue_bail=row["langue_bail"],
         )
-        rows = repo.list_tenants(conn, row["lease_id"])
+        today = today_local()
+        rows = repo.list_tenants(conn, row["lease_id"], today)
         flagged = repo.tenants_with_turnover(conn, unit_id, [t["tenant_id"] for t in rows])
         tenants = [TenantOut(**t, has_turnover=t["tenant_id"] in flagged) for t in rows]
     payload = {k: row[k] for k in (
@@ -314,6 +317,45 @@ def list_units_filtered(
         total=result["total"],
         vacant_total=result["vacant_total"],
         grandeur_options=result["grandeur_options"],
+        page=page,
+        page_size=page_size,
+    )
+
+
+def list_tenants_filtered(
+    conn,
+    user: CurrentUser,
+    *,
+    sector_id: int | None,
+    project_id: int | None,
+    building_id: int | None,
+    unit_id: int | None,
+    capacite: str | None,
+    lease_ending_within_days: int | None,
+    q: str | None,
+    page: int,
+    page_size: int,
+) -> TenantListPage:
+    allowed = allowed_sector_ids(conn, user)
+    if allowed is not None and (not allowed or (sector_id is not None and sector_id not in allowed)):
+        return TenantListPage(items=[], total=0, page=page, page_size=page_size)
+    result = repo.list_tenants_filtered(
+        conn,
+        sector_ids=allowed,
+        today=today_local(),
+        sector_id=sector_id,
+        project_id=project_id,
+        building_id=building_id,
+        unit_id=unit_id,
+        capacite=capacite,
+        lease_ending_within_days=lease_ending_within_days,
+        tokens=search_tokens(q),
+        limit=page_size,
+        offset=(page - 1) * page_size,
+    )
+    return TenantListPage(
+        items=[TenantListRow(**r) for r in result["items"]],
+        total=result["total"],
         page=page,
         page_size=page_size,
     )

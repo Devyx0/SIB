@@ -22,12 +22,23 @@ _UNIT_COLUMNS = frozenset({"numero_appartement", "rue", "grandeur", "unique_unit
 
 _PAINT_COLUMNS = frozenset({"zone", "surface_label", "product_interior", "product_exterior", "manufacturer"})
 
+_TENANT_COLUMNS = frozenset({
+    "nom_complet", "telephone", "telephone_international", "courriel",
+})
+
+_TENANCY_COLUMNS = frozenset({"capacite", "reason_for_change", "start_date", "end_date"})
+
+_LEASE_COLUMNS = frozenset({"debut_bail", "fin_bail", "statut", "langue_bail", "unit_id"})
+
 # table → (primary key, editable columns)
 _TABLES: dict[str, tuple[str, frozenset[str]]] = {
     "project": ("project_id", _PROJECT_COLUMNS),
     "building": ("building_id", _BUILDING_COLUMNS),
     "unit": ("unit_id", _UNIT_COLUMNS),
     "building_paint_spec": ("paint_spec_id", _PAINT_COLUMNS),
+    "tenant": ("tenant_id", _TENANT_COLUMNS),
+    "tenancy_record": ("tenancy_id", _TENANCY_COLUMNS),
+    "lease": ("lease_id", _LEASE_COLUMNS),
 }
 
 
@@ -44,7 +55,13 @@ def update_columns(conn, table: str, pk_value: int, changes: dict) -> None:
     if not changes:
         return
     pk, cols = _checked(table, changes)
-    sets = ", ".join(f"{c} = %({c})s" for c in cols)
+
+    def _set(c: str) -> str:
+        if table == "tenancy_record" and c == "capacite":
+            return f"{c} = %({c})s::tenancy_capacity"
+        return f"{c} = %({c})s"
+
+    sets = ", ".join(_set(c) for c in cols)
     conn.execute(f"UPDATE {table} SET {sets} WHERE {pk} = %(pk)s", {**changes, "pk": pk_value})
 
 
@@ -54,6 +71,9 @@ _PARENTS: dict[str, frozenset[str]] = {
     "building": frozenset({"project_id", "sector_id"}),
     "unit": frozenset({"building_id"}),
     "building_paint_spec": frozenset({"building_id"}),
+    "tenant": frozenset(),
+    "tenancy_record": frozenset({"lease_id", "tenant_id"}),
+    "lease": frozenset({"unit_id"}),
 }
 
 
@@ -257,3 +277,200 @@ def insert_document(conn, building_id: int, title: str, url: str, category: str 
 
 def delete_document(conn, document_id: int) -> None:
     conn.execute("DELETE FROM building_document WHERE document_id = %(id)s", {"id": document_id})
+
+
+# ── Tenant / tenancy / lease ──────────────────────────────────────────────────
+
+def lock_tenant(conn, tenant_id: int) -> dict | None:
+    row = conn.execute(
+        """
+        SELECT tenant_id, nom_complet, telephone, telephone_international, courriel
+        FROM tenant
+        WHERE tenant_id = %(id)s
+        FOR UPDATE
+        """,
+        {"id": tenant_id},
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def tenant_in_scope_sector(conn, tenant_id: int, sector_ids: frozenset[int] | None) -> bool:
+    """True when the tenant appears on any lease of an in-scope unit."""
+    params: dict = {"tid": tenant_id}
+    scope = "TRUE"
+    if sector_ids is not None:
+        if not sector_ids:
+            return False
+        params["scope_ids"] = list(sector_ids)
+        scope = "b.sector_id = ANY(%(scope_ids)s)"
+    row = conn.execute(
+        f"""
+        SELECT 1
+        FROM tenancy_record tr
+        JOIN lease l ON l.lease_id = tr.lease_id
+        JOIN unit u ON u.unit_id = l.unit_id
+        JOIN building b ON b.building_id = u.building_id
+        WHERE tr.tenant_id = %(tid)s AND {scope}
+        LIMIT 1
+        """,
+        params,
+    ).fetchone()
+    return row is not None
+
+
+def lock_tenancy(conn, tenancy_id: int) -> dict | None:
+    row = conn.execute(
+        """
+        SELECT
+            tr.tenancy_id, tr.lease_id, tr.tenant_id,
+            tr.capacite::text AS capacite,
+            tr.reason_for_change, tr.start_date, tr.end_date,
+            l.unit_id, b.sector_id
+        FROM tenancy_record tr
+        JOIN lease l ON l.lease_id = tr.lease_id
+        JOIN unit u ON u.unit_id = l.unit_id
+        JOIN building b ON b.building_id = u.building_id
+        WHERE tr.tenancy_id = %(id)s
+        FOR UPDATE OF tr
+        """,
+        {"id": tenancy_id},
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def lock_current_lease(conn, unit_id: int, today) -> dict | None:
+    """Current lease of the unit, locked; None when vacant / no covering lease."""
+    row = conn.execute(
+        """
+        SELECT l.lease_id, l.unit_id, l.debut_bail, l.fin_bail, l.statut, l.langue_bail,
+               b.sector_id
+        FROM lease l
+        JOIN unit u ON u.unit_id = l.unit_id
+        JOIN building b ON b.building_id = u.building_id
+        WHERE l.unit_id = %(uid)s
+          AND (l.debut_bail IS NULL OR l.debut_bail <= %(today)s)
+          AND (l.fin_bail IS NULL OR l.fin_bail >= %(today)s)
+        ORDER BY l.debut_bail DESC NULLS LAST, l.lease_id DESC
+        LIMIT 1
+        FOR UPDATE OF l
+        """,
+        {"uid": unit_id, "today": today},
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def tenant_active_on_lease(conn, lease_id: int, tenant_id: int, today) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1 FROM tenancy_record tr
+        WHERE tr.lease_id = %(lid)s AND tr.tenant_id = %(tid)s
+          AND (tr.end_date IS NULL OR tr.end_date > %(today)s)
+          AND (tr.start_date IS NULL OR tr.start_date <= %(today)s)
+        LIMIT 1
+        """,
+        {"lid": lease_id, "tid": tenant_id, "today": today},
+    ).fetchone()
+    return row is not None
+
+
+def _next_id(conn, table: str, pk: str) -> int:
+    """Allocate an id past MAX(pk). Needed when tests insert explicit ids and
+    the identity sequence lags behind."""
+    row = conn.execute(f"SELECT COALESCE(MAX({pk}), 0) + 1 AS n FROM {table}").fetchone()
+    return int(row["n"])
+
+
+def insert_tenant(conn, values: dict) -> int:
+    cols = [c for c in ("nom_complet", "telephone", "telephone_international", "courriel") if c in values]
+    tenant_id = _next_id(conn, "tenant", "tenant_id")
+    names = ["tenant_id", *cols]
+    marks = ", ".join(f"%({c})s" for c in names)
+    conn.execute(
+        f"INSERT INTO tenant ({', '.join(names)}) VALUES ({marks})",
+        {**values, "tenant_id": tenant_id},
+    )
+    return tenant_id
+
+
+def insert_tenancy(
+    conn,
+    *,
+    lease_id: int,
+    tenant_id: int,
+    capacite: str,
+    start_date=None,
+    end_date=None,
+    reason_for_change: str | None = None,
+) -> int:
+    tenancy_id = _next_id(conn, "tenancy_record", "tenancy_id")
+    conn.execute(
+        """
+        INSERT INTO tenancy_record (
+            tenancy_id, lease_id, tenant_id, capacite, start_date, end_date, reason_for_change
+        ) VALUES (
+            %(tenancy_id)s, %(lease_id)s, %(tenant_id)s, %(capacite)s::tenancy_capacity,
+            %(start_date)s, %(end_date)s, %(reason)s
+        )
+        """,
+        {
+            "tenancy_id": tenancy_id,
+            "lease_id": lease_id,
+            "tenant_id": tenant_id,
+            "capacite": capacite,
+            "start_date": start_date,
+            "end_date": end_date,
+            "reason": reason_for_change,
+        },
+    )
+    return tenancy_id
+
+
+def insert_lease(
+    conn,
+    *,
+    unit_id: int,
+    debut_bail,
+    fin_bail=None,
+    statut: str | None = None,
+    langue_bail: str | None = None,
+) -> int:
+    lease_id = _next_id(conn, "lease", "lease_id")
+    conn.execute(
+        """
+        INSERT INTO lease (lease_id, unit_id, debut_bail, fin_bail, statut, langue_bail)
+        VALUES (%(lease_id)s, %(unit_id)s, %(debut)s, %(fin)s, %(statut)s, %(langue)s)
+        """,
+        {
+            "lease_id": lease_id,
+            "unit_id": unit_id,
+            "debut": debut_bail,
+            "fin": fin_bail,
+            "statut": statut,
+            "langue": langue_bail,
+        },
+    )
+    return lease_id
+
+
+def close_open_tenancies(conn, lease_id: int, end_date) -> list[dict]:
+    """Set end_date on active tenancies; return previous rows for provenance."""
+    rows = conn.execute(
+        """
+        SELECT tenancy_id, end_date, reason_for_change
+        FROM tenancy_record
+        WHERE lease_id = %(lid)s AND end_date IS NULL
+        FOR UPDATE
+        """,
+        {"lid": lease_id},
+    ).fetchall()
+    if not rows:
+        return []
+    conn.execute(
+        """
+        UPDATE tenancy_record
+        SET end_date = %(end)s
+        WHERE lease_id = %(lid)s AND end_date IS NULL
+        """,
+        {"lid": lease_id, "end": end_date},
+    )
+    return [dict(r) for r in rows]
