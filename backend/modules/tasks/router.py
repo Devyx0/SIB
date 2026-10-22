@@ -13,7 +13,7 @@ from backend.core.security import CurrentUser
 
 from . import service
 from .schemas import (
-    AcceptTaskBody, ArrivedBody, AssignTaskBody, CloseoutBody, CloseoutOut, CreateTaskBody, EnRouteBody,
+    AcceptTaskBody, ArrivedBody, AssignTaskBody, CancelTaskBody, CloseoutBody, CloseoutOut, CreateTaskBody, EnRouteBody,
     FollowUpBody, ScheduleTaskBody, TaskListResponse, TaskOut, TaskStatusValue,
 )
 
@@ -86,6 +86,11 @@ def task_assign(task_id: int, body: AssignTaskBody, user: CurrentUser = _COORD_D
 @router.post("/{task_id}/schedule", operation_id="task_schedule", response_model=TaskOut)
 def task_schedule(task_id: int, body: ScheduleTaskBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> TaskOut:
     return service.schedule_task(conn, task_id, body, user)
+
+
+@router.post("/{task_id}/cancel", operation_id="task_cancel", response_model=TaskOut)
+def task_cancel(task_id: int, body: CancelTaskBody, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn)) -> TaskOut:
+    return service.cancel_task(conn, task_id, body, user)
 
 
 @router.post("/{task_id}/follow-up", operation_id="task_follow_up", response_model=TaskOut)

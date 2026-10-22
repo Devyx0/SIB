@@ -640,6 +640,7 @@ describe('en route assignment lock (fix 2026-10-19)', () => {
     expect((screen.getByTestId('task-due-7') as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByTestId('task-locked-7').textContent).toContain(EN_ROUTE_MSG);
     expect(screen.queryByTestId('task-save-7')).toBeNull();
+    expect(screen.queryByTestId('task-cancel-7')).toBeNull();
     // The other dispatch controls stay usable (log textarea not disabled).
     expect((screen.getByTestId('log-text') as HTMLTextAreaElement).disabled).toBe(false);
   });
@@ -659,6 +660,38 @@ describe('en route assignment lock (fix 2026-10-19)', () => {
     await userEvent.click(screen.getByTestId('task-save-7'));
     await justifyWith();
     await waitFor(() => expect(screen.getByText(/Technicien déjà en route/)).toBeTruthy());
+  });
+});
+
+describe('cancel task', () => {
+  it('shows Annuler on a queued task and posts the justification', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: WITH_TASK, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([JEAN]);
+    const cancel = vi.spyOn(client, 'cancelTask').mockResolvedValue(task(7, { status: 'cancelled' }) as never);
+    wrap(
+      <DetailPanel requestId={1} onClose={vi.fn()} lang="fr"
+        me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />
+    );
+    await userEvent.click(screen.getByTestId('task-cancel-7'));
+    await justifyWith('Le problème est tombé');
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith(7, {
+      justification: { text: 'Le problème est tombé.', input_method: 'typed' },
+    }));
+  });
+
+  it('shows Annuler for needs_expertise and return_visit', () => {
+    const req = {
+      ...MOCK_REQUEST, status: 'open',
+      tasks: [task(5, { status: 'needs_expertise' }), task(6, { status: 'return_visit' })],
+    };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    wrap(
+      <DetailPanel requestId={1} onClose={vi.fn()} lang="fr"
+        me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />
+    );
+    expect(screen.getByTestId('task-cancel-5').textContent).toBe('Annuler');
+    expect(screen.getByTestId('task-cancel-6').textContent).toBe('Annuler');
   });
 });
 
@@ -692,7 +725,7 @@ describe('decision justification (system-wide)', () => {
     await userEvent.click(screen.getByTestId('task-save-7'));
     await waitFor(() => expect(screen.getByTestId('justification-dialog')).toBeTruthy());
     expect(screen.getByTestId('justification-dialog').textContent).toContain('Jean Tech');
-    await userEvent.click(screen.getByRole('button', { name: 'Annuler' }));
+    await userEvent.click(within(screen.getByTestId('justification-dialog')).getByRole('button', { name: 'Annuler' }));
     await waitFor(() => expect(screen.queryByTestId('justification-dialog')).toBeNull());
     expect(assign).not.toHaveBeenCalled();
     expect((screen.getByTestId('task-assign-7') as HTMLSelectElement).value).toBe('14');

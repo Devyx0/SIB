@@ -22,7 +22,7 @@ from backend.modules.requests import repository as request_repo
 
 from . import repository as repo
 from .schemas import (
-    AcceptTaskBody, ArrivedBody, AssignTaskBody, CloseoutBody, CloseoutOut, CreateTaskBody, EnRouteBody,
+    AcceptTaskBody, ArrivedBody, AssignTaskBody, CancelTaskBody, CloseoutBody, CloseoutOut, CreateTaskBody, EnRouteBody,
     FollowUpBody, ScheduleTaskBody, TaskListItem, TaskListResponse, TaskOut, RejectAllOut,
 )
 
@@ -183,6 +183,45 @@ def assign_task(conn, task_id: int, body: AssignTaskBody, user: CurrentUser) -> 
 def schedule_task(conn, task_id: int, body: ScheduleTaskBody, user: CurrentUser) -> TaskOut:
     task = _get_editable(conn, task_id)
     return _apply(conn, task, user, body.justification, "task_schedule", due_at=body.due_at)
+
+
+def cancel_task(conn, task_id: int, body: CancelTaskBody, user: CurrentUser) -> TaskOut:
+    """Abandon an accepted task (queued / scheduled / needs_expertise / return_visit).
+
+    Then auto-close. When every accepted task is cancelled, the justification
+    is recorded on the call as `call_cancel` (spec: closed with a cancel
+    justification). A mix of done + cancelled still closes, as `task_cancel`.
+    """
+    task = repo.lock_accepted_task(conn, task_id)
+    if task is None:
+        raise NotFoundError(f"Task {task_id} not found")
+    req = request_repo.lock_request(conn, task["request_id"])
+    if req is None:
+        raise NotFoundError(f"Request {task['request_id']} not found")
+    if req["status"] == "closed":
+        raise RequestClosedError()
+    transition_task(task["status"], "cancelled")
+    repo.update_task_status(conn, task_id, "cancelled")
+    _provenance(conn, task_id, "status", user, task["status"], "cancelled")
+    closed = repo.maybe_close_request(conn, task["request_id"])
+    statuses = [
+        r["s"] for r in conn.execute(
+            "SELECT status::text AS s FROM dispatch_task "
+            "WHERE request_id = %(r)s AND accepted_at IS NOT NULL",
+            {"r": task["request_id"]},
+        ).fetchall()
+    ]
+    all_cancelled = bool(closed and statuses and all(s == "cancelled" for s in statuses))
+    after: dict[str, Any] = {"task_id": task_id, "status": "cancelled"}
+    if closed:
+        after["request_status"] = "closed"
+    _justify(
+        conn, task["request_id"], user, body.justification,
+        decision_type="call_cancel" if all_cancelled else "task_cancel",
+        before={"task_id": task_id, "status": task["status"]},
+        after=after,
+    )
+    return TaskOut(**repo.get_task(conn, task_id))
 
 
 # ── AI proposals: accept / reject ──────────────────────────────────────────────

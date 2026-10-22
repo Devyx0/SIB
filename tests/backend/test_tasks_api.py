@@ -575,3 +575,83 @@ def test_rejected_assign_writes_no_log(ac, db_conn, open_request_id):
                           json={"assigned_employee_id": _TECH, "justification": _JUST})
     assert r.status_code == 409
     assert _just_rows(db_conn, open_request_id) == []
+
+
+# ── POST /tasks/{id}/cancel ───────────────────────────────────────────────────
+
+@pytest.mark.parametrize("status", ["queued", "scheduled", "needs_expertise", "return_visit"])
+def test_cancel_from_allowed_states(ac, db_conn, open_request_id, status):
+    t = _accepted(db_conn, open_request_id, status=status, assigned_employee_id=_TECH, due_at=_DUE)
+    # A sibling stays open so this cancel does not close the call.
+    _accepted(db_conn, open_request_id, "Autre")
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/cancel", json={"justification": _JUST})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "cancelled"
+    assert _req_status(db_conn, open_request_id) == "open"
+    [row] = _just_rows(db_conn, open_request_id)
+    assert row["decision_type"] == "task_cancel"
+    assert row["justification_text"] == _JUST["text"]
+    [st] = _prov(db_conn, t["task_id"], "status")
+    assert (st["previous_value"], st["ingested_value"]) == (status, "cancelled")
+
+
+def test_cancel_last_task_closes_call_with_justification(ac, db_conn, open_request_id):
+    t = _accepted(db_conn, open_request_id)
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/cancel", json={"justification": _JUST})
+    assert r.status_code == 200, r.text
+    assert _req_status(db_conn, open_request_id) == "closed"
+    [row] = _just_rows(db_conn, open_request_id)
+    assert row["decision_type"] == "call_cancel"
+    assert row["after_value"]["request_status"] == "closed"
+
+
+def test_cancel_with_done_sibling_closes_as_task_cancel(ac, db_conn, open_request_id):
+    _accepted(db_conn, open_request_id, "Fini", status="done")
+    t = _accepted(db_conn, open_request_id, "Abandon")
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/cancel", json={"justification": _JUST})
+    assert r.status_code == 200, r.text
+    assert _req_status(db_conn, open_request_id) == "closed"
+    assert _just_rows(db_conn, open_request_id)[0]["decision_type"] == "task_cancel"
+
+
+def test_cancel_blocked_by_proposal(ac, db_conn, open_request_id):
+    t = _accepted(db_conn, open_request_id)
+    insert_task(db_conn, request_id=open_request_id, description="Encore une proposition",
+                source="ai_recommended", accepted_at=None)
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/cancel", json={"justification": _JUST})
+    assert r.status_code == 200, r.text
+    assert _req_status(db_conn, open_request_id) == "open"
+
+
+@pytest.mark.parametrize("status", ["en_route", "arrived", "working", "done", "cancelled"])
+def test_cancel_illegal_status_409(ac, db_conn, open_request_id, status):
+    t = _accepted(db_conn, open_request_id, status=status)
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/cancel", json={"justification": _JUST})
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "INVALID_TRANSITION"
+    assert get_task(db_conn, t["task_id"])["status"] == status
+    assert _just_rows(db_conn, open_request_id) == []
+
+
+def test_cancel_proposal_404(ac, db_conn, open_request_id):
+    t = insert_task(db_conn, request_id=open_request_id, description="Brouillon",
+                    source="ai_recommended", accepted_at=None)
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/cancel", json={"justification": _JUST})
+    assert r.status_code == 404
+
+
+def test_cancel_technician_403(ac, db_conn, open_request_id):
+    t = _accepted(db_conn, open_request_id)
+    r = ac(_user(_TECH, "technician")).post(
+        f"/api/v1/tasks/{t['task_id']}/cancel", json={"justification": _JUST})
+    assert r.status_code == 403
+    assert get_task(db_conn, t["task_id"])["status"] == "queued"
+
+
+def test_cancel_requires_justification(ac, db_conn, open_request_id):
+    t = _accepted(db_conn, open_request_id)
+    r = ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/cancel", json={})
+    assert r.status_code == 422
+    short = {"justification": {"text": "court", "input_method": "typed"}}
+    assert ac(_coord()).post(f"/api/v1/tasks/{t['task_id']}/cancel", json=short).status_code == 422
+    assert get_task(db_conn, t["task_id"])["status"] == "queued"

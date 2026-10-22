@@ -301,19 +301,21 @@ def _write_triage_provenance(cur, request_id: int, parsed: dict,
 _EXCLUSIVE_ROUTING = EXCLUSIVE_ROUTING  # defined with the contract so the gate and rewrite agree
 
 
-def _write_proposal_tasks(cur, request_id: int, tasks: list[dict]) -> None:
+def _write_proposal_tasks(cur, request_id: int, tasks: list[dict], *, replace: bool = True) -> None:
     """Insert AI proposals (accepted_at NULL, source ai_recommended) under a call.
 
     Raw cursor SQL rather than tasks.repository.insert_task: triage runs on a
     psycopg2 connection, the repository needs psycopg3. No assignee, no due date
-    (rule 37) — the dispatcher decides both on accept. Earlier un-accepted AI
-    proposals for the call are replaced so a re-triage never stacks duplicates.
+    (rule 37) — the dispatcher decides both on accept. A re-triage of this call
+    replaces its un-accepted AI proposals (`replace=True`). An addition onto a
+    peer appends (`replace=False`) so the peer's pending proposals survive.
     """
-    cur.execute(
-        "DELETE FROM dispatch_task "
-        "WHERE request_id = %s AND source = 'ai_recommended' AND accepted_at IS NULL",
-        (request_id,),
-    )
+    if replace:
+        cur.execute(
+            "DELETE FROM dispatch_task "
+            "WHERE request_id = %s AND source = 'ai_recommended' AND accepted_at IS NULL",
+            (request_id,),
+        )
     cur.execute(
         "SELECT COALESCE(MAX(sort_order) + 1, 0) FROM dispatch_task WHERE request_id = %s",
         (request_id,),
@@ -462,8 +464,9 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
     if proposing:
         _write_proposal_tasks(cur, request_id, tasks)
     elif merged and peer_updated and tasks:
-        # Mid-life proposals: the peer keeps its status (not bounced to triage_proposal).
-        _write_proposal_tasks(cur, add_id, tasks)
+        # Mid-life proposals: the peer keeps its status (not bounced to triage_proposal)
+        # and keeps proposals the dispatcher has not accepted yet.
+        _write_proposal_tasks(cur, add_id, tasks, replace=False)
     if old_row is not None:
         _write_triage_provenance(cur, request_id, parsed, model_version, old_row)
 
@@ -547,7 +550,7 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT request_id, status, triage_started_at, raw_title
+            SELECT request_id, status::text AS status, triage_started_at, raw_title
             FROM maintenance_request
             WHERE request_id = %s
             FOR UPDATE SKIP LOCKED
@@ -573,7 +576,10 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
         conn.rollback()
         return {"result": "skipped", "reason": "mechanically excluded title (SKILL §4.2)"}
 
-    if current_status in ("triaged", "scheduled", "awaiting_redispatch",
+    # `open` is the in-flight container (tasks already accepted). Re-triage must
+    # not move it back to triage_pending. Legacy fieldwork statuses too.
+    # intake_received / triage_failed / triage_pending / triage_proposal stay runnable.
+    if current_status in ("open", "triaged", "scheduled", "awaiting_redispatch",
                           "en_route", "arrived", "closed"):
         conn.rollback()
         return {"result": "skipped", "reason": f"already in terminal state ({current_status})"}
@@ -591,9 +597,21 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
     if not dry_run:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE maintenance_request SET status = 'triage_pending', triage_started_at = NOW() WHERE request_id = %s",
+                """
+                UPDATE maintenance_request
+                SET status = 'triage_pending', triage_started_at = NOW()
+                WHERE request_id = %s
+                  AND status::text NOT IN (
+                      'open', 'triaged', 'scheduled', 'awaiting_redispatch',
+                      'en_route', 'arrived', 'closed'
+                  )
+                """,
                 (request_id,),
             )
+            locked = cur.rowcount
+        if locked == 0:
+            conn.rollback()
+            return {"result": "skipped", "reason": f"already in terminal state ({current_status})"}
         conn.commit()
 
     # ── Build context ──────────────────────────────────────────────────────────

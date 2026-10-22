@@ -91,6 +91,35 @@ def test_import_closed_counts_via_start_date(ac, db_conn, building):
     assert row["calls_assigned"] >= 1
 
 
+def test_done_task_counts_without_request_assignee(ac, db_conn, building):
+    """A finished task counts even when the call has no assignee and no start_date."""
+    from datetime import time
+    from zoneinfo import ZoneInfo
+
+    from backend.core.config import settings
+
+    today = today_local()
+    due = datetime.combine(today, time(10, 0), tzinfo=ZoneInfo(settings.TIMEZONE))
+    c = ac(_user(_COORD, "coordinator"))
+    before = next(x for x in c.get(f"/api/v1/analytics/utilization?{_range_q()}").json()["rows"]
+                  if x["employee_id"] == _TECH)
+    rid = db_conn.execute(
+        "INSERT INTO maintenance_request (status, building_id, sector_id, raw_title, time_estimate_bucket) "
+        "VALUES ('open', %(b)s, %(s)s, 'Task only', 'UNDER_30_MIN') RETURNING request_id",
+        {"b": building["building_id"], "s": building["sector_id"]},
+    ).fetchone()["request_id"]
+    insert_task(
+        db_conn, request_id=rid, description="Fait", status="done",
+        assigned_employee_id=_TECH, due_at=due, source="dispatcher",
+        accepted_at=datetime.now(timezone.utc),
+    )
+    row = next(x for x in c.get(f"/api/v1/analytics/utilization?{_range_q()}").json()["rows"]
+               if x["employee_id"] == _TECH)
+    assert row["calls_assigned"] == before["calls_assigned"] + 1
+    assert row["calls_closed"] == before["calls_closed"] + 1
+    assert row["planned_minutes"] == before["planned_minutes"] + 20
+
+
 def test_closed_at_counts(ac, db_conn, building):
     today = today_local()
     now = datetime.now(timezone.utc)

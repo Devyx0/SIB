@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  ApiError, acceptAllTasks, acceptTask, assignTask, createTask, followUpTask, rejectAllTasks, rejectTask,
+  ApiError, acceptAllTasks, acceptTask, assignTask, cancelTask, createTask, followUpTask, rejectAllTasks, rejectTask,
   scheduleTask,
 } from '../../api/client';
 import type { EmployeeLookup, TaskOut } from '../../api/schema.d.ts';
@@ -28,6 +28,8 @@ const EDITABLE = new Set(['queued', 'scheduled']);
 const IN_PROGRESS = new Set(['en_route', 'arrived', 'working']);
 // A follow-up child resolves these for auto-close (backend _FOLLOWED_UP).
 const NEEDS_FOLLOW_UP = new Set(['needs_expertise', 'return_visit']);
+// Machine edges into cancelled (backend task_status_machine).
+const CAN_CANCEL = new Set(['queued', 'scheduled', 'needs_expertise', 'return_visit']);
 // « Créer suivi » (POST /tasks/{id}/follow-up) is also open on done tasks (backend _FOLLOW_UP_PARENTS).
 const CAN_FOLLOW_UP = new Set(['needs_expertise', 'return_visit', 'done']);
 // Task creation opens the call (also from triage_proposal); refused before triage is done.
@@ -166,6 +168,19 @@ export default function TaskEditor({
     if (ok) setDrafts((prev) => { const next = { ...prev }; delete next[task.task_id]; return next; });
   }
 
+  async function cancelTaskRow(task: TaskOut) {
+    await run(
+      {
+        decision: `${t(lang, 'Annuler la tâche', 'Cancel task')} — ${task.description}`,
+        before: statusLabel(lang, task.status),
+        after: statusLabel(lang, 'cancelled'),
+      },
+      async (justification) => {
+        await cancelTask(task.task_id, { justification });
+      },
+    );
+  }
+
   async function addTask() {
     const description = newDesc.trim();
     if (!description) return;
@@ -272,6 +287,17 @@ export default function TaskEditor({
                 data-testid={`task-save-${task.task_id}`}
               >
                 {t(lang, 'Enregistrer', 'Save')}
+              </button>
+            )}
+            {!isClosed && CAN_CANCEL.has(task.status) && (
+              <button
+                type="button"
+                className={styles.discardBtn}
+                disabled={busy}
+                onClick={() => cancelTaskRow(task)}
+                data-testid={`task-cancel-${task.task_id}`}
+              >
+                {t(lang, 'Annuler', 'Cancel')}
               </button>
             )}
             {NEEDS_FOLLOW_UP.has(task.status) && !hasFollowUp(task.task_id) && canCreate && (

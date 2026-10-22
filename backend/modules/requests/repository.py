@@ -7,7 +7,9 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from backend.core.config import settings
 from backend.core.provenance import write_provenance  # noqa: F401  (re-exported for callers)
+from backend.modules.analytics.constants import A_REDISPATCHER_SQL
 
 from .schemas import SORT_SQL, SOURCE_CALENDAR_LABELS
 
@@ -160,8 +162,9 @@ def list_requests(
         conditions.append("mr.source_calendar = %(source_calendar)s")
         params["source_calendar"] = source_calendar
     if redispatch:
-        # « À redispatcher »: closeout outcomes 3/4 → awaiting_redispatch.
-        conditions.append("mr.status::text = 'awaiting_redispatch'")
+        # « À redispatcher »: accepted task in needs_expertise / return_visit
+        # with no accepted follow-up (same predicate as the dashboard chip).
+        conditions.append(A_REDISPATCHER_SQL)
     if has_subcontractor is True:
         conditions.append(
             "mr.subcontractor_name IS NOT NULL AND btrim(mr.subcontractor_name) <> ''"
@@ -1016,13 +1019,38 @@ def list_technician_suggestion_candidates(
                 WHERE v_er.employee_id = e.employee_id AND v_er.closeout_at IS NULL
             ) AS is_en_route,
             COALESCE((
-                SELECT count(*)::int
-                FROM maintenance_request mr_h
-                WHERE mr_h.assigned_employee_id = e.employee_id
-                  AND %(building_id)s IS NOT NULL
-                  AND mr_h.building_id = %(building_id)s
-                  AND mr_h.status = 'closed'
-                  AND mr_h.start_date >= (CURRENT_DATE - INTERVAL '12 months')
+                -- Done tasks at this building in the last 12 months, plus
+                -- pre-task closed calls that never got an accepted task.
+                SELECT count(*)::int FROM (
+                    SELECT t_h.task_id
+                    FROM dispatch_task t_h
+                    JOIN maintenance_request mr_h ON mr_h.request_id = t_h.request_id
+                    WHERE t_h.assigned_employee_id = e.employee_id
+                      AND t_h.accepted_at IS NOT NULL
+                      AND t_h.status::text = 'done'
+                      AND %(building_id)s IS NOT NULL
+                      AND mr_h.building_id = %(building_id)s
+                      AND COALESCE(
+                            (t_h.due_at AT TIME ZONE %(tz)s)::date,
+                            (mr_h.closed_at AT TIME ZONE %(tz)s)::date,
+                            mr_h.start_date
+                          ) >= (CURRENT_DATE - INTERVAL '12 months')
+                    UNION ALL
+                    SELECT mr_h.request_id
+                    FROM maintenance_request mr_h
+                    WHERE mr_h.assigned_employee_id = e.employee_id
+                      AND %(building_id)s IS NOT NULL
+                      AND mr_h.building_id = %(building_id)s
+                      AND mr_h.status = 'closed'
+                      AND mr_h.start_date >= (CURRENT_DATE - INTERVAL '12 months')
+                      AND NOT EXISTS (
+                          SELECT 1 FROM dispatch_task t_x
+                          WHERE t_x.request_id = mr_h.request_id
+                            AND t_x.accepted_at IS NOT NULL
+                            AND t_x.assigned_employee_id = e.employee_id
+                            AND t_x.status::text = 'done'
+                      )
+                ) hist
             ), 0) AS history_count
         FROM employee e
         JOIN employee_role er ON er.employee_id = e.employee_id
@@ -1040,6 +1068,6 @@ def list_technician_suggestion_candidates(
             )
           )
         """,
-        {"building_id": building_id, "sector_id": sector_id},
+        {"building_id": building_id, "sector_id": sector_id, "tz": settings.TIMEZONE},
     ).fetchall()
     return [dict(r) for r in rows]

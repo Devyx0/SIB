@@ -181,6 +181,59 @@ def test_suggestions_en_route_flagged_not_excluded(ac, db_conn, sector_building)
     assert sugg[0]["employee_id"] == free
 
 
+def test_suggestions_history_counts_done_tasks(ac, db_conn, sector_building):
+    """Ranking learns from accepted done tasks, not the call's assignee column."""
+    bid, sid = sector_building["building_id"], sector_building["sector_id"]
+    legacy = _mk_tech(db_conn, initials="HLA", name="Alpha Legacy", sector_id=sid)
+    tasked = _mk_tech(db_conn, initials="HTZ", name="Zulu Tasks", sector_id=sid)
+    db_conn.execute(
+        """
+        INSERT INTO maintenance_request
+          (status, building_id, sector_id, assigned_employee_id, start_date, raw_title)
+        VALUES ('closed', %s, %s, %s, CURRENT_DATE - 30, 'legacy hist')
+        """,
+        [bid, sid, legacy],
+    )
+    for _ in range(3):
+        rid = db_conn.execute(
+            """
+            INSERT INTO maintenance_request (status, building_id, sector_id, raw_title, closed_at)
+            VALUES ('closed', %s, %s, 'task hist', now()) RETURNING request_id
+            """,
+            [bid, sid],
+        ).fetchone()["request_id"]
+        insert_task(
+            db_conn, request_id=rid, description="Fait", status="done",
+            assigned_employee_id=tasked, source="dispatcher",
+            accepted_at=datetime.now(timezone.utc), due_at=datetime.now(timezone.utc),
+        )
+    # An unaccepted proposal must not count as history.
+    prop_rid = db_conn.execute(
+        """
+        INSERT INTO maintenance_request (status, building_id, sector_id, raw_title)
+        VALUES ('open', %s, %s, 'proposal') RETURNING request_id
+        """,
+        [bid, sid],
+    ).fetchone()["request_id"]
+    insert_task(
+        db_conn, request_id=prop_rid, description="Brouillon", source="ai_recommended",
+        accepted_at=None, assigned_employee_id=legacy,
+    )
+    rid = db_conn.execute(
+        """
+        INSERT INTO maintenance_request (status, building_id, sector_id, raw_title)
+        VALUES ('open', %s, %s, 'Suggest') RETURNING request_id
+        """,
+        [bid, sid],
+    ).fetchone()["request_id"]
+    r = ac(_user(_COORD, "coordinator")).get(f"/api/v1/requests/{rid}/technician-suggestions")
+    assert r.status_code == 200, r.text
+    ids = [s["employee_id"] for s in r.json()["suggestions"]]
+    assert ids[0] == tasked
+    assert legacy in ids
+    assert ids.index(tasked) < ids.index(legacy)
+
+
 def test_suggestions_tech_forbidden(ac, db_conn, sector_building):
     bid, sid = sector_building["building_id"], sector_building["sector_id"]
     rid = db_conn.execute(

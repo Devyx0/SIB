@@ -120,6 +120,36 @@ def test_duplicate_creates_no_tasks(db_conn, mk_request):
     assert _tasks(db_conn, peer) == []
 
 
+def test_addition_keeps_peer_unaccepted_proposals(db_conn, mk_request):
+    """Appending onto a peer must not delete proposals the dispatcher has not accepted."""
+    peer = mk_request("triage_proposal")
+    db_conn.execute(
+        "INSERT INTO dispatch_task (request_id, description, source, accepted_at, sort_order) "
+        "VALUES (%s, 'Déjà proposée', 'ai_recommended', NULL, 0), "
+        "       (%s, 'Déjà acceptée', 'ai_recommended', now(), 1)",
+        [peer, peer],
+    )
+    rid = mk_request()
+    parsed = _parsed(
+        verdict="addition", addition_to_request_id=peer, routing_rule="A0",
+        recommended_tasks=[{"description": "Ajout mur"}],
+    )
+    with _cur(db_conn) as cur:
+        _write_result(cur, rid, parsed, "test-model")
+    descs = [r["description"] for r in _tasks(db_conn, peer)]
+    assert descs == ["Déjà proposée", "Déjà acceptée", "Ajout mur"]
+    assert _status(db_conn, peer) == "triage_proposal"
+
+
+def test_triage_skips_open_without_writing(db_conn, mk_request):
+    from backend.triage.service import triage
+
+    rid = mk_request("open")
+    result = triage(db_conn, rid)
+    assert result["result"] == "skipped"
+    assert "open" in result["reason"]
+
+
 def test_addition_puts_proposals_on_peer(db_conn, mk_request):
     peer = mk_request("open")
     rid = mk_request()

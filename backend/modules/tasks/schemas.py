@@ -146,6 +146,11 @@ class ScheduleTaskBody(BaseModel):
         return _localize(v)
 
 
+class CancelTaskBody(BaseModel):
+    """Abandon an accepted task. Required so an all-cancelled close is justified."""
+    justification: JustificationBody
+
+
 class EnRouteBody(BaseModel):
     current_status: Optional[TaskStatusValue] = None  # stale check when sent
     # Location point only if the browser granted it — null otherwise.

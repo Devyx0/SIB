@@ -345,27 +345,40 @@ def test_photo_url_other_tech_403(open_call, ac):
 # ── À redispatcher ─────────────────────────────────────────────────────────────
 
 def test_list_redispatch_membership(ac, db_conn, building):
+    """Calls with an accepted needs_expertise / return_visit task and no child."""
     b = building["building_id"]
-    returned = db_conn.execute(
-        "INSERT INTO maintenance_request (status, building_id, closeout_outcome, closeout_urgent) "
-        "VALUES ('awaiting_redispatch', %s, 'partial_expertise', true) RETURNING request_id", [b]).fetchone()["request_id"]
-    returned_failed = db_conn.execute(
-        "INSERT INTO maintenance_request (status, building_id, closeout_outcome) "
-        "VALUES ('awaiting_redispatch', %s, 'failed') RETURNING request_id", [b]).fetchone()["request_id"]
-    still_assigned = db_conn.execute(
-        "INSERT INTO maintenance_request (status, building_id, assigned_employee_id, closeout_outcome) "
-        "VALUES ('triaged', %s, %s, 'partial_expertise') RETURNING request_id", [b, _TECH]).fetchone()["request_id"]
-    plain_triaged = db_conn.execute(
-        "INSERT INTO maintenance_request (status, building_id) "
-        "VALUES ('triaged', %s) RETURNING request_id", [b]).fetchone()["request_id"]
+    now = datetime.now(timezone.utc)
+
+    def _call(status="open", **extra):
+        cols = ", ".join(["status", "building_id", *extra])
+        vals = ", ".join(["%(status)s", "%(b)s", *(f"%({k})s" for k in extra)])
+        return db_conn.execute(
+            f"INSERT INTO maintenance_request ({cols}) VALUES ({vals}) RETURNING request_id",
+            {"status": status, "b": b, **extra},
+        ).fetchone()["request_id"]
+
+    returned = _call(closeout_urgent=True)
+    insert_task(db_conn, request_id=returned, description="Expertise", status="needs_expertise",
+                source="dispatcher", accepted_at=now)
+    returned_failed = _call()
+    insert_task(db_conn, request_id=returned_failed, description="Retour", status="return_visit",
+                source="dispatcher", accepted_at=now)
+    followed = _call()
+    parent = insert_task(db_conn, request_id=followed, description="Déjà suivi", status="needs_expertise",
+                         source="dispatcher", accepted_at=now)
+    insert_task(db_conn, request_id=followed, description="Enfant", status="queued",
+                source="follow_up", accepted_at=now, parent_task_id=parent["task_id"])
+    legacy = _call(status="awaiting_redispatch")
+    plain = _call(status="open")
 
     c = ac(_user(_COORD, "coordinator"))
-    r = c.get("/api/v1/requests?redispatch=true&limit=200")
+    r = c.get(f"/api/v1/requests?redispatch=true&building_id={b}&limit=200")
     assert r.status_code == 200
     ids = [i["request_id"] for i in r.json()["items"]]
     assert returned in ids
     assert returned_failed in ids
-    assert still_assigned not in ids
-    assert plain_triaged not in ids
+    assert followed not in ids
+    assert legacy not in ids
+    assert plain not in ids
     urgent_flags = {i["request_id"]: i["closeout_urgent"] for i in r.json()["items"]}
     assert urgent_flags[returned] is True

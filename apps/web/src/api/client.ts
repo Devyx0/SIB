@@ -209,6 +209,11 @@ export function scheduleTask(taskId: number, body: { due_at: string | null; just
   return apiPost(`/api/v1/tasks/${taskId}/schedule`, body);
 }
 
+/** Abandon a queued / scheduled / needs_expertise / return_visit task. May close the call. */
+export function cancelTask(taskId: number, body: { justification: Justification }): Promise<TaskOut> {
+  return apiPost(`/api/v1/tasks/${taskId}/cancel`, body);
+}
+
 export function taskEnRoute(taskId: number, body: { current_status: string; lat: number | null; lng: number | null }): Promise<TaskOut> {
   return apiPost(`/api/v1/tasks/${taskId}/en-route`, body);
 }

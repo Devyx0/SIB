@@ -1,11 +1,13 @@
 """GET /api/v1/analytics/dashboard — coord/dir only, real aggregates."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.core.config import settings
 from backend.core.db import get_db_conn
 from backend.core.security import CurrentUser, get_current_user
 from backend.core.utils import today_local
@@ -22,11 +24,16 @@ def _user(employee_id: int, *roles: str) -> CurrentUser:
     return CurrentUser(employee_id=employee_id, roles=frozenset(roles))
 
 
-def _task_for(db_conn, request_id: int) -> int:
-    """Visits hang off a task (request_visit.task_id is required on new rows)."""
-    return insert_task(db_conn, request_id=request_id, description="Visite",
-                       status="done", assigned_employee_id=_TECH,
-                       source="dispatcher", accepted_at=datetime.now(timezone.utc))["task_id"]
+def _due(day):
+    return datetime.combine(day, time(10, 0), tzinfo=ZoneInfo(settings.TIMEZONE))
+
+
+def _open_request(db_conn, building) -> int:
+    return db_conn.execute(
+        "INSERT INTO maintenance_request (status, building_id, sector_id, raw_title) "
+        "VALUES ('open', %(b)s, %(s)s, 'Dash task') RETURNING request_id",
+        {"b": building["building_id"], "s": building["sector_id"]},
+    ).fetchone()["request_id"]
 
 
 @pytest.fixture
@@ -60,11 +67,11 @@ def test_dashboard_200_coordinator_shape(ac, db_conn, building, monkeypatch):
     from backend.core import config
     monkeypatch.setattr(config.settings, "WEATHER_ESCALATION_ENABLED", False)
     today = today_local()
-    db_conn.execute(
-        "INSERT INTO maintenance_request (status, building_id, sector_id, assigned_employee_id, "
-        "raw_title, start_date, urgency_tier) "
-        "VALUES ('scheduled', %(b)s, %(s)s, %(e)s, 'Dash today', %(d)s, 'URGENT')",
-        {"b": building["building_id"], "s": building["sector_id"], "e": _TECH, "d": today},
+    rid = _open_request(db_conn, building)
+    insert_task(
+        db_conn, request_id=rid, description="Dash today", status="scheduled",
+        assigned_employee_id=_TECH, due_at=_due(today), source="dispatcher",
+        accepted_at=datetime.now(timezone.utc),
     )
     r = ac(_user(_COORD, "coordinator")).get("/api/v1/analytics/dashboard")
     assert r.status_code == 200, r.text
@@ -98,7 +105,7 @@ def test_dashboard_queue_links(ac):
     r = ac(_user(_COORD, "coordinator")).get("/api/v1/analytics/dashboard")
     body = r.json()
     assert body["queue_counts"]["a_router_link"] == "/board?source_calendar=unrouted"
-    assert body["queue_counts"]["a_redispatcher_link"] == "/board?redispatch=1"
+    assert body["queue_counts"]["a_redispatcher_link"] == "/tasks?redispatch=1"
 
 
 def test_dashboard_territory_board_links(ac, db_conn, building):
@@ -130,53 +137,119 @@ def test_dashboard_active_includes_en_route(ac, db_conn, building):
     assert row["active"] >= 1
 
 
-def test_load_today_en_route_and_minutes_scoped_to_start_date(ac, db_conn, building):
-    """Board + dashboard share start_date; minutes = closed duration + open elapsed."""
+def _load_row(body: dict) -> dict:
+    return next(
+        (x for x in body["load_today"] if x["employee_id"] == _TECH),
+        {"assigned_count": 0, "en_route_count": 0, "minutes_worked": 0},
+    )
+
+
+def _status_count(body: dict, status: str) -> int:
+    return next((x["count"] for x in body["today_by_status"] if x["status"] == status), 0)
+
+
+def test_today_counts_accepted_tasks_not_request_columns(ac, db_conn, building):
+    """start_date / request status do not move today's board; an accepted task does."""
+    c = ac(_user(_COORD, "coordinator"))
     today = today_local()
-    yesterday = today - timedelta(days=1)
+    before = _status_count(c.get("/api/v1/analytics/dashboard").json(), "scheduled")
     db_conn.execute(
         "INSERT INTO maintenance_request (status, building_id, sector_id, assigned_employee_id, "
         "raw_title, start_date) "
-        "VALUES ('en_route', %(b)s, %(s)s, %(e)s, 'Old en route', %(d)s)",
-        {"b": building["building_id"], "s": building["sector_id"], "e": _TECH, "d": yesterday},
-    )
-    rid = db_conn.execute(
-        "INSERT INTO maintenance_request (status, building_id, sector_id, assigned_employee_id, "
-        "raw_title, start_date) "
-        "VALUES ('triaged', %(b)s, %(s)s, %(e)s, 'Load today mins', %(d)s) "
-        "RETURNING request_id",
+        "VALUES ('scheduled', %(b)s, %(s)s, %(e)s, 'Request only', %(d)s)",
         {"b": building["building_id"], "s": building["sector_id"], "e": _TECH, "d": today},
-    ).fetchone()["request_id"]
+    )
+    assert _status_count(c.get("/api/v1/analytics/dashboard").json(), "scheduled") == before
+    rid = _open_request(db_conn, building)
+    insert_task(
+        db_conn, request_id=rid, description="Due today", status="scheduled",
+        assigned_employee_id=_TECH, due_at=_due(today), source="dispatcher",
+        accepted_at=datetime.now(timezone.utc),
+    )
+    assert _status_count(c.get("/api/v1/analytics/dashboard").json(), "scheduled") == before + 1
+    insert_task(
+        db_conn, request_id=rid, description="Proposal", status="scheduled",
+        due_at=_due(today), source="ai_recommended", accepted_at=None,
+    )
+    assert _status_count(c.get("/api/v1/analytics/dashboard").json(), "scheduled") == before + 1
+
+
+def test_redispatch_count_is_unfollowed_tasks(ac, db_conn, building):
+    c = ac(_user(_COORD, "coordinator"))
+    before = c.get("/api/v1/analytics/dashboard").json()["queue_counts"]["a_redispatcher"]
+    rid = _open_request(db_conn, building)
     now = datetime.now(timezone.utc)
+    parent = insert_task(
+        db_conn, request_id=rid, description="Expertise", status="needs_expertise",
+        source="dispatcher", accepted_at=now,
+    )
+    assert c.get("/api/v1/analytics/dashboard").json()["queue_counts"]["a_redispatcher"] == before + 1
+    insert_task(
+        db_conn, request_id=rid, description="Suivi", status="queued",
+        source="follow_up", accepted_at=now, parent_task_id=parent["task_id"],
+    )
+    assert c.get("/api/v1/analytics/dashboard").json()["queue_counts"]["a_redispatcher"] == before
+    db_conn.execute(
+        "INSERT INTO maintenance_request (status, building_id, sector_id, raw_title) "
+        "VALUES ('awaiting_redispatch', %(b)s, %(s)s, 'Legacy chip')",
+        {"b": building["building_id"], "s": building["sector_id"]},
+    )
+    body = c.get("/api/v1/analytics/dashboard").json()
+    assert body["queue_counts"]["a_redispatcher"] == before
+    assert body["queue_counts"]["a_redispatcher_link"] == "/tasks?redispatch=1"
+
+
+def test_load_today_en_route_and_minutes_scoped_to_task_due(ac, db_conn, building):
+    """En route and assigned counts follow the task's due day, not the call."""
+    today = today_local()
+    yesterday = today - timedelta(days=1)
+    now = datetime.now(timezone.utc)
+    c = ac(_user(_COORD, "coordinator"))
+    before = _load_row(c.get("/api/v1/analytics/dashboard").json())
+
+    y_rid = _open_request(db_conn, building)
+    insert_task(
+        db_conn, request_id=y_rid, description="Yesterday", status="en_route",
+        assigned_employee_id=_TECH, due_at=_due(yesterday), source="dispatcher",
+        accepted_at=now,
+    )
+    rid = _open_request(db_conn, building)
+    tid = insert_task(
+        db_conn, request_id=rid, description="Assigned today", status="scheduled",
+        assigned_employee_id=_TECH, due_at=_due(today), source="dispatcher",
+        accepted_at=now,
+    )["task_id"]
     db_conn.execute(
         "INSERT INTO request_visit (request_id, task_id, employee_id, en_route_at, closeout_at, "
         "duration_minutes, outcome) "
         "VALUES (%(r)s, %(t)s, %(e)s, %(era)s, %(ca)s, 45, 'complete')",
-        {
-            "r": rid, "t": _task_for(db_conn, rid), "e": _TECH,
-            "era": now - timedelta(hours=2),
-            "ca": now - timedelta(hours=1, minutes=15),
-        },
+        {"r": rid, "t": tid, "e": _TECH, "era": now - timedelta(hours=2),
+         "ca": now - timedelta(hours=1, minutes=15)},
     )
-    open_rid = db_conn.execute(
-        "INSERT INTO maintenance_request (status, building_id, sector_id, assigned_employee_id, "
-        "raw_title, start_date) "
-        "VALUES ('en_route', %(b)s, %(s)s, %(e)s, 'Open visit', %(d)s) "
-        "RETURNING request_id",
-        {"b": building["building_id"], "s": building["sector_id"], "e": _TECH, "d": today},
-    ).fetchone()["request_id"]
+    open_rid = _open_request(db_conn, building)
+    open_tid = insert_task(
+        db_conn, request_id=open_rid, description="En route today", status="en_route",
+        assigned_employee_id=_TECH, due_at=_due(today), source="dispatcher",
+        accepted_at=now,
+    )["task_id"]
     db_conn.execute(
         "INSERT INTO request_visit (request_id, task_id, employee_id, en_route_at) "
         "VALUES (%(r)s, %(t)s, %(e)s, %(era)s)",
-        {"r": open_rid, "t": _task_for(db_conn, open_rid), "e": _TECH, "era": now - timedelta(minutes=12)},
+        {"r": open_rid, "t": open_tid, "e": _TECH, "era": now - timedelta(minutes=12)},
+    )
+    db_conn.execute(
+        "INSERT INTO maintenance_request (status, building_id, sector_id, assigned_employee_id, "
+        "raw_title, start_date) "
+        "VALUES ('en_route', %(b)s, %(s)s, %(e)s, 'Request en route', %(d)s)",
+        {"b": building["building_id"], "s": building["sector_id"], "e": _TECH, "d": today},
     )
 
-    r = ac(_user(_COORD, "coordinator")).get("/api/v1/analytics/dashboard")
+    r = c.get("/api/v1/analytics/dashboard")
     assert r.status_code == 200, r.text
-    row = next(x for x in r.json()["load_today"] if x["employee_id"] == _TECH)
-    assert row["en_route_count"] >= 1
-    assert row["assigned_count"] >= 2
-    assert row["minutes_worked"] >= 45 + 12
+    row = _load_row(r.json())
+    assert row["en_route_count"] == before["en_route_count"] + 1
+    assert row["assigned_count"] == before["assigned_count"] + 2
+    assert row["minutes_worked"] >= before["minutes_worked"] + 45 + 12
 
 
 def test_dashboard_weather_null_when_flag_off(ac, monkeypatch):

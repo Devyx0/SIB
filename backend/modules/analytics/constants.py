@@ -24,4 +24,28 @@ A_ROUTER_SQL = (
     " AND (mr.submission_date >= NOW() - INTERVAL '90 days' OR mr.submission_date IS NULL)"
 )
 
-A_REDISPATCHER_SQL = "mr.status::text = 'awaiting_redispatch'"
+# Accepted task still waiting on a coordinator: expertise or return visit, and no
+# accepted child yet. Matches the task board « À redispatcher » filter
+# (needs_expertise / return_visit, has_followup = false). `mr` is the call.
+A_REDISPATCHER_SQL = (
+    "EXISTS ("
+    " SELECT 1 FROM dispatch_task t"
+    " WHERE t.request_id = mr.request_id"
+    " AND t.accepted_at IS NOT NULL"
+    " AND t.status::text IN ('needs_expertise', 'return_visit')"
+    " AND NOT EXISTS ("
+    "  SELECT 1 FROM dispatch_task c"
+    "  WHERE c.parent_task_id = t.task_id AND c.accepted_at IS NOT NULL"
+    " )"
+    ")"
+)
+
+# Same predicate, counted from the task (the board lists tasks, not calls).
+REDISPATCH_TASK_SQL = (
+    "t.accepted_at IS NOT NULL"
+    " AND t.status::text IN ('needs_expertise', 'return_visit')"
+    " AND NOT EXISTS ("
+    "  SELECT 1 FROM dispatch_task c"
+    "  WHERE c.parent_task_id = t.task_id AND c.accepted_at IS NOT NULL"
+    " )"
+)

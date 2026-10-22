@@ -494,8 +494,13 @@ def action_trigger_triage(conn, request_id: int) -> None:
     status = row["status"]
     if status == "closed":
         raise RequestClosedError()
-    if status in ("triaged", "scheduled", "awaiting_redispatch", "triage_proposal",
-                  "en_route", "arrived"):
+    # Post-proposal fieldwork lives on tasks. `open` replaced scheduled /
+    # en_route / arrived; re-triage would pull the call out from under them.
+    # intake_received, triage_failed, and a stale triage_pending stay allowed.
+    # triage_clarify stays blocked until a human resolves the address/lease.
+    # triage_proposal stays blocked: accept/reject, don't run the model again.
+    if status in ("open", "triaged", "scheduled", "awaiting_redispatch",
+                  "triage_proposal", "en_route", "arrived"):
         raise InvalidTransition(f"Cannot trigger triage: current status is '{status}'")
     if status == "triage_clarify":
         raise ConflictError("Triage bloqué — résoudre l'ambiguïté d'adresse d'abord")
