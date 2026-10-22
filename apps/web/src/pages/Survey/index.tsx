@@ -7,6 +7,7 @@ import { DEMO_SURVEY, isDemoSurvey } from '../../dev/demoSurvey';
 import type { Lang } from '../../i18n';
 import { t } from '../../i18n';
 import styles from './Survey.module.css';
+import { Avatar } from '../../components/Avatar';
 
 type Ans = boolean | null;
 type Question = 'rating' | 'polite' | 'solved';
@@ -280,7 +281,11 @@ export default function SurveyPage({ lang, onToggleLang }: { lang: Lang; onToggl
                 </svg>
                 <div className={styles.visitText}>
                   {survey.technician_name && (
-                    <span>{t(lang, 'Technicien', 'Technician')} : <strong>{survey.technician_name}</strong></span>
+                    <span className={styles.visitTech}>
+                      {t(lang, 'Technicien', 'Technician')} :
+                      <Avatar name={survey.technician_name} size="xs" />
+                      <strong>{survey.technician_name}</strong>
+                    </span>
                   )}
                   {survey.building_address && <span className={styles.visitMeta}>{survey.building_address}</span>}
                 </div>

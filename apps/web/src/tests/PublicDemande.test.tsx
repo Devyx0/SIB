@@ -42,7 +42,7 @@ async function toStep2() {
 describe('PublicDemande', () => {
   beforeEach(() => {
     lookup.mockReset().mockResolvedValue(profile);
-    submit.mockReset().mockResolvedValue({ request_id: 4821 });
+    submit.mockReset().mockResolvedValue({ request_id: 4821, asnu: 'A-4821' });
     globalThis.URL.createObjectURL = vi.fn(() => `blob:${Math.random()}`);
     globalThis.URL.revokeObjectURL = vi.fn();
   });
@@ -84,6 +84,6 @@ describe('PublicDemande', () => {
       problem: "De l'eau sous l'évier", symptome: 'Fuite', composante: 'Siphon', emplacement: 'Cuisine',
       photos: [{ mime: 'image/jpeg', data_base64: 'eA==' }],
     });
-    expect(await screen.findByTestId('public-demande-done')).toHaveTextContent('#4821');
+    expect(await screen.findByTestId('public-demande-done')).toHaveTextContent('A-4821');
   });
 });

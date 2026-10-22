@@ -123,25 +123,28 @@ describe('NouvelAppelModal', () => {
     await selectBuilding();
     await waitFor(() => expect(screen.getByTestId('unit-select')).toBeTruthy());
     await userEvent.selectOptions(screen.getByTestId('unit-select'), '100');
-    expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByTestId('block-reasons').textContent).toMatch(/téléphone|phone/i);
+    await userEvent.click(screen.getByTestId('submit-btn'));
+    expect(screen.getByTestId('error-msg').textContent).toMatch(/téléphone|phone/i);
+    expect(screen.queryByTestId('block-reasons')).toBeNull();
     expect(mockCreateManualRequest).not.toHaveBeenCalled();
   });
 
-  it('keeps submit disabled until unit + taxonomy are filled and shows reasons', async () => {
+  it('names the missing unit + taxonomy fields on submit, then creates once filled', async () => {
     wrap(<NouvelAppelModal open onClose={vi.fn()} />);
     await userEvent.type(screen.getByTestId('caller-name'), 'Jean');
     await userEvent.type(screen.getByTestId('phone-1'), '418-555-0101');
     await userEvent.type(screen.getByTestId('problem'), 'Fuite');
     await selectBuilding();
-    expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByTestId('block-reasons').textContent).toMatch(/unité|unit/i);
+    await userEvent.click(screen.getByTestId('submit-btn'));
+    expect(screen.getByTestId('error-msg').textContent).toMatch(/unité|unit/i);
     await waitFor(() => expect(screen.getByTestId('unit-select')).toBeTruthy());
     await userEvent.selectOptions(screen.getByTestId('unit-select'), '100');
     await userEvent.selectOptions(screen.getByTestId('element'), "Infiltration d'eau");
     await userEvent.type(screen.getByTestId('symptome'), 'Fuite');
     await userEvent.type(screen.getByTestId('composante'), 'Robinet');
-    expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(screen.getByTestId('submit-btn'));
+    expect(screen.getByTestId('error-msg').textContent).toMatch(/taxonomie|taxonomy/i);
+    expect(mockCreateManualRequest).not.toHaveBeenCalled();
     await userEvent.type(screen.getByTestId('emplacement'), 'Cuisine');
     expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(false);
   });
@@ -162,8 +165,8 @@ describe('NouvelAppelModal', () => {
     const radios = screen.getByTestId('access-group').querySelectorAll('input[type="radio"]');
     await userEvent.click(radios[1]); // yes_instructions
     await waitFor(() => expect(screen.getByTestId('access-details')).toBeTruthy());
-    expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByTestId('block-reasons').textContent).toMatch(/accès|access/i);
+    await userEvent.click(screen.getByTestId('submit-btn'));
+    expect(screen.getByTestId('error-msg').textContent).toMatch(/accès|access/i);
     expect(mockCreateManualRequest).not.toHaveBeenCalled();
   });
 
@@ -196,7 +199,7 @@ describe('NouvelAppelModal', () => {
       },
     });
     expect((screen.getByTestId('caller-name') as HTMLInputElement).value).toBe('Marie Locataire');
-    expect((screen.getByTestId('phone-1') as HTMLInputElement).value).toBe('418-555-9999');
+    expect((screen.getByTestId('phone-1') as HTMLInputElement).value).toBe('418 555-9999');
     expect((screen.getByTestId('caller-email') as HTMLInputElement).value).toBe('marie@example.com');
     expect(screen.getByTestId('animals-group')).toBeTruthy();
     expect(screen.queryByTestId('tenant-select')).toBeNull();
@@ -275,7 +278,7 @@ describe('NouvelAppelModal', () => {
     expect((screen.getByTestId('caller-email') as HTMLInputElement).value).toBe('');
     await userEvent.selectOptions(screen.getByTestId('tenant-select'), '2');
     expect((screen.getByTestId('caller-name') as HTMLInputElement).value).toBe('Bob');
-    expect((screen.getByTestId('phone-1') as HTMLInputElement).value).toBe('418-555-0002');
+    expect((screen.getByTestId('phone-1') as HTMLInputElement).value).toBe('418 555-0002');
     expect((screen.getByTestId('caller-email') as HTMLInputElement).value).toBe('b@example.com');
   });
 
@@ -303,7 +306,7 @@ describe('NouvelAppelModal', () => {
     await waitFor(() => expect(mockFetchUnitContext).toHaveBeenCalledWith(100));
     expect(screen.getByTestId('animals-group')).toBeTruthy();
     expect((screen.getByTestId('caller-name') as HTMLInputElement).value).toBe('Jean Dropdown');
-    expect((screen.getByTestId('phone-1') as HTMLInputElement).value).toBe('418-555-1111');
+    expect((screen.getByTestId('phone-1') as HTMLInputElement).value).toBe('418 555-1111');
   });
 
   it('hides pets when lease does not allow them', async () => {
@@ -434,5 +437,18 @@ describe('NouvelAppelModal', () => {
     await selectBuilding();
     await waitFor(() => expect(screen.getByTestId('no-units-msg')).toBeTruthy());
     expect(screen.queryByTestId('unit-select')).toBeNull();
+  });
+});
+
+describe('NouvelAppelModal — technician note', () => {
+  it('shows « Information importante pour le technicien » right under the problem, without a warning icon', () => {
+    wrap(<NouvelAppelModal open onClose={vi.fn()} />);
+    const note = screen.getByLabelText('Information importante pour le technicien');
+    expect(note.tagName).toBe('TEXTAREA');
+    const problem = screen.getByTestId('problem');
+    // Same section, straight after the description field.
+    expect(problem.closest('div')?.nextElementSibling?.contains(note)).toBe(true);
+    expect(screen.queryByText('⚠')).toBeNull();
+    expect(screen.queryByText(/ATTENTION/)).toBeNull();
   });
 });

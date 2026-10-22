@@ -149,11 +149,17 @@ describe('/tasks board', () => {
     expect(p.start_date).toBeUndefined();
   });
 
-  it('clicking a task opens its call in the detail panel', async () => {
-    mocks.fetchTasks.mockResolvedValue({ total: 1, items: [taskRow(1)] });
+  it('clicking a task opens its task card; « Voir l\'appel de service » opens the call', async () => {
+    mocks.fetchTasks.mockResolvedValue({ total: 1, items: [taskRow(1, { description: 'Tâche 1\nRemplacer le joint du siphon' })] });
     wrap('tasks', '/tasks?start_date=2026-09-01&end_date=2026-09-25');
     await userEvent.click(await screen.findByText('Tâche 1'));
+    const card = await screen.findByTestId('task-card');
+    expect(within(card).getByRole('heading', { level: 2 })).toHaveTextContent('Tâche 1');
+    expect(within(card).getByTestId('task-card-desc')).toHaveTextContent('Remplacer le joint du siphon');
+    expect(mocks.fetchRequest).not.toHaveBeenCalled();
+    await userEvent.click(within(card).getByTestId('open-call'));
     await waitFor(() => expect(mocks.fetchRequest).toHaveBeenCalledWith(101));
+    expect(screen.queryByTestId('task-card')).toBeNull();
   });
 
   it('search filters task rows client-side', async () => {

@@ -197,3 +197,9 @@
     grid-template-columns: repeat(7, minmax(160px, 1fr));
   }
 }
+
+.taskWho {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}

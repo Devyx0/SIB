@@ -9,10 +9,13 @@ import {
 import type { EmployeeLookup, TaskOut } from '../../api/schema.d.ts';
 import { useJustify, type JustifyRequest } from '../../components/Justification';
 import { roleLabel, statusLabel, t, type Lang } from '../../i18n';
-import { dueAtFromDay, dueDay } from '../../lib/taskDates';
+import { dueAtFromSlot, dueSlot, fmtSlot } from '../../lib/taskDates';
 import { urgencyOptions } from '../../lib/urgencyLevels';
 import Select from '../../components/Select';
 import styles from './DetailPanel.module.css';
+import { Avatar, initialsOf } from '../../components/Avatar';
+import { joinTask, splitTask } from '../../lib/taskText';
+import DueDateTime from '../../components/DueDateTime';
 
 interface Props {
   lang: Lang;
@@ -84,9 +87,8 @@ function TechSuggestList({
   if (compact) {
     return (
       <div className={styles.suggestCompact} data-testid={testId}>
-        <span className={styles.suggestCompactLabel}>{t(lang, 'Suggéré :', 'Suggested:')}</span>
+        <span className={styles.suggestCompactLabel}>{t(lang, 'Technicien recommandé :', 'Recommended technician:')}</span>
         {suggestions.map((s) => {
-          const first = s.name.split(' ')[0];
           const full = `${s.name}${s.is_en_route ? ` (${t(lang, 'en route', 'en route')})` : ''} — ${s.why}`;
           return (
             <button
@@ -100,8 +102,8 @@ function TechSuggestList({
               data-testid={`${testId}-${s.employee_id}`}
               onClick={() => onPick(s.employee_id)}
             >
-              <span className={styles.suggestChipInit}>{s.initials || first.slice(0, 2).toUpperCase()}</span>
-              {first}
+              <span className={styles.suggestChipInit}>{initialsOf(s.name)}</span>
+              {s.name}
               {s.is_en_route && <span className={styles.suggestChipDot} aria-hidden="true" />}
             </button>
           );
@@ -125,7 +127,7 @@ function TechSuggestList({
               onClick={() => onPick(s.employee_id)}
             >
               <span className={styles.suggestName}>
-                {s.initials ? `${s.initials} — ` : ''}{s.name}
+                <Avatar name={s.name} size="sm" />{s.name}
                 {s.is_en_route && (
                   <span className={styles.suggestEnRoute} data-testid="suggest-en-route">
                     {t(lang, 'En route', 'En route')}
@@ -147,7 +149,11 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
   const qc = useQueryClient();
   const justify = useJustify();
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
-  const [newDesc, setNewDesc] = useState('');
+  // New task: a short name plus an optional description (saved as one text, name first).
+  const [newName, setNewName] = useState('');
+  const [newDetails, setNewDetails] = useState('');
+  const newDesc = joinTask(newName, newDetails);
+  const setNewDesc = (text: string) => { const x = splitTask(text); setNewName(x.name); setNewDetails(x.details); };
   const [newAssignee, setNewAssignee] = useState<number | null>(null);
   const [newDay, setNewDay] = useState('');
   const [parent, setParent] = useState<TaskOut | null>(null);
@@ -223,7 +229,7 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
       subcontractor_name: d.subcontractor_name !== undefined ? d.subcontractor_name : p.subcontractor_name,
       urgency_tier: d.urgency_tier !== undefined ? d.urgency_tier : p.urgency_tier,
       assignee: d.assignee !== undefined ? d.assignee : p.assigned_employee_id,
-      day: d.day !== undefined ? d.day : (dueDay(p.due_at) ?? ''),
+      day: d.day !== undefined ? d.day : (dueSlot(p.due_at) ?? ''),
     };
   }
   function setProposal(taskId: number, patch: ProposalDraft) {
@@ -244,8 +250,8 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
     if ((v.assignee ?? null) !== (p.assigned_employee_id ?? null)) {
       body.assigned_employee_id = v.assignee;
     }
-    if ((v.day || null) !== (dueDay(p.due_at) ?? null)) {
-      body.due_at = v.day ? dueAtFromDay(v.day) : null;
+    if ((v.day || null) !== (dueSlot(p.due_at) ?? null)) {
+      body.due_at = v.day ? dueAtFromSlot(v.day) : null;
     }
     return body;
   }
@@ -271,15 +277,15 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
 
   function taskFieldChanges(task: TaskOut, d: Draft): TaskPendingRow[] {
     const assigneeChanged = d.assignee !== undefined && d.assignee !== task.assigned_employee_id;
-    const dayChanged = d.day !== undefined && (d.day || null) !== dueDay(task.due_at);
+    const dayChanged = d.day !== undefined && (d.day || null) !== dueSlot(task.due_at);
     const urgencyChanged = d.urgency !== undefined && (d.urgency ?? null) !== (task.urgency_tier ?? null);
     const subChanged = d.sub !== undefined && (d.sub ?? null) !== (task.subcontractor_name ?? null);
-    const prefix = `${t(lang, 'Tâche', 'Task')} — ${task.description}`;
+    const prefix = `${t(lang, 'Tâche', 'Task')} — ${splitTask(task.description).name}`;
     return [
       ...(assigneeChanged ? [{ label: `${prefix} · ${t(lang, 'Assignation', 'Assignment')}`,
         before: nameOf(task.assigned_employee_id), after: nameOf(d.assignee!)}] : []),
       ...(dayChanged ? [{ label: `${prefix} · ${t(lang, 'Date prévue', 'Due date')}`,
-        before: dueDay(task.due_at) ?? NONE, after: d.day || NONE }] : []),
+        before: fmtSlot(dueSlot(task.due_at)) || NONE, after: fmtSlot(d.day) || NONE }] : []),
       ...(urgencyChanged ? [{ label: `${prefix} · ${t(lang, 'Urgence', 'Urgency')}`,
         before: task.urgency_tier ?? NONE, after: d.urgency ?? NONE }] : []),
       ...(subChanged ? [{ label: `${prefix} · ${t(lang, 'Sous-traitant', 'Subcontractor')}`,
@@ -304,7 +310,7 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
       for (const task of accepted) {
         const d = drafts[task.task_id] ?? {};
         const assigneeChanged = d.assignee !== undefined && d.assignee !== task.assigned_employee_id;
-        const dayChanged = d.day !== undefined && (d.day || null) !== dueDay(task.due_at);
+        const dayChanged = d.day !== undefined && (d.day || null) !== dueSlot(task.due_at);
         const urgencyChanged = d.urgency !== undefined && (d.urgency ?? null) !== (task.urgency_tier ?? null);
         const subChanged = d.sub !== undefined && (d.sub ?? null) !== (task.subcontractor_name ?? null);
         if (!assigneeChanged && !dayChanged && !urgencyChanged && !subChanged) continue;
@@ -312,7 +318,7 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
           await assignTask(task.task_id, { assigned_employee_id: d.assignee!, justification });
         }
         if (dayChanged) {
-          await scheduleTask(task.task_id, { due_at: d.day ? dueAtFromDay(d.day) : null, justification });
+          await scheduleTask(task.task_id, { due_at: d.day ? dueAtFromSlot(d.day) : null, justification });
         }
         if (urgencyChanged || subChanged) {
           await updateTask(task.task_id, {
@@ -329,7 +335,7 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
   async function cancelTaskRow(task: TaskOut) {
     await run(
       {
-        decision: `${t(lang, 'Annuler la tâche', 'Cancel task')} — ${task.description}`,
+        decision: `${t(lang, 'Annuler la tâche', 'Cancel task')} — ${splitTask(task.description).name}`,
         before: statusLabel(lang, task.status),
         after: statusLabel(lang, 'cancelled'),
       },
@@ -341,16 +347,16 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
 
   async function addTask() {
     const description = newDesc.trim();
-    if (!description) return;
+    if (!newName.trim()) return;
     const ok = await run(
       {
         decision: parent
-          ? `${t(lang, 'Redispatcher', 'Redispatch')} — ${parent.description}`
+          ? `${t(lang, 'Redispatcher', 'Redispatch')} — ${splitTask(parent.description).name}`
           : t(lang, 'Nouvelle tâche', 'New task'),
         changes: [
           { label: t(lang, 'Tâche', 'Task'), before: NONE, after: description },
           { label: t(lang, 'Assignation', 'Assignment'), before: NONE, after: nameOf(newAssignee) },
-          { label: t(lang, 'Date prévue', 'Due date'), before: NONE, after: newDay || NONE },
+          { label: t(lang, 'Date prévue', 'Due date'), before: NONE, after: fmtSlot(newDay) || NONE },
         ],
       },
       async (justification) => {
@@ -358,7 +364,7 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
           request_id: requestId,
           description,
           assigned_employee_id: newAssignee,
-          due_at: newDay ? dueAtFromDay(newDay) : null,
+          due_at: newDay ? dueAtFromSlot(newDay) : null,
           parent_task_id: parent?.task_id ?? null,
           justification,
         });
@@ -403,7 +409,7 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
         const d = drafts[task.task_id] ?? {};
         const editable = !isClosed && EDITABLE.has(task.status);
         const assignee = d.assignee !== undefined ? d.assignee : task.assigned_employee_id;
-        const day = d.day !== undefined ? d.day : (dueDay(task.due_at) ?? '');
+        const day = d.day !== undefined ? d.day : (dueSlot(task.due_at) ?? '');
         const urgency = d.urgency !== undefined ? d.urgency : task.urgency_tier;
         const dirty = taskFieldChanges(task, d).length > 0;
         const setDraft = (patch: Draft) =>
@@ -415,7 +421,13 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
             data-testid={`task-${task.task_id}`}
           >
             <span className={styles.editLabel}>
-              {task.description} · {statusLabel(lang, task.status)}
+              <span className={styles.taskRowName} title={splitTask(task.description).name}>{splitTask(task.description).name}</span>
+              {' · '}{statusLabel(lang, task.status)}
+              {splitTask(task.description).details && (
+                <span className={styles.taskRowDetails} title={splitTask(task.description).details}>
+                  {splitTask(task.description).details}
+                </span>
+              )}
             </span>
             <Select
               className={styles.editInput}
@@ -423,6 +435,9 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
               disabled={!editable || busy}
               aria-label={t(lang, 'Assigné à', 'Assigned to')}
               data-testid={`task-assign-${task.task_id}`}
+              searchable avatars
+              searchPlaceholder={t(lang, 'Rechercher un employé…', 'Search employees…')}
+              noResultsText={t(lang, 'Aucun employé trouvé', 'No employee found')}
               onChange={(e) => setDraft({ assignee: e.target.value === '' ? null : Number(e.target.value) })}
             >
               {assigneeOptions(task.assigned_employee_id)}
@@ -438,14 +453,13 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
                 onPick={(employeeId) => setDraft({ assignee: employeeId })}
               />
             )}
-            <input
-              type="date"
-              className={styles.editInput}
+            <DueDateTime
+              lang={lang}
+              inputClassName={styles.editInput}
               value={day}
               disabled={!editable || busy}
-              aria-label={t(lang, 'Date prévue', 'Due date')}
-              data-testid={`task-due-${task.task_id}`}
-              onChange={(e) => setDraft({ day: e.target.value })}
+              testId={`task-due-${task.task_id}`}
+              onChange={(slot) => setDraft({ day: slot })}
             />
             <label className={styles.editLabel}>{t(lang, 'Urgence', 'Urgency')}</label>
             <Select
@@ -538,6 +552,9 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
                 value={String(v.assignee ?? '')}
                 disabled={busy}
                 data-testid={`proposal-assign-${p.task_id}`}
+                searchable avatars
+                searchPlaceholder={t(lang, 'Rechercher un employé…', 'Search employees…')}
+                noResultsText={t(lang, 'Aucun employé trouvé', 'No employee found')}
                 onChange={(e) => setProposal(p.task_id, {
                   assignee: e.target.value === '' ? null : Number(e.target.value),
                 })}
@@ -554,13 +571,13 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
                 onPick={(employeeId) => setProposal(p.task_id, { assignee: employeeId })}
               />
               <label className={styles.editLabel}>{t(lang, 'Date prévue', 'Due date')}</label>
-              <input
-                type="date"
-                className={styles.editInput}
+              <DueDateTime
+                lang={lang}
+                inputClassName={styles.editInput}
                 value={v.day}
                 disabled={busy}
-                data-testid={`proposal-due-${p.task_id}`}
-                onChange={(e) => setProposal(p.task_id, { day: e.target.value })}
+                testId={`proposal-due-${p.task_id}`}
+                onChange={(slot) => setProposal(p.task_id, { day: slot })}
               />
               <button
                 type="button"
@@ -594,7 +611,7 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
       <div className={styles.editField} data-testid="new-task">
         <span className={styles.editLabel} data-testid={parent ? 'new-task-parent' : undefined}>
           {parent
-            ? t(lang, `Redispatch — ${parent.description}`, `Redispatch — ${parent.description}`)
+            ? t(lang, `Redispatch — ${splitTask(parent.description).name}`, `Redispatch — ${splitTask(parent.description).name}`)
             : t(lang, 'Nouvelle tâche', 'New task')}
         </span>
         {parent && (
@@ -602,20 +619,34 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
             {t(lang, 'Annuler le redispatch', 'Cancel redispatch')}
           </button>
         )}
+        <input
+          className={styles.editInput}
+          value={newName}
+          maxLength={120}
+          disabled={!canCreate || busy}
+          aria-label={t(lang, 'Nom de la tâche', 'Task name')}
+          placeholder={t(lang, 'Nom de la tâche (p. ex. Réparer la fuite)', 'Task name (e.g. Fix the leak)')}
+          data-testid="new-task-name"
+          onChange={(e) => setNewName(e.target.value)}
+        />
         <textarea
           className={styles.editTextarea}
-          value={newDesc}
+          value={newDetails}
           rows={2}
           disabled={!canCreate || busy}
-          placeholder={t(lang, 'Travail à faire…', 'Work to do…')}
+          aria-label={t(lang, 'Description de la tâche', 'Task description')}
+          placeholder={t(lang, 'Description (détails pour le technicien)…', 'Description (details for the technician)…')}
           data-testid="new-task-desc"
-          onChange={(e) => setNewDesc(e.target.value)}
+          onChange={(e) => setNewDetails(e.target.value)}
         />
         <Select
           className={styles.editInput}
           value={String(newAssignee ?? '')}
           disabled={!canCreate || busy}
           data-testid="new-task-assign"
+          searchable avatars
+          searchPlaceholder={t(lang, 'Rechercher un employé…', 'Search employees…')}
+          noResultsText={t(lang, 'Aucun employé trouvé', 'No employee found')}
           onChange={(e) => setNewAssignee(e.target.value === '' ? null : Number(e.target.value))}
         >
           {assigneeOptions(null)}
@@ -629,18 +660,18 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
             onPick={(employeeId) => setNewAssignee(employeeId)}
           />
         )}
-        <input
-          type="date"
-          className={styles.editInput}
+        <DueDateTime
+          lang={lang}
+          inputClassName={styles.editInput}
           value={newDay}
           disabled={!canCreate || busy}
-          data-testid="new-task-due"
-          onChange={(e) => setNewDay(e.target.value)}
+          testId="new-task-due"
+          onChange={setNewDay}
         />
         <button
           type="button"
           className={styles.applyBtn}
-          disabled={!canCreate || busy || !newDesc.trim()}
+          disabled={!canCreate || busy || !newName.trim()}
           onClick={addTask}
           data-testid="new-task-btn"
         >

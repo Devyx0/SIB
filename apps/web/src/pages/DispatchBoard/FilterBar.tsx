@@ -3,6 +3,7 @@ import type { BoardMode } from '../../api/boardModes';
 import { statusesForMode } from '../../api/boardModes';
 import { statusLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
+import { urgencyLabel } from '../../lib/urgencyLevels';
 import type { SectorLookup, EmployeeLookup } from '../../api/schema.d.ts';
 import StatusSelect from './StatusSelect';
 import RangeCalendar from '../../components/RangeCalendar';
@@ -124,9 +125,9 @@ export default function FilterBar({
 
   const URGENCY_OPTS = [
     { value: '', label: t(lang, 'Tout', 'All') },
-    { value: 'URGENT', label: t(lang, 'Urgent', 'Urgent') },
-    { value: 'Intermédiaire', label: t(lang, 'Intermédiaire', 'Medium') },
-    { value: 'Faible', label: t(lang, 'Faible', 'Low') },
+    { value: 'URGENT', label: urgencyLabel(lang, 'URGENT') },
+    { value: 'Intermédiaire', label: urgencyLabel(lang, 'Intermédiaire') },
+    { value: 'Faible', label: urgencyLabel(lang, 'Faible') },
   ];
 
   const SUB_OPTS = [
@@ -427,6 +428,9 @@ export default function FilterBar({
               className={`${styles.input} ${styles.employeeSelect} ${assignedEmployeeId != null ? styles.inputActive : ''}`}
               value={assignedEmployeeId ?? ''}
               onChange={(e) => onAssignedEmployeeId(e.target.value ? Number(e.target.value) : null)}
+              searchable avatars
+              searchPlaceholder={t(lang, 'Rechercher un employé…', 'Search employees…')}
+              noResultsText={t(lang, 'Aucun employé trouvé', 'No employee found')}
             >
               <option value="">{t(lang, 'Tous', 'All')}</option>
               {employees.map((emp) => (

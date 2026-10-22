@@ -1,0 +1,32 @@
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  background: var(--navy-100);
+  color: var(--navy-800);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  user-select: none;
+}
+
+.xs { width: 20px; height: 20px; font-size: 9.5px; }
+.sm { width: 26px; height: 26px; font-size: 11px; }
+.md { width: 34px; height: 34px; font-size: 13px; }
+.lg { width: 52px; height: 52px; font-size: 18px; }
+
+.person {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.personName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -112,15 +112,15 @@ describe('Dashboard', () => {
     expect(screen.queryByText(/8\s*[-–àa]\s*14|calls per employee|appels par employé/i)).toBeNull();
   });
 
-  it('shows Urgent and Medium territory headers', async () => {
+  it('shows the urgency territory headers on the staff scale', async () => {
     vi.mocked(fetchDashboard).mockResolvedValue(base);
     wrap(<Dashboard lang="en" />);
     await screen.findByTestId('territory-table');
     const headers = [...screen.getByTestId('territory-table').querySelectorAll('th')].map(
       (th) => th.textContent,
     );
-    expect(headers).toContain('Urgent');
-    expect(headers).toContain('Medium');
+    expect(headers).toContain('High urgency');
+    expect(headers).toContain('Medium urgency');
   });
 
   it('shows No active calls when territory list is empty', async () => {

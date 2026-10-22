@@ -419,8 +419,49 @@ def action_save_dispatch(conn, request_id: int, body: SaveDispatchBody, user: Cu
         sync(action_set_cost(conn, request_id, SetCostBody(
             estimated_cost=ch.estimated_cost, current_estimated_cost=cur["estimated_cost"],
             justification=j), user), "estimated_cost")
+    details = [f for f in repo.DETAIL_FIELDS if f in changed]
+    if details:
+        detail = _set_detail_fields(conn, request_id,
+            {f: getattr(ch, f) for f in details}, {f: cur.get(f) for f in details}, body, user)
     assert detail is not None
     return detail
+
+
+def _blank(v: Any) -> str | None:
+    """Empty text and null mean the same thing for call details."""
+    s = (str(v).strip() if v is not None else "")
+    return s or None
+
+
+def _set_detail_fields(conn, request_id: int, changes: dict, current: dict,
+                       body: SaveDispatchBody, user: CurrentUser) -> RequestDetail:
+    """Correct call details (title, issue, access, caller, classification):
+    stale check against what the dispatcher saw, one justification row, one
+    provenance row per column."""
+    row = _lock_or_404(conn, request_id)
+    _check_not_closed(row)
+    db = repo.get_detail_fields(conn, request_id)
+    for f in changes:
+        if _blank(db.get(f)) != _blank(current.get(f)):
+            raise StaleDataError()
+    if changes.get("raw_title") is not None and not _blank(changes["raw_title"]):
+        raise ValidationFailed("Le titre ne peut pas être vide")
+    before, after = {}, {}
+    for f, v in changes.items():
+        new = _blank(v)
+        if new == _blank(db.get(f)):
+            continue
+        repo.update_field(conn, request_id, f, new)
+        repo.write_provenance(conn,
+            target_table="maintenance_request", target_pk=str(request_id),
+            target_column=f, employee_id=user.employee_id,
+            previous_value=_blank(db.get(f)), new_value=new,
+        )
+        before[f], after[f] = _blank(db.get(f)), new
+    if after:
+        _write_justification(conn, request_id, user, body, decision_type="details",
+            before_value=before, after_value=after)
+    return _after_action(conn, request_id, user)
 
 
 def action_set_cost(conn, request_id: int, body: SetCostBody, user: CurrentUser) -> RequestDetail:

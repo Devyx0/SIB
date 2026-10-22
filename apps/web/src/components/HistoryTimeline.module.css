@@ -132,6 +132,9 @@
 }
 
 .who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 600;
   color: var(--color-neutral-800);
 }
@@ -224,3 +227,12 @@
 
 .more:hover { text-decoration: underline; }
 .more:focus-visible { box-shadow: var(--ring); border-radius: var(--r-sm); }
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

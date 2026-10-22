@@ -20,6 +20,44 @@ function Harness({ onChange }: { onChange: (v: string) => void }) {
   );
 }
 
+describe('Select search and initials', () => {
+  function People({ onChange }: { onChange: (v: string) => void }) {
+    const [v, setV] = useState('');
+    return (
+      <Select aria-label="Employé" value={v} searchable avatars searchPlaceholder="Rechercher un employé…"
+              noResultsText="Aucun employé trouvé"
+              onChange={(e) => { setV(e.target.value); onChange(e.target.value); }}>
+        <option value="">— Non assigné —</option>
+        <option value="1">Alain Lepire (Technicien)</option>
+        <option value="2">André Côté (Technicien)</option>
+        <option value="3">Zach Rousseau (Technicien)</option>
+      </Select>
+    );
+  }
+
+  it('filters the list as you type (accents ignored) and picks with Enter', async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(<People onChange={onChange} />);
+    await user.click(screen.getByRole('combobox', { name: 'Employé' }));
+    const search = screen.getByTestId('select-search');
+    expect(document.activeElement).toBe(search);
+    await user.type(search, 'andre');
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['ACAndré Côté (Technicien)']);
+    await user.keyboard('{Enter}');
+    expect(onChange).toHaveBeenCalledWith('2');
+  });
+
+  it('says so when nothing matches, and shows initials beside people', async () => {
+    const user = userEvent.setup();
+    render(<People onChange={vi.fn()} />);
+    await user.click(screen.getByRole('combobox', { name: 'Employé' }));
+    expect(screen.getByRole('option', { name: /Zach Rousseau/ }).querySelector('[data-testid="avatar"]')?.textContent).toBe('ZR');
+    await user.type(screen.getByTestId('select-search'), 'xyz');
+    expect(screen.getByText('Aucun employé trouvé')).toBeTruthy();
+  });
+});
+
 describe('Select (themed dropdown)', () => {
   it('is a labelled combobox showing the current option', () => {
     render(<Harness onChange={vi.fn()} />);

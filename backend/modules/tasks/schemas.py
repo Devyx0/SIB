@@ -168,9 +168,11 @@ class ScheduleTaskBody(BaseModel):
 
 
 class UpdateTaskBody(BaseModel):
-    """Edit task dispatch fields (urgency / subcontractor). Omitted keys are left alone."""
+    """Edit task dispatch fields (urgency / subcontractor / description). Omitted keys are left alone."""
     urgency_tier: Optional[str] = None
     subcontractor_name: Optional[str] = None
+    # Task name (first line) + details, as one text — the column is NOT NULL.
+    description: Optional[str] = Field(None, max_length=4000)
     justification: JustificationBody
 
     @field_validator("subcontractor_name")

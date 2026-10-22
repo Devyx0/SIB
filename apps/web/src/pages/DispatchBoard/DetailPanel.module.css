@@ -51,6 +51,7 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  flex: 1;
 }
 
 .headMeta {
@@ -124,7 +125,11 @@
   line-height: 1.3;
   margin: 0;
   color: var(--color-text);
-  overflow-wrap: anywhere;
+  /* One line; the full stored title shows on hover. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .headFacts {
@@ -979,4 +984,298 @@
   .saveBar {
     padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   }
+}
+
+/* Assignees in the planning card, each with an initials disc. */
+.people {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+/* ── Issue card: AI summary first, the tenant's words on demand ───────── */
+.cardHeadRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cardHeadRow .cardTitle { margin: 0; }
+
+.aiTag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--navy-50);
+  border: 1px solid var(--navy-100);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--navy-800);
+  white-space: nowrap;
+}
+
+.issueText {
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+/* « Demande originale » / « Raisonnement IA »: a quiet disclosure button. */
+.disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  min-height: 32px;
+  padding: 4px 10px 4px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--navy-800);
+  cursor: pointer;
+}
+
+.disclosure:hover { background: var(--navy-50); border-color: var(--navy-300); }
+.disclosure:focus-visible { outline: none; box-shadow: var(--ring); }
+
+.disclosureIcon { transition: transform var(--dur) var(--ease-out); }
+.disclosureOpen { transform: rotate(90deg); }
+
+.original {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-divider);
+}
+
+.originalNote {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: var(--color-neutral-600);
+}
+
+.reasoning .disclosure { margin-top: 0; }
+.reasoningText { margin-top: 10px; }
+
+/* ── Tenant contact card ─────────────────────────────────────────────── */
+.contactHead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.contactWho { min-width: 0; }
+
+.contactName {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.contactPlace {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 3px 0 0;
+  font-size: 13.5px;
+  color: var(--color-neutral-600);
+}
+
+.contactPlace svg { flex: none; }
+
+.contactRows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contactRows li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  font-size: 14.5px;
+}
+
+.contactIcon {
+  flex: none;
+  display: inline-flex;
+  color: var(--color-neutral-600);
+}
+
+.contactLink {
+  color: var(--color-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+.contactPhone {
+  color: var(--color-neutral-700);
+  text-decoration: none;
+}
+
+.contactLink:hover,
+.contactPhone:hover { color: var(--navy-800); }
+
+.contactMissing { color: var(--color-neutral-500); font-style: italic; }
+
+.contactActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.contactBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-neutral-700);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--color-text);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.contactBtn:hover { background: var(--navy-50); border-color: var(--navy-800); color: var(--navy-800); }
+.contactBtn:focus-visible { outline: none; box-shadow: var(--ring); }
+
+.contactBtn:disabled {
+  border-color: var(--color-border);
+  color: var(--color-neutral-400);
+  cursor: not-allowed;
+  background: var(--color-bg-alt);
+}
+
+/* ── Editable call details ───────────────────────────────────────────── */
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.titleRow .title { min-width: 0; }
+
+.titleEdit { flex: 1; min-width: 0; max-width: 720px; }
+
+.cardHeadTools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cardEditBtn {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--color-neutral-600);
+  cursor: pointer;
+}
+
+.cardEditBtn:hover { border-color: var(--color-border); background: var(--navy-50); color: var(--navy-800); }
+.cardEditBtn:focus-visible { outline: none; box-shadow: var(--ring); }
+.cardEditBtnOn { border-color: var(--navy-300); background: var(--navy-50); color: var(--navy-800); }
+
+.cardForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.cardFormNote {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--color-neutral-600);
+}
+
+/* Planning card in edit mode: one field per row. */
+.planForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Details / Notes tabs (header) ───────────────────────────────────── */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0 -16px;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-neutral-600);
+  cursor: pointer;
+}
+
+.tab:hover { color: var(--navy-800); }
+.tab:focus-visible { outline: none; box-shadow: inset var(--ring); border-radius: var(--r-sm); }
+
+.tab[aria-selected='true'] {
+  color: var(--navy-800);
+  border-bottom-color: var(--navy-800);
+}
+
+.tabCount {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--navy-100);
+  color: var(--navy-800);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* The popup keeps its full height whichever tab is open (no jump when switching). */
+.panelTall {
+  height: min(90vh, 90dvh);
+}
+
+/* Task rows in the call popup: name, status, then one line of description. */
+.taskRowName { font-weight: 700; }
+
+.taskRowDetails {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--color-neutral-600);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

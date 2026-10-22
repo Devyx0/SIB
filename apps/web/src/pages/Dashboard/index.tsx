@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { fetchDashboard } from '../../api/client';
 import { statusLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
+import { urgencyLabel } from '../../lib/urgencyLevels';
 import styles from './Dashboard.module.css';
+import { PersonName } from '../../components/Avatar';
 
 function Unavailable({ lang }: { lang: Lang }) {
   return <p className={styles.na} data-testid="data-unavailable">{t(lang, 'Données non disponibles', 'Data unavailable')}</p>;
@@ -112,7 +114,7 @@ export default function Dashboard({ lang = 'fr' }: { lang?: Lang }) {
               <tbody>
                 {data.load_today.map((r) => (
                   <tr key={r.employee_id}>
-                    <td>{r.nom_employe}</td>
+                    <td><PersonName name={r.nom_employe} size="xs" /></td>
                     <td className={styles.num}>{r.assigned_count}</td>
                     <td className={styles.num}>{r.en_route_count}</td>
                     <td className={styles.num}>{r.minutes_worked}</td>
@@ -132,8 +134,8 @@ export default function Dashboard({ lang = 'fr' }: { lang?: Lang }) {
               <tr>
                 <th>{t(lang, 'Territoire', 'Territory')}</th>
                 <th className={styles.num}>{t(lang, 'Actifs', 'Active')}</th>
-                <th className={`${styles.num} ${styles.urgencyCase}`}>{t(lang, 'Urgent', 'Urgent')}</th>
-                <th className={`${styles.num} ${styles.urgencyCase}`}>{t(lang, 'Intermédiaire', 'Medium')}</th>
+                <th className={`${styles.num} ${styles.urgencyCase}`}>{urgencyLabel(lang, 'URGENT')}</th>
+                <th className={`${styles.num} ${styles.urgencyCase}`}>{urgencyLabel(lang, 'Intermédiaire')}</th>
                 <th
                   className={styles.num}
                   title={untriagedTip}

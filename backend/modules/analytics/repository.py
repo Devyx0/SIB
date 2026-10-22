@@ -362,7 +362,8 @@ def reviews_in_range(conn, start: date, end: date) -> list[dict]:
                s.polite,
                s.problem_solved,
                s.comments,
-               b.adresse AS building_address
+               b.adresse AS building_address,
+               mr.asnu
         FROM satisfaction_survey s
         JOIN maintenance_request mr ON mr.request_id = s.request_id
         LEFT JOIN building b ON b.building_id = mr.building_id

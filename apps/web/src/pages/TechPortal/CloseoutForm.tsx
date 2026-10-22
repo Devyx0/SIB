@@ -10,6 +10,7 @@ import MicButton from '../../components/MicButton';
 import TechHeader from './TechHeader';
 import { pickMyTask, taskIdParam } from './myTask';
 import styles from './TechPortal.module.css';
+import { cleanCallTitle } from '../../lib/callTitle';
 
 interface Props {
   lang: Lang;
@@ -124,7 +125,7 @@ export default function CloseoutForm({ lang, me, onSignOut, onToggleLang }: Prop
       />
       <main className={styles.main}>
         <h1 className={styles.callViewTitle}>
-          {t(lang, 'Clôturer', 'Close out')} — {req?.raw_title ?? `#${requestId}`}
+          {t(lang, 'Clôturer', 'Close out')} — {cleanCallTitle(req?.raw_title) || req?.asnu || '—'}
         </h1>
         {task && <p className={styles.preWrap} data-testid="closeout-task">{task.description}</p>}
         {req && !task && (

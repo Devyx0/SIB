@@ -17,6 +17,7 @@ import { taxonomyElementOptions } from '../../lib/taxonomyElements';
 import type { Lang } from '../../i18n';
 import { t } from '../../i18n';
 import styles from './PublicDemande.module.css';
+import { formatPhone } from '../../lib/phone';
 
 /** Central maintenance / front desk — DISP in client guide. Override via env. */
 const FRONT_DESK_PHONE =
@@ -71,6 +72,7 @@ export default function PublicDemande({
   const [lookingUp, setLookingUp] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [doneId, setDoneId] = useState<number | null>(null);
+  const [doneRef, setDoneRef] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDeskPhone, setShowDeskPhone] = useState(false);
 
@@ -174,6 +176,7 @@ export default function PublicDemande({
         photos: encoded.map((p) => ({ mime: p.mime, data_base64: p.data_base64 })),
       });
       setDoneId(res.request_id);
+      setDoneRef(res.asnu ?? null);
     } catch (err) {
       setErrorMsg(err instanceof ApiError ? err.message : t(lang, 'Échec — réessayez', 'Failed — retry'));
       setSubmitReset((k) => k + 1);
@@ -214,7 +217,7 @@ export default function PublicDemande({
             {/* The number a tenant may be asked for: set apart, easy to note. */}
             <div className={styles.doneRef}>
               <span className={styles.doneRefLabel}>{t(lang, 'Numéro de demande', 'Request number')}</span>
-              <strong className={styles.doneRefNum}>#{doneId}</strong>
+              <strong className={styles.doneRefNum}>{doneRef ?? '—'}</strong>
             </div>
           </div>
           <button type="button" className={`${styles.btn} ${styles.btnSecondary}`}
@@ -348,7 +351,7 @@ export default function PublicDemande({
                 <strong>{profile.caller_name}</strong>
                 <span>{profile.address_label}</span>
                 {(profile.phone || profile.email) && (
-                  <span className={styles.autofillMeta}>{[profile.phone, profile.email].filter(Boolean).join(' · ')}</span>
+                  <span className={styles.autofillMeta}>{[formatPhone(profile.phone), profile.email].filter(Boolean).join(' · ')}</span>
                 )}
               </div>
               <button

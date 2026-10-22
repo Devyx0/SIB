@@ -79,7 +79,7 @@ function ReviewItem({ lang, review, technician }: { lang: Lang; review: Review; 
         <YesNoChip lang={lang} value={review.polite} label={['Poli', 'Polite']} />
         <YesNoChip lang={lang} value={review.problem_solved} label={['Résolu', 'Solved']} />
         <span className={styles.reviewMeta}>
-          {when} · #{review.request_id}{review.building_address ? ` · ${review.building_address}` : ''}
+          {[when, review.asnu, review.building_address].filter(Boolean).join(' · ')}
         </span>
       </div>
       {review.comments

@@ -12,6 +12,7 @@ import { taxonomyElementOptions } from '../../lib/taxonomyElements';
 import styles from './NouvelAppelModal.module.css';
 import PhotoPicker, { type PickedPhoto } from '../../components/PhotoPicker';
 import Select from '../../components/Select';
+import { formatPhone } from '../../lib/phone';
 
 interface Props {
   open: boolean;
@@ -134,7 +135,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr', asPage = 
   function fillFromTenant(tn: LeaseTenant) {
     setSelectedTenantId(tn.tenant_id);
     if (tn.name) setCallerName(tn.name);
-    if (tn.phone) setPhone1(tn.phone);
+    if (tn.phone) setPhone1(formatPhone(tn.phone));
     if (tn.email) {
       setCallerEmail(tn.email);
       setCallerEmailConfirm(tn.email);
@@ -281,6 +282,11 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr', asPage = 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg(null);
+    // Missing fields are named only when the user tries to create the call.
+    if (blockReasons.length > 0) {
+      setErrorMsg(t(lang, 'À remplir : ', 'Still needed: ') + blockReasons.map(shortReason).join(', ') + '.');
+      return;
+    }
     if (!callerName.trim()) {
       setErrorMsg(t(lang, 'Nom requis.', 'Name required.'));
       return;
@@ -411,7 +417,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr', asPage = 
   const autoFilled = unitId != null && uniqueUnitNumber.trim() !== ''
     && uniqueUnitNumber.trim() === unitPickedRef.current;
 
-  // Footer chips show just the field ("Téléphone"), full sentence on hover.
+  // The « À remplir » message names just the field (« Téléphone »).
   function shortReason(r: string): string {
     return r.replace(/\s*\b(requis|requise|requises|required)\b.*$/i, '').replace(/\.$/, '');
   }
@@ -655,7 +661,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr', asPage = 
                   {leaseTenants.map((tn) => (
                     <option key={tn.tenant_id} value={tn.tenant_id}>
                       {tn.name ?? `#${tn.tenant_id}`}
-                      {tn.phone ? ` — ${tn.phone}` : ''}
+                      {tn.phone ? ` — ${formatPhone(tn.phone)}` : ''}
                     </option>
                   ))}
                 </Select>
@@ -800,6 +806,9 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr', asPage = 
                   value={element}
                   onChange={(e) => setElement(e.target.value)}
                   data-testid="element"
+                  searchable
+                  searchPlaceholder={t(lang, 'Rechercher un élément…', 'Search elements…')}
+                  noResultsText={t(lang, 'Aucun élément trouvé', 'No element found')}
                 >
                   <option value="">{t(lang, 'Choisir…', 'Choose…')}</option>
                   {taxonomyElementOptions(lang).map(({ value, label }) => (
@@ -833,6 +842,13 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr', asPage = 
               <textarea id="problem" className={styles.textarea} value={problem}
                 onChange={(e) => setProblem(e.target.value)} data-testid="problem" rows={3} required />
             </div>
+            <div className={styles.field}>
+              <label htmlFor="attention" className={styles.label}>
+                {t(lang, 'Information importante pour le technicien', 'Important information for technician')}
+              </label>
+              <textarea id="attention" className={styles.textarea} value={attention} rows={2}
+                onChange={(e) => setAttention(e.target.value)} data-testid="attention" />
+            </div>
             <div className={styles.field} data-testid="photo-field">
               <span className={styles.label} id="intake-photos-label">
                 {t(lang, 'Photos du problème', 'Photos of the problem')}
@@ -845,14 +861,6 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr', asPage = 
               </p>
               <PhotoPicker lang={lang} photos={photos} onChange={setPhotos} labelledBy="intake-photos-label" />
             </div>
-            <div className={`${styles.field} ${styles.attentionField}`}>
-              <label htmlFor="attention" className={styles.label}>
-                <span aria-hidden="true">⚠</span> ATTENTION{' '}
-                <span className={styles.labelHint}>{t(lang, '— note visible par le technicien', '— note shown to the technician')}</span>
-              </label>
-              <input id="attention" className={styles.input} value={attention}
-                onChange={(e) => setAttention(e.target.value)} />
-            </div>
           </section>
           </div>
           </div>
@@ -861,21 +869,6 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr', asPage = 
           {unitsError && <p className={styles.errorMsg} data-testid="units-error">{unitsError}</p>}
           {errorMsg && <p className={styles.errorMsg} data-testid="error-msg">{errorMsg}</p>}
           <div className={styles.footerRow}>
-          {blockReasons.length > 0 ? (
-            <div className={styles.status}>
-              <span className={styles.statusLabel}>
-                {t(lang, `À compléter (${blockReasons.length})`, `To complete (${blockReasons.length})`)}
-              </span>
-              <ul className={styles.blockReasons} data-testid="block-reasons">
-                {blockReasons.map((r) => (
-                  <li key={r} title={r}>{shortReason(r)}</li>
-                ))}
-              </ul>
-            </div>
-          ) : (
-            <span className={styles.ready}>{t(lang, '✓ Prêt à créer', '✓ Ready to create')}</span>
-          )}
-
           <div className={styles.actions}>
             <button type="button" className={styles.cancelBtn} onClick={handleClose}>
               {asPage
@@ -883,7 +876,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr', asPage = 
                 : t(lang, 'Annuler', 'Cancel')}
             </button>
             <button type="submit" className={styles.submitBtn}
-              disabled={submitting || blockReasons.length > 0}
+              disabled={submitting}
               data-testid="submit-btn">
               {submitting
                 ? t(lang, 'Création…', 'Creating…')

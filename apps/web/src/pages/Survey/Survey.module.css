@@ -537,3 +537,10 @@
   /* Five 44px stars still fit a 320px phone. */
   .stars { gap: 0; }
 }
+
+.visitTech {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}

@@ -150,6 +150,22 @@ describe('RequestTable', () => {
     expect(screen.getByText('Urgent')).toBeTruthy();
   });
 
+  it('shows the category (intake category, else the triaged element)', () => {
+    render(<RequestTable {...defaultProps} rows={[
+      makeRow({ request_id: 1, category_raw: 'Plomberie' }),
+      makeRow({ request_id: 2, category_raw: null, element: 'Chauffage' }),
+      makeRow({ request_id: 3 }),
+    ]} />);
+    expect(screen.getByRole('columnheader', { name: /Catégorie/ })).toBeTruthy();
+    expect(screen.getAllByTestId('row-category').map((c) => c.textContent)).toEqual(['Plomberie', 'Chauffage', '—']);
+  });
+
+  it('shows the assigned employee with their initials', () => {
+    render(<RequestTable {...defaultProps} rows={[makeRow()]} />);
+    const row = screen.getByTestId('request-row');
+    expect(row.querySelector('[data-testid="avatar"]')?.textContent).toBe('JT');
+  });
+
   it('marks selected row', () => {
     render(<RequestTable {...defaultProps} rows={[makeRow()]} selectedId={1} />);
     const row = screen.getByTestId('request-row');
@@ -218,10 +234,11 @@ describe('TaskTable', () => {
   };
 
   it('renders a task row with its call, task status and the call urgency fallback', () => {
-    render(<TaskTable {...props} rows={[makeTask()]} />);
+    render(<TaskTable {...props} rows={[makeTask({ request_asnu: 'A-0010' })]} />);
     const row = screen.getByTestId('task-row');
     expect(row.textContent).toContain('Plomberie');
-    expect(row.textContent).toContain('#10 Fuite');
+    expect(row.textContent).toContain('A-0010 · Fuite');
+    expect(row.textContent).not.toContain('#10');
     expect(row.textContent).toContain('1 rue Test, app. 3');
     expect(row.textContent).toContain('Jean Tech');
     expect(row.textContent).toContain('Planifié');

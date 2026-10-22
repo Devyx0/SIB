@@ -8,6 +8,7 @@ import { demoUserSwitchEnabled } from '../dev/demoUserSwitch';
 import AlertBell from './AlertBell';
 import BrandMark from './BrandMark';
 import styles from './AppShell.module.css';
+import { Avatar } from './Avatar';
 
 interface Props {
   lang: Lang;
@@ -146,10 +147,13 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
                   displayRole={roleLabel(lang, me.roles[0] ?? '')}
                 />
               ) : (
-                <>
-                  <span className={styles.userName}>{me.nom_employe}</span>
-                  <span className={styles.userRole}>{roleLabel(lang, me.roles[0] ?? '')}</span>
-                </>
+                <div className={styles.userRow}>
+                  <Avatar name={me.nom_employe} size="md" />
+                  <div className={styles.userText}>
+                    <span className={styles.userName}>{me.nom_employe}</span>
+                    <span className={styles.userRole}>{roleLabel(lang, me.roles[0] ?? '')}</span>
+                  </div>
+                </div>
               )}
             </div>
           )}

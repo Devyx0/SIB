@@ -129,6 +129,12 @@ export interface ListRow {
   closeout_urgent: boolean | null;
   duplicate_of_request_id: number | null;
   addition_to_request_id: number | null;
+  /** Intake category, else the triaged element (triage table « Catégorie »). */
+  category_raw?: string | null;
+  element?: string | null;
+  /** ASNU of the linked call (shown instead of internal ids). */
+  duplicate_of_asnu?: string | null;
+  addition_to_asnu?: string | null;
 }
 
 export interface VisitEntry {
@@ -325,6 +331,7 @@ export interface CoordinatorAlert {
   created_at: string;
   read_at: string | null;
   raw_title: string | null;
+  asnu?: string | null;
 }
 
 export interface AlertListResponse {
@@ -414,6 +421,7 @@ export interface TechnicianReview {
   problem_solved: boolean | null;
   comments: string | null;
   building_address: string | null;
+  asnu?: string | null;
 }
 
 // ── Portfolio browser (sector → project → building → unit → tenant) ─────────

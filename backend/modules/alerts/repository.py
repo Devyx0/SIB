@@ -19,7 +19,7 @@ def list_alerts(conn, *, unread_only: bool, limit: int = 50) -> list[dict]:
     rows = conn.execute(
         f"""
         SELECT a.alert_id, a.request_id, a.kind, a.summary,
-               a.created_at, a.read_at, mr.raw_title
+               a.created_at, a.read_at, mr.raw_title, mr.asnu
         FROM coordinator_alert a
         JOIN maintenance_request mr ON mr.request_id = a.request_id
         {where}

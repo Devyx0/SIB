@@ -195,6 +195,11 @@ def update_task(conn, task_id: int, body: UpdateTaskBody, user: CurrentUser) -> 
         fields["urgency_tier"] = body.urgency_tier
     if "subcontractor_name" in fs:
         fields["subcontractor_name"] = body.subcontractor_name
+    if "description" in fs:
+        text = (body.description or "").strip()
+        if not text:
+            raise ValidationFailed("La tâche doit avoir un nom")
+        fields["description"] = text
     if not fields:
         raise ValidationFailed("No task fields to update")
     return _apply(conn, task, user, body.justification, "task_update", **fields)
