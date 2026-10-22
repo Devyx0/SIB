@@ -501,13 +501,14 @@ describe('DetailPanel', () => {
     expect(screen.queryByTestId('log-text')).toBeNull();
   });
 
-  it('formats entry_date as short month + day without timezone shift', () => {
+  it('formats entry_date as short month + day without timezone shift', async () => {
     const reqWithLog = {
       ...MOCK_REQUEST,
       followup_log: [{ followup_id: 1, entry_date: '2026-10-15', entered_by_initials: 'AB', entry_text: 'Test log' }],
     };
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: reqWithLog, isPending: false, isError: false, error: null });
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="en" me={null} />);
+    await openDetailTab('history');
     // '2026-10-15' must render as 'Oct 15' (en-CA short) — not as '2026-10-15' raw string
     expect(screen.getByText(/\bOct[\s.]?\s*15\b/i)).toBeTruthy();
   });

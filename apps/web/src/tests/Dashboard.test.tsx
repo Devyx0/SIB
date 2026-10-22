@@ -57,19 +57,10 @@ describe('Dashboard', () => {
     wrap(<Dashboard lang="fr" />);
     expect(await screen.findByTestId('today-status-empty')).toBeTruthy();
     expect(screen.getByTestId('today-status-empty')).toHaveTextContent('0');
-    expect(screen.queryByTestId('data-unavailable')).toBeTruthy(); // weather null
+    expect(screen.queryByTestId('data-unavailable')).toBeNull();
   });
 
-  it('shows Données non disponibles only for weather when null', async () => {
-    vi.mocked(fetchDashboard).mockResolvedValue(base);
-    wrap(<Dashboard lang="fr" />);
-    await screen.findByTestId('dashboard-page');
-    const nas = screen.getAllByTestId('data-unavailable');
-    expect(nas.length).toBe(1);
-    expect(nas[0]).toHaveTextContent('Données non disponibles');
-  });
-
-  it('shows weather numbers when present (not unavailable)', async () => {
+  it('does not show a weather tile (weather is triage-agent only)', async () => {
     vi.mocked(fetchDashboard).mockResolvedValue({
       ...base,
       weather: {
@@ -80,8 +71,9 @@ describe('Dashboard', () => {
       },
     });
     wrap(<Dashboard lang="fr" />);
-    expect(await screen.findByTestId('weather-line')).toHaveTextContent('5 °C');
-    expect(screen.queryByTestId('data-unavailable')).toBeNull();
+    await screen.findByTestId('dashboard-page');
+    expect(screen.queryByTestId('weather-line')).toBeNull();
+    expect(screen.queryByText('Météo')).toBeNull();
   });
 
   it('queue links point at board filters', async () => {

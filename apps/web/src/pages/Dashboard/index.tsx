@@ -7,10 +7,6 @@ import { urgencyLabel } from '../../lib/urgencyLevels';
 import styles from './Dashboard.module.css';
 import { PersonName } from '../../components/Avatar';
 
-function Unavailable({ lang }: { lang: Lang }) {
-  return <p className={styles.na} data-testid="data-unavailable">{t(lang, 'Données non disponibles', 'Data unavailable')}</p>;
-}
-
 export default function Dashboard({ lang = 'fr' }: { lang?: Lang }) {
   const navigate = useNavigate();
   const { data, isError, isLoading } = useQuery({
@@ -56,24 +52,6 @@ export default function Dashboard({ lang = 'fr' }: { lang?: Lang }) {
           <div className={styles.bigCount} data-testid="count-a-redispatcher">{data.queue_counts.a_redispatcher}</div>
           <div className={styles.cta}>{t(lang, 'Ouvrir le tableau →', 'Open board →')}</div>
         </Link>
-        <div className={styles.tile}>
-          <h2>{t(lang, 'Météo', 'Weather')}</h2>
-          {data.weather ? (
-            <>
-              <p className={styles.weatherLine} data-testid="weather-line">
-                {data.weather.current_temp_c != null
-                  ? `${data.weather.current_temp_c} °C`
-                  : '—'}
-                {data.weather.min_forecast_temp_24h_c != null && (
-                  <> · min 24 h {data.weather.min_forecast_temp_24h_c} °C</>
-                )}
-              </p>
-              <p className={styles.credit}>{data.weather.source_credit}</p>
-            </>
-          ) : (
-            <Unavailable lang={lang} />
-          )}
-        </div>
       </div>
 
       <section className={styles.tile}>

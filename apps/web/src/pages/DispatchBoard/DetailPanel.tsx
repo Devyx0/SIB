@@ -114,10 +114,6 @@ interface Props {
 }
 
 
-const BAND_FR: Record<string, string> = {
-  critical: 'critique', emergency: 'urgence', priority: 'priorité', normal: 'normal',
-};
-const LOC_FR: Record<string, string> = { quebec: 'Québec', levis: 'Lévis' };
 // Calls where per-task technician suggestions help pick assignees.
 const SUGGEST_STATUSES = new Set(['triaged', 'triage_proposal', 'open', 'awaiting_redispatch']);
 
@@ -151,8 +147,12 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
   // Collapsed by default: the tenant's own words and the AI's reasoning.
   const [showOriginal, setShowOriginal] = useState(false);
   const [showReasoning, setShowReasoning] = useState(false);
-  const [tab, setTab] = useState<'details' | 'notes'>('details');
-  useEffect(() => { setShowOriginal(false); setShowReasoning(false); setTab('details'); }, [requestId]);
+  type DetailTab = 'call' | 'tenant' | 'tasks' | 'history' | 'notes';
+  const [tab, setTab] = useState<DetailTab>('call');
+  useEffect(() => { setShowOriginal(false); setShowReasoning(false); setTab('call'); }, [requestId]);
+  useEffect(() => {
+    if (tab === 'tasks' && !isEditor) setTab('call');
+  }, [tab, isEditor]);
   const [taskDirty, setTaskDirty] = useState(0);
   const taskEditorRef = useRef<TaskEditorHandle>(null);
   // AI-summary feedback is saved by the footer's single « Enregistrer ».
@@ -191,8 +191,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
   const toggleCard = (id: string) => setEditCards((prev) => {
     const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n;
   });
-  const weatherEnabled = !!me?.weather_escalation_enabled;
-
   // Poll while triage is in progress; stop after 3 minutes with retry option
   useEffect(() => {
     if (data?.status === 'triage_pending') {
@@ -533,21 +531,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                   <div><dt>{t(lang, 'Source', 'Source')}</dt><dd>{sourceCalendarLabel(lang, data.source_calendar)}</dd></div>
                 </dl>
               )}
-              {data && (
-                <div className={styles.tabs} role="tablist" aria-label={t(lang, "Sections de l'appel", 'Call sections')}>
-                  <button type="button" role="tab" id={`${titleId}-tab-details`} aria-selected={tab === 'details'}
-                          aria-controls={`${titleId}-panel-details`} className={styles.tab}
-                          onClick={() => setTab('details')} data-testid="tab-details">
-                    {t(lang, 'Détails', 'Details')}
-                  </button>
-                  <button type="button" role="tab" id={`${titleId}-tab-notes`} aria-selected={tab === 'notes'}
-                          aria-controls={`${titleId}-panel-notes`} className={styles.tab}
-                          onClick={() => setTab('notes')} data-testid="tab-notes">
-                    {t(lang, 'Notes', 'Notes')}
-                    <span className={styles.tabCount}>{data.followup_log.length}</span>
-                  </button>
-                </div>
-              )}
             </div>
             <button ref={closeRef} className={styles.closeBtn} onClick={requestClose} aria-label={t(lang, 'Fermer', 'Close')}>
               <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -556,38 +539,53 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
             </button>
           </header>
 
+          {data && (
+            <div className={styles.tabList} role="tablist" aria-label={t(lang, "Sections de l'appel", 'Call sections')} data-testid="detail-tabs">
+              {([
+                { id: 'call' as const, fr: 'Info appel', en: 'Call info' },
+                { id: 'tenant' as const, fr: 'Locataire & unité', en: 'Tenant & unit' },
+                ...(isEditor ? [{ id: 'tasks' as const, fr: 'Tâches', en: 'Tasks' }] : []),
+                { id: 'history' as const, fr: 'Historique', en: 'History' },
+                { id: 'notes' as const, fr: 'Notes', en: 'Notes' },
+              ] as const).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  id={`detail-tab-${item.id}`}
+                  aria-selected={tab === item.id}
+                  aria-controls={item.id === 'notes' ? `${titleId}-panel-notes` : `detail-panel-${item.id}`}
+                  tabIndex={tab === item.id ? 0 : -1}
+                  className={`${styles.tab} ${tab === item.id ? styles.tabActive : ''}`}
+                  data-testid={item.id === 'notes' ? 'tab-notes' : `detail-tab-${item.id}`}
+                  onClick={() => setTab(item.id)}
+                >
+                  {t(lang, item.fr, item.en)}
+                  {item.id === 'notes' ? (
+                    <span className={styles.tabCount}>{data.followup_log.length}</span>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className={styles.body}>
             {isPending && <p className={styles.loading}>{t(lang, 'Chargement…', 'Loading…')}</p>}
             {isError && <p className={styles.error}>{errorText()}</p>}
             {staleMsg && <p className={styles.staleMsg} data-testid="panel-error">{staleMsg}</p>}
             {okMsg && <p className={styles.okMsg} role="status" data-testid="panel-success">{okMsg}</p>}
 
-            {data && tab === 'notes' && (
-              <div role="tabpanel" id={`${titleId}-panel-notes`} aria-labelledby={`${titleId}-tab-notes`}>
-                <CallNotes
-                  notes={data.followup_log}
-                  lang={lang}
-                  canAdd={isEditor}
-                  onAdd={async (text) => {
-                    try {
-                      const updated = await dispatchAddLog(requestId, { entry_text: text });
-                      qc.setQueryData(['request', requestId], updated);
-                      qc.invalidateQueries({ queryKey: ['requests'] });
-                      flashOk(t(lang, 'Note ajoutée.', 'Note added.'));
-                    } catch (err) {
-                      flashErr(err instanceof ApiError ? apiErrorMessage(lang, err) : t(lang, 'Note non enregistrée.', 'Note not saved.'));
-                      throw err;
-                    }
-                  }}
-                />
-              </div>
-            )}
             {data && (
-              <div role="tabpanel" id={`${titleId}-panel-details`} aria-labelledby={`${titleId}-tab-details`}
-                   hidden={tab !== 'details'}>
-              <div className={styles.grid}>
-                {/* ── Left: what happened ───────────────────────────── */}
-                <div className={styles.colMain}>
+              <>
+                {/* Panels stay mounted (hidden) so TaskEditor / save bar keep state. */}
+                <div
+                  className={styles.tabPanel}
+                  role="tabpanel"
+                  id="detail-panel-call"
+                  aria-labelledby="detail-tab-call"
+                  hidden={tab !== 'call'}
+                  data-testid="tab-panel-call"
+                >
                   {/* The issue: the AI's summary up front; the tenant's own words
                       stay one click away under « Demande originale ». */}
                   {(() => {
@@ -736,156 +734,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                       )}
                     </section>
                   )}
-
-                  <section className={`${styles.card} ${styles.historyCard}`}>
-                    <HistoryTimeline
-                      requestId={data.request_id}
-                      visits={data.visits ?? []}
-                      followups={data.followup_log}
-                      decisions={data.justification_log}
-                      statusChanges={data.status_history ?? []}
-                      lang={lang}
-                    />
-                  </section>
-                </div>
-
-                {/* ── Right: reference facts + actions ──────────────── */}
-                <div className={styles.colSide}>
-                  {/* The unit: where the work is and how to get in. */}
-                  <section className={styles.card} data-testid="unit-card">
-                    <div className={styles.cardHeadRow}>
-                      <h3 className={styles.cardTitle}>{t(lang, 'Logement', 'Unit')}</h3>
-                      {canEdit && (
-                        <EditToggle on={editCards.has('unit')} onClick={() => toggleCard('unit')} testId="edit-unit-toggle"
-                                    label={t(lang, "Modifier l'accès et les animaux", 'Edit access and animals')} />
-                      )}
-                    </div>
-                    <dl className={styles.facts}>
-                      <dt>{t(lang, 'Immeuble', 'Building')}</dt>
-                      <dd>
-                        {buildingAddress ? (
-                          <a
-                            className={styles.mapLink}
-                            href={googleMapsUrl(buildingAddress)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title={t(lang, 'Ouvrir dans Google Maps', 'Open in Google Maps')}
-                            data-testid="building-map-link"
-                          >
-                            {buildingAddress}
-                            <span aria-hidden="true"> ↗</span>
-                          </a>
-                        ) : '—'}
-                      </dd>
-                      <dt>{t(lang, "N° d'unité", 'Unit #')}</dt>
-                      <dd title={data.unique_unit_number ?? undefined} data-testid="unit-number">
-                        {unitNumberOf(data.unit_label, data.unique_unit_number) ?? '—'}
-                      </dd>
-                      <dt>{t(lang, 'Territoire', 'Territory')}</dt>
-                      <dd>{data.territoire ?? '—'}</dd>
-                      {!editCards.has('unit') && (
-                        <>
-                          <dt>{t(lang, 'Accès', 'Access')}</dt>
-                          <dd>{details.entry_permission ?? accessText}</dd>
-                          <dt>{t(lang, 'Animaux', 'Animals')}</dt>
-                          <dd>{details.animals ?? animalsText}</dd>
-                        </>
-                      )}
-                    </dl>
-                    {editCards.has('unit') && (
-                      <div className={styles.cardForm}>
-                        {detailInput('entry_permission', { multiline: true })}
-                        {detailInput('animals')}
-                        <p className={styles.cardFormNote}>
-                          {t(lang, "L'immeuble et l'unité se changent dans le portfolio.", 'Building and unit are changed in the portfolio.')}
-                        </p>
-                      </div>
-                    )}
-                  </section>
-
-                  {/* The tenant / caller as a contact card: who, where, and one tap to call or write. */}
-                  {(() => {
-                    const phone = data.caller_phone_placeholder ? null : data.caller_phone;
-                    const email = data.caller_email_placeholder ? null : data.caller_email;
-                    const name = data.caller_name?.trim() || null;
-                    const role = data.caller_type === 'tenant' || data.caller_tenant_id != null
-                      ? t(lang, 'Locataire', 'Tenant') : t(lang, 'Appelant', 'Caller');
-                    const unitNo = unitNumberOf(data.unit_label, data.unique_unit_number);
-                    const place = [unitNo && t(lang, `Unité ${unitNo}`, `Unit ${unitNo}`),
-                      data.building_address].filter(Boolean).join(' · ');
-                    return (
-                      <section className={`${styles.card} ${styles.contactCard}`} data-testid="tenant-card"
-                               aria-label={t(lang, 'Appelant', 'Caller')}>
-                        <div className={styles.cardHeadRow}>
-                          <h3 className={styles.cardTitle}>{role}</h3>
-                          {canEdit && (
-                            <EditToggle on={editCards.has('caller')} onClick={() => toggleCard('caller')} testId="edit-caller-toggle"
-                                        label={t(lang, "Modifier l'appelant", 'Edit caller')} />
-                          )}
-                        </div>
-                        {editCards.has('caller') && (
-                          <div className={styles.cardForm}>
-                            {detailInput('caller_name', { label: t(lang, 'Nom', 'Name') })}
-                            {detailInput('caller_phone', { type: 'tel' })}
-                            {detailInput('caller_email', { type: 'email' })}
-                          </div>
-                        )}
-                        {!editCards.has('caller') && (<>
-                        <div className={styles.contactHead}>
-                          <Avatar name={name ?? '?'} size="lg" />
-                          <div className={styles.contactWho}>
-                            <p className={styles.contactName}>{name ?? t(lang, 'Nom non fourni', 'Name not provided')}</p>
-                            {place && (
-                              <p className={styles.contactPlace}><MapPinIcon size={16} />{place}</p>
-                            )}
-                          </div>
-                        </div>
-                        <ul className={styles.contactRows}>
-                          <li>
-                            <span className={styles.contactIcon}><MailIcon size={18} /></span>
-                            <span data-testid="email-display">
-                              {data.caller_email_placeholder
-                                ? <span className={styles.contactMissing}>{t(lang, 'non fourni', 'not provided')}</span>
-                                : email
-                                  ? <a className={styles.contactLink} href={`mailto:${email}`}>{email}</a>
-                                  : '—'}
-                            </span>
-                          </li>
-                          <li>
-                            <span className={styles.contactIcon}><PhoneIcon size={18} /></span>
-                            <span data-testid="phone-display">
-                              {data.caller_phone_placeholder
-                                ? <span className={styles.contactMissing}>{t(lang, 'non fourni', 'not provided')}</span>
-                                : phone
-                                  ? <a className={styles.contactPhone} href={telHref(phone)}>{formatPhone(phone)}</a>
-                                  : '—'}
-                            </span>
-                          </li>
-                        </ul>
-                        <div className={styles.contactActions}>
-                          {phone ? (
-                            <a className={styles.contactBtn} href={telHref(phone)} data-testid="contact-call">
-                              <PhoneIcon size={18} />{t(lang, 'Appeler', 'Call')}
-                            </a>
-                          ) : (
-                            <button type="button" className={styles.contactBtn} disabled>
-                              <PhoneIcon size={18} />{t(lang, 'Appeler', 'Call')}
-                            </button>
-                          )}
-                          {email ? (
-                            <a className={styles.contactBtn} href={`mailto:${email}`} data-testid="contact-mail">
-                              <MailIcon size={18} />{t(lang, 'Courriel', 'Email')}
-                            </a>
-                          ) : (
-                            <button type="button" className={styles.contactBtn} disabled>
-                              <MailIcon size={18} />{t(lang, 'Courriel', 'Email')}
-                            </button>
-                          )}
-                        </div>
-                        </>)}
-                      </section>
-                    );
-                  })()}
 
                   <section className={styles.card}>
                     <div className={styles.cardHeadRow}>
@@ -1057,40 +905,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
 
                     </section>
                   )}
-                  {/* Weather summary — read-only; the evaluation runs at triage (or via the
-                      weather-check endpoint) and the escalation is applied automatically. */}
-                  {isEditor && weatherEnabled && data.weather_evaluation?.status === 'ok' && (() => {
-                    const ev = data.weather_evaluation;
-                    const bandFr = ev.band_name ? (BAND_FR[ev.band_name] ?? ev.band_name) : '';
-                    const locFr = ev.location ? (LOC_FR[ev.location] ?? ev.location) : '';
-                    return (
-                      <section className={styles.card} data-testid="weather-section">
-                        <h3 className={styles.cardTitle}>{t(lang, 'Météo', 'Weather')}</h3>
-                        <div className={styles.weatherResult} data-testid="weather-result">
-                          <p className={styles.weatherContext}>
-                            {t(lang, 'Météo', 'Weather')} — {locFr} : {ev.min_forecast_temp_24h_c}&nbsp;°C {t(lang, 'prévu (24 h)', 'forecast (24 h)')}, {t(lang, 'palier', 'band')} {bandFr}
-                          </p>
-                          {ev.evaluated_at && (
-                            <p className={styles.weatherTime}>
-                              {t(lang, 'évalué le', 'evaluated')} {new Date(ev.evaluated_at).toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')}
-                            </p>
-                          )}
-                          {ev.is_critical && (
-                            <span className={styles.astreinteBadge} data-testid="weather-astreinte">
-                              {t(lang, 'Astreinte / garde', 'On-call')}
-                            </span>
-                          )}
-                          <p className={styles.weatherDraft}>
-                            {t(lang, 'Seuils provisoires — à valider', 'Provisional thresholds — to validate')}
-                          </p>
-                          <p className={styles.weatherLicence} data-testid="weather-licence">
-                            {t(lang, 'Source : Environnement et Changement climatique Canada', 'Source: Environment and Climate Change Canada')}
-                          </p>
-                        </div>
-                      </section>
-                    );
-                  })()}
-
                   {/* Triage button — intake_received or triage_failed */}
                   {editMode && (data.status === 'intake_received' || data.status === 'triage_failed' || data.status === 'triage_pending') && (
                     <section className={styles.card} data-testid="triage-section">
@@ -1131,27 +945,227 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                   )}
 
                 </div>
-              </div>
+
+                <div
+                  className={styles.tabPanel}
+                  role="tabpanel"
+                  id="detail-panel-tenant"
+                  aria-labelledby="detail-tab-tenant"
+                  hidden={tab !== 'tenant'}
+                  data-testid="tab-panel-tenant"
+                >
+                  {/* The unit: where the work is and how to get in. */}
+                  <section className={styles.card} data-testid="unit-card">
+                    <div className={styles.cardHeadRow}>
+                      <h3 className={styles.cardTitle}>{t(lang, 'Logement', 'Unit')}</h3>
+                      {canEdit && (
+                        <EditToggle on={editCards.has('unit')} onClick={() => toggleCard('unit')} testId="edit-unit-toggle"
+                                    label={t(lang, "Modifier l'accès et les animaux", 'Edit access and animals')} />
+                      )}
+                    </div>
+                    <dl className={styles.facts}>
+                      <dt>{t(lang, 'Immeuble', 'Building')}</dt>
+                      <dd>
+                        {buildingAddress ? (
+                          <a
+                            className={styles.mapLink}
+                            href={googleMapsUrl(buildingAddress)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={t(lang, 'Ouvrir dans Google Maps', 'Open in Google Maps')}
+                            data-testid="building-map-link"
+                          >
+                            {buildingAddress}
+                            <span aria-hidden="true"> ↗</span>
+                          </a>
+                        ) : '—'}
+                      </dd>
+                      <dt>{t(lang, "N° d'unité", 'Unit #')}</dt>
+                      <dd title={data.unique_unit_number ?? undefined} data-testid="unit-number">
+                        {unitNumberOf(data.unit_label, data.unique_unit_number) ?? '—'}
+                      </dd>
+                      <dt>{t(lang, 'Territoire', 'Territory')}</dt>
+                      <dd>{data.territoire ?? '—'}</dd>
+                      {!editCards.has('unit') && (
+                        <>
+                          <dt>{t(lang, 'Accès', 'Access')}</dt>
+                          <dd>{details.entry_permission ?? accessText}</dd>
+                          <dt>{t(lang, 'Animaux', 'Animals')}</dt>
+                          <dd>{details.animals ?? animalsText}</dd>
+                        </>
+                      )}
+                    </dl>
+                    {editCards.has('unit') && (
+                      <div className={styles.cardForm}>
+                        {detailInput('entry_permission', { multiline: true })}
+                        {detailInput('animals')}
+                        <p className={styles.cardFormNote}>
+                          {t(lang, "L'immeuble et l'unité se changent dans le portfolio.", 'Building and unit are changed in the portfolio.')}
+                        </p>
+                      </div>
+                    )}
+                  </section>
+
+                  {/* The tenant / caller as a contact card: who, where, and one tap to call or write. */}
+                  {(() => {
+                    const phone = data.caller_phone_placeholder ? null : data.caller_phone;
+                    const email = data.caller_email_placeholder ? null : data.caller_email;
+                    const name = data.caller_name?.trim() || null;
+                    const role = data.caller_type === 'tenant' || data.caller_tenant_id != null
+                      ? t(lang, 'Locataire', 'Tenant') : t(lang, 'Appelant', 'Caller');
+                    const unitNo = unitNumberOf(data.unit_label, data.unique_unit_number);
+                    const place = [unitNo && t(lang, `Unité ${unitNo}`, `Unit ${unitNo}`),
+                      data.building_address].filter(Boolean).join(' · ');
+                    return (
+                      <section className={`${styles.card} ${styles.contactCard}`} data-testid="tenant-card"
+                               aria-label={t(lang, 'Appelant', 'Caller')}>
+                        <div className={styles.cardHeadRow}>
+                          <h3 className={styles.cardTitle}>{role}</h3>
+                          {canEdit && (
+                            <EditToggle on={editCards.has('caller')} onClick={() => toggleCard('caller')} testId="edit-caller-toggle"
+                                        label={t(lang, "Modifier l'appelant", 'Edit caller')} />
+                          )}
+                        </div>
+                        {editCards.has('caller') && (
+                          <div className={styles.cardForm}>
+                            {detailInput('caller_name', { label: t(lang, 'Nom', 'Name') })}
+                            {detailInput('caller_phone', { type: 'tel' })}
+                            {detailInput('caller_email', { type: 'email' })}
+                          </div>
+                        )}
+                        {!editCards.has('caller') && (<>
+                        <div className={styles.contactHead}>
+                          <Avatar name={name ?? '?'} size="lg" />
+                          <div className={styles.contactWho}>
+                            <p className={styles.contactName}>{name ?? t(lang, 'Nom non fourni', 'Name not provided')}</p>
+                            {place && (
+                              <p className={styles.contactPlace}><MapPinIcon size={16} />{place}</p>
+                            )}
+                          </div>
+                        </div>
+                        <ul className={styles.contactRows}>
+                          <li>
+                            <span className={styles.contactIcon}><MailIcon size={18} /></span>
+                            <span data-testid="email-display">
+                              {data.caller_email_placeholder
+                                ? <span className={styles.contactMissing}>{t(lang, 'non fourni', 'not provided')}</span>
+                                : email
+                                  ? <a className={styles.contactLink} href={`mailto:${email}`}>{email}</a>
+                                  : '—'}
+                            </span>
+                          </li>
+                          <li>
+                            <span className={styles.contactIcon}><PhoneIcon size={18} /></span>
+                            <span data-testid="phone-display">
+                              {data.caller_phone_placeholder
+                                ? <span className={styles.contactMissing}>{t(lang, 'non fourni', 'not provided')}</span>
+                                : phone
+                                  ? <a className={styles.contactPhone} href={telHref(phone)}>{formatPhone(phone)}</a>
+                                  : '—'}
+                            </span>
+                          </li>
+                        </ul>
+                        <div className={styles.contactActions}>
+                          {phone ? (
+                            <a className={styles.contactBtn} href={telHref(phone)} data-testid="contact-call">
+                              <PhoneIcon size={18} />{t(lang, 'Appeler', 'Call')}
+                            </a>
+                          ) : (
+                            <button type="button" className={styles.contactBtn} disabled>
+                              <PhoneIcon size={18} />{t(lang, 'Appeler', 'Call')}
+                            </button>
+                          )}
+                          {email ? (
+                            <a className={styles.contactBtn} href={`mailto:${email}`} data-testid="contact-mail">
+                              <MailIcon size={18} />{t(lang, 'Courriel', 'Email')}
+                            </a>
+                          ) : (
+                            <button type="button" className={styles.contactBtn} disabled>
+                              <MailIcon size={18} />{t(lang, 'Courriel', 'Email')}
+                            </button>
+                          )}
+                        </div>
+                        </>)}
+                      </section>
+                    );
+                  })()}
+
+                </div>
 
                 {isEditor && (
-                  <section className={`${styles.card} ${styles.actionsCard}`}>
-                    <h3 className={styles.cardTitle}>{t(lang, 'Tâches', 'Tasks')}</h3>
-                    <TaskEditor
-                      ref={taskEditorRef}
-                      lang={lang}
-                      requestId={requestId}
-                      callStatus={data.status}
-                      tasks={data.tasks ?? []}
-                      employees={employees ?? []}
-                      suggestions={techSuggestions?.suggestions ?? []}
-                      onError={flashErr}
-                      onSuccess={flashOk}
-                      onDirtyChange={onTaskDirty}
-                    />
-                  </section>
+                  <div
+                    className={styles.tabPanel}
+                    role="tabpanel"
+                    id="detail-panel-tasks"
+                    aria-labelledby="detail-tab-tasks"
+                    hidden={tab !== 'tasks'}
+                    data-testid="tab-panel-tasks"
+                  >
+                    <section className={`${styles.card} ${styles.actionsCard}`}>
+                      <h3 className={styles.cardTitle}>{t(lang, 'Tâches', 'Tasks')}</h3>
+                      <TaskEditor
+                        ref={taskEditorRef}
+                        lang={lang}
+                        requestId={requestId}
+                        callStatus={data.status}
+                        tasks={data.tasks ?? []}
+                        employees={employees ?? []}
+                        suggestions={techSuggestions?.suggestions ?? []}
+                        onError={flashErr}
+                        onSuccess={flashOk}
+                        onDirtyChange={onTaskDirty}
+                      />
+                    </section>
+                  </div>
                 )}
 
-              </div>
+                <div
+                  className={styles.tabPanel}
+                  role="tabpanel"
+                  id="detail-panel-history"
+                  aria-labelledby="detail-tab-history"
+                  hidden={tab !== 'history'}
+                  data-testid="tab-panel-history"
+                >
+                  <section className={`${styles.card} ${styles.historyCard}`}>
+                    <HistoryTimeline
+                      requestId={data.request_id}
+                      visits={data.visits ?? []}
+                      followups={data.followup_log}
+                      decisions={data.justification_log}
+                      statusChanges={data.status_history ?? []}
+                      lang={lang}
+                    />
+                  </section>
+                </div>
+
+                {tab === 'notes' && (
+                  <div
+                    className={styles.tabPanel}
+                    role="tabpanel"
+                    id={`${titleId}-panel-notes`}
+                    aria-labelledby={`${titleId}-tab-notes`}
+                    data-testid="tab-panel-notes"
+                  >
+                    <CallNotes
+                      notes={data.followup_log}
+                      lang={lang}
+                      canAdd={isEditor}
+                      onAdd={async (text) => {
+                        try {
+                          const updated = await dispatchAddLog(requestId, { entry_text: text });
+                          qc.setQueryData(['request', requestId], updated);
+                          qc.invalidateQueries({ queryKey: ['requests'] });
+                          flashOk(t(lang, 'Note ajoutée.', 'Note added.'));
+                        } catch (err) {
+                          flashErr(err instanceof ApiError ? apiErrorMessage(lang, err) : t(lang, 'Note non enregistrée.', 'Note not saved.'));
+                          throw err;
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+              </>
             )}
           </div>
 
