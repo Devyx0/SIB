@@ -112,9 +112,9 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
               <NavLink to="/tasks" data-testid="nav-tasks" className={navItemClass}>
                 {t(lang, 'Tâches', 'Tasks')}
               </NavLink>
-              <Link to="/tasks?nouvelle-tache=1" data-testid="nav-nouvelle-tache" className={styles.navItem}>
+              <Link to="/triage?nouvel-appel=1" data-testid="nav-nouvel-appel" className={styles.navItem}>
                 <span className={styles.plus} aria-hidden="true">+</span>
-                {t(lang, 'Nouvelle tâche', 'New task')}
+                {t(lang, 'Nouvel appel', 'New call')}
               </Link>
               <NavLink to="/portfolio" data-testid="nav-portfolio" className={navItemClass}>
                 {t(lang, 'Portfolio', 'Portfolio')}

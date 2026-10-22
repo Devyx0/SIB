@@ -495,6 +495,10 @@ export interface PortfolioBuildingDetail {
   annee_construction: string | null;
   territoire: string | null;
   nom_unique_projet: string | null;
+  /** WGS84 from geocoding — does not replace adresse. */
+  latitude: number | null;
+  longitude: number | null;
+  geocode_status: string | null;
   unit_count: number;
   units: PortfolioUnitSummary[];
   /** What staff used to open Drive for, now kept and edited here. */

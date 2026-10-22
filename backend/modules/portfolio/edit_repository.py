@@ -123,6 +123,36 @@ def lock_building(conn, building_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+def set_building_geocode(
+    conn,
+    building_id: int,
+    *,
+    latitude: float | None,
+    longitude: float | None,
+    status: str,
+    query: str | None,
+) -> None:
+    """Write geocode columns (not in the portfolio edit whitelist)."""
+    conn.execute(
+        """
+        UPDATE building
+        SET latitude = %(lat)s,
+            longitude = %(lon)s,
+            geocode_status = %(status)s,
+            geocode_query = %(query)s,
+            geocoded_at = now()
+        WHERE building_id = %(id)s
+        """,
+        {
+            "id": building_id,
+            "lat": latitude,
+            "lon": longitude,
+            "status": status,
+            "query": query or None,
+        },
+    )
+
+
 def lock_unit(conn, unit_id: int) -> dict | None:
     row = conn.execute(
         """

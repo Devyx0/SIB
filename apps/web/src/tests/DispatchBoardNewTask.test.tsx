@@ -111,9 +111,10 @@ describe('DispatchBoard Nouvelle tâche', () => {
     expect(screen.queryByTestId('nouvelle-tache-modal')).toBeNull();
   });
 
-  it('also shows the button on the triage board', async () => {
+  it('New task stays on the tasks board; triage shows New call instead', async () => {
     wrap('/triage', 'triage');
-    await waitFor(() => expect(screen.getByTestId('nouvelle-tache-btn')).toHaveTextContent('Nouvelle tâche'));
+    await waitFor(() => expect(screen.getByTestId('nouvel-appel-btn')).toHaveTextContent('Nouvel appel'));
+    expect(screen.queryByTestId('nouvelle-tache-btn')).toBeNull();
   });
 
   it('call field is a typeahead dropdown listing eligible calls', async () => {

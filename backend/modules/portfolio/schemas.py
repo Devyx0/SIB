@@ -85,6 +85,10 @@ class BuildingDetail(BaseModel):
     annee_construction: Optional[str] = None
     territoire: Optional[str] = None
     nom_unique_projet: Optional[str] = None
+    # Nominatim (or equivalent) pin — never edits adresse.
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    geocode_status: Optional[str] = None
     unit_count: int
     units: list[UnitSummary]
     # What staff used to open Drive for, now kept and edited here.

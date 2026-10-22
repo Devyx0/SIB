@@ -55,7 +55,7 @@ describe('AppShell side menu', () => {
     wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
     expect(screen.getByTestId('nav-triage')).toHaveTextContent('Triage');
     expect(screen.getByTestId('nav-tasks')).toHaveTextContent('Tâches');
-    expect(screen.getByTestId('nav-nouvelle-tache')).toHaveTextContent('Nouvelle tâche');
+    expect(screen.getByTestId('nav-nouvel-appel')).toHaveTextContent('Nouvel appel');
     expect(screen.getByText("Vue d'ensemble")).toBeTruthy();
     expect(screen.getByTestId('nav-tableau-bord')).toHaveTextContent('Tableau de bord');
     expect(screen.getByTestId('nav-utilisation')).toHaveTextContent('Utilisation');
@@ -75,12 +75,12 @@ describe('AppShell side menu', () => {
       .toBe('/utilisation');
   });
 
-  it('routes: Triage → /triage, Tasks → /tasks, Nouvelle tâche → /tasks?nouvelle-tache=1', () => {
+  it('routes: Triage → /triage, Tasks → /tasks, Nouvel appel → /triage?nouvel-appel=1', () => {
     wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
     expect((screen.getByTestId('nav-triage') as HTMLAnchorElement).getAttribute('href')).toBe('/triage');
     expect((screen.getByTestId('nav-tasks') as HTMLAnchorElement).getAttribute('href')).toBe('/tasks');
-    expect((screen.getByTestId('nav-nouvelle-tache') as HTMLAnchorElement).getAttribute('href'))
-      .toBe('/tasks?nouvelle-tache=1');
+    expect((screen.getByTestId('nav-nouvel-appel') as HTMLAnchorElement).getAttribute('href'))
+      .toBe('/triage?nouvel-appel=1');
   });
 
   it('Escape closes the mobile slide-over', async () => {

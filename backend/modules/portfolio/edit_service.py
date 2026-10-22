@@ -26,6 +26,7 @@ from backend.core.utils import today_local
 from backend.modules.intake.service import allowed_sector_ids
 
 from . import edit_repository as repo
+from .geocode import geocode_address
 from .schemas import (
     AddOccupantBody,
     BuildingCreateBody,
@@ -129,12 +130,34 @@ def patch_project(conn, project_id: int, body: ProjectPatch, user: CurrentUser) 
 
 # ── Buildings ─────────────────────────────────────────────────────────────────
 
+_ADDRESS_COLS = frozenset({"adresse", "ville", "code_postal"})
+
+
+def _geocode_building(conn, building_id: int, *, adresse, ville, code_postal) -> None:
+    """Best-effort Nominatim lookup; never blocks the address write on failure."""
+    result = geocode_address(adresse, ville, code_postal)
+    repo.set_building_geocode(
+        conn,
+        building_id,
+        latitude=result.latitude,
+        longitude=result.longitude,
+        status=result.status,
+        query=result.query or None,
+    )
+
+
 def _insert_building(conn, user: CurrentUser, values: dict, *, project_id: int, sector_id: int) -> int:
     values = {"actif_inactif": "Actif", **values}
     building_id = repo.insert_row(conn, "building", values,
                                   {"project_id": project_id, "sector_id": sector_id})
     _record_create(conn, user, "building", building_id,
                    {**values, "project_id": project_id, "sector_id": sector_id})
+    _geocode_building(
+        conn, building_id,
+        adresse=values.get("adresse"),
+        ville=values.get("ville"),
+        code_postal=values.get("code_postal"),
+    )
     return building_id
 
 
@@ -149,7 +172,17 @@ def create_building(conn, body: BuildingCreateBody, user: CurrentUser) -> Create
 
 def patch_building(conn, building_id: int, body: BuildingPatch, user: CurrentUser) -> None:
     row = _building_in_scope(conn, user, building_id)
+    changes = _changes(body.changes)
+    address_touched = bool(_ADDRESS_COLS & changes.keys())
     _apply(conn, user, "building", building_id, row, body)
+    if address_touched:
+        # Re-read effective address after the patch (changed fields win).
+        adresse = changes["adresse"] if "adresse" in changes else row.get("adresse")
+        ville = changes["ville"] if "ville" in changes else row.get("ville")
+        code_postal = changes["code_postal"] if "code_postal" in changes else row.get("code_postal")
+        # Only re-geocode when an address field actually changed value.
+        if any(_text(row.get(c)) != _text(changes[c]) for c in _ADDRESS_COLS if c in changes):
+            _geocode_building(conn, building_id, adresse=adresse, ville=ville, code_postal=code_postal)
 
 
 # ── Units ─────────────────────────────────────────────────────────────────────

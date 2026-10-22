@@ -204,6 +204,9 @@ def get_building(conn, building_id: int) -> dict | None:
             b.nb_logements,
             b.nb_etages,
             b.annee_construction,
+            b.latitude,
+            b.longitude,
+            b.geocode_status,
             s.territoire,
             p.nom_unique_projet,
             COUNT(u.unit_id)::int AS unit_count

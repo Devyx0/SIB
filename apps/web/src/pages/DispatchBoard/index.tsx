@@ -16,6 +16,7 @@ import TaskTable, { sortTasks, taskUrgency, type TaskSortKey } from './TaskTable
 import TaskWeekGrid, { addDays, mondayOf, torontoYmd } from './TaskWeekGrid';
 import DetailPanel from './DetailPanel';
 import NewTaskModal from './NewTaskModal';
+import NouvelAppelModal from './NouvelAppelModal';
 import Pagination from '../../components/Pagination';
 import { DEMO_ROW, isDemoEnabled } from '../../dev/demoRequest';
 import styles from './index.module.css';
@@ -59,12 +60,18 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [showAllCols, setShowAllCols] = useState(false);
+  const [showNewCall, setShowNewCall] = useState(false);
   const [showNewTask, setShowNewTask] = useState(false);
   const isCoordOrDir = !!(me?.roles.includes('coordinator') || me?.roles.includes('director'));
   const isTriage = mode === 'triage';
 
-  // Side-menu entry point: ?nouvelle-tache=1 opens the modal. The param is
-  // stripped on close/save so a refresh afterwards does not reopen it.
+  // Side-menu « Nouvel appel » → /triage?nouvel-appel=1 (triage board only).
+  const newCallParam = searchParams.get('nouvel-appel') === '1';
+  useEffect(() => {
+    if (newCallParam) setShowNewCall(true);
+  }, [newCallParam]);
+
+  // Tasks-page entry: ?nouvelle-tache=1 (and the board header button).
   const newTaskParam = searchParams.get('nouvelle-tache') === '1';
   useEffect(() => {
     if (newTaskParam) setShowNewTask(true);
@@ -75,6 +82,17 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
   useEffect(() => {
     if (deepRequestId) setSelectedId(Number(deepRequestId));
   }, [deepRequestId]);
+
+  function closeNewCall() {
+    setShowNewCall(false);
+    if (newCallParam) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('nouvel-appel');
+        return next;
+      }, { replace: true });
+    }
+  }
 
   function closeNewTask() {
     setShowNewTask(false);
@@ -332,7 +350,16 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
               </button>
             </div>
           )}
-          {isCoordOrDir && (
+          {isCoordOrDir && isTriage && (
+            <button
+              data-testid="nouvel-appel-btn"
+              onClick={() => setShowNewCall(true)}
+              className={styles.newCallBtn}
+            >
+              {t(lang, '+ Nouvel appel', '+ New call')}
+            </button>
+          )}
+          {isCoordOrDir && !isTriage && (
             <button
               data-testid="nouvelle-tache-btn"
               onClick={() => setShowNewTask(true)}
@@ -541,6 +568,12 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
           me={me}
         />
       )}
+
+      <NouvelAppelModal
+        open={showNewCall}
+        onClose={closeNewCall}
+        lang={lang}
+      />
 
       <NewTaskModal
         open={showNewTask}

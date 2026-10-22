@@ -91,7 +91,9 @@ const building: PortfolioBuildingDetail = {
   building_id: 100, project_id: 10, sector_id: 1, adresse: '10 rue Cartier', ville: 'Québec',
   code_postal: 'G1R 2S1', web_building_name: 'Le Cartier', actif_inactif: 'Actif',
   nb_logements: '2', nb_etages: '3', annee_construction: '1965',
-  territoire: 'Haute-Ville', nom_unique_projet: 'Projet Cartier', unit_count: 2,
+  territoire: 'Haute-Ville', nom_unique_projet: 'Projet Cartier',
+  latitude: 46.81390, longitude: -71.20800, geocode_status: 'ok',
+  unit_count: 2,
   units: [
     { unit_id: 1000, numero_appartement: '101', unique_unit_number: '10-101', rue: '10, rue Cartier', grandeur: '4 1/2',
       tenant_names: ['Ada Lovelace', 'Grace Hopper'], occupant_count: 2, lease_statut: 'Régulier' },

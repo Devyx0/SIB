@@ -19,11 +19,25 @@ from fastapi.testclient import TestClient
 
 from backend.core.db import get_db_conn, get_pool
 from backend.main import create_app
+from backend.modules.portfolio.geocode import GeocodeResult
 
 
 @pytest.fixture(scope="session")
 def app():
     return create_app()
+
+
+@pytest.fixture(autouse=True)
+def _stub_building_geocode(monkeypatch):
+    """Portfolio create/patch must not call live Nominatim in tests."""
+    def _fake(adresse=None, ville=None, code_postal=None, **_kwargs):
+        from backend.modules.portfolio.geocode import build_query
+        q = build_query(adresse, ville, code_postal) or ""
+        if not q:
+            return GeocodeResult("skipped", None, None, "", note="blank_address")
+        return GeocodeResult("ok", 46.8139, -71.2080, q, display_name="stub", note="test_stub")
+
+    monkeypatch.setattr("backend.modules.portfolio.edit_service.geocode_address", _fake)
 
 
 @pytest.fixture
