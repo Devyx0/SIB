@@ -99,12 +99,7 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
         </div>
 
         <nav className={styles.nav} onClick={() => setMenuOpen(false)}>
-          {intakeOnly ? (
-            <NavLink to="/intake" data-testid="nav-nouvel-appel" className={navItemClass}>
-              <span className={styles.plus} aria-hidden="true">+</span>
-              {t(lang, 'Nouvel appel', 'New call')}
-            </NavLink>
-          ) : (
+          {!intakeOnly && (
             <>
               <NavLink to="/triage" data-testid="nav-triage" className={navItemClass}>
                 {t(lang, 'Triage', 'Triage')}
@@ -112,10 +107,6 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
               <NavLink to="/tasks" data-testid="nav-tasks" className={navItemClass}>
                 {t(lang, 'Tâches', 'Tasks')}
               </NavLink>
-              <Link to="/triage?nouvel-appel=1" data-testid="nav-nouvel-appel" className={styles.navItem}>
-                <span className={styles.plus} aria-hidden="true">+</span>
-                {t(lang, 'Nouvel appel', 'New call')}
-              </Link>
               <NavLink to="/portfolio" data-testid="nav-portfolio" className={navItemClass}>
                 {t(lang, 'Portfolio', 'Portfolio')}
               </NavLink>
@@ -132,6 +123,20 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
         </nav>
 
         <div className={styles.bottom}>
+          <div className={styles.newCall} onClick={() => setMenuOpen(false)}>
+            {intakeOnly ? (
+              <NavLink to="/intake" data-testid="nav-nouvel-appel" className={navItemClass}>
+                <span className={styles.plus} aria-hidden="true">+</span>
+                {t(lang, 'Nouvel appel', 'New call')}
+              </NavLink>
+            ) : (
+              <Link to="/triage?nouvel-appel=1" data-testid="nav-nouvel-appel" className={styles.navItem}>
+                <span className={styles.plus} aria-hidden="true">+</span>
+                {t(lang, 'Nouvel appel', 'New call')}
+              </Link>
+            )}
+          </div>
+
           {me && (
             <div className={styles.userInfo}>
               {demoUserSwitchEnabled() ? (

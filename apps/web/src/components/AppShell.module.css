@@ -126,6 +126,12 @@
   gap: 12px;
 }
 
+/* "New call" sits at the foot of the sidebar, directly above the user block. */
+.newCall {
+  display: flex;
+  flex-direction: column;
+}
+
 .userInfo {
   display: flex;
   flex-direction: column;
