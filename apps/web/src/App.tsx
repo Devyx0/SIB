@@ -19,6 +19,7 @@ import { fetchMe } from './api/client';
 import type { MeResponse } from './api/schema.d.ts';
 import type { Lang } from './i18n';
 
+
 function homePath(me: MeResponse | null): string {
   if (!me) return '/triage';
   const elevated = me.roles.some((r) => r === 'coordinator' || r === 'director');
