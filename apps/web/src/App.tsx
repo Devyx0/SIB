@@ -33,8 +33,14 @@ function homePath(me: MeResponse | null): string {
   return '/triage';
 }
 
+const LANG_KEY = 'ui.lang';
+
+function loadLang(): Lang {
+  try { return localStorage.getItem(LANG_KEY) === 'en' ? 'en' : 'fr'; } catch { return 'fr'; }
+}
+
 export default function App() {
-  const [lang, setLang] = useState<Lang>('fr');
+  const [lang, setLang] = useState<Lang>(loadLang);
   // undefined = loading; null = no session; Session = authenticated
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -42,6 +48,7 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.lang = lang;
+    try { localStorage.setItem(LANG_KEY, lang); } catch { /* private mode */ }
   }, [lang]);
 
   useEffect(() => {
