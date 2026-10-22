@@ -143,7 +143,7 @@ def maybe_close_request(conn, request_id: int) -> bool:
 
 
 _UPDATABLE_FIELDS: frozenset[str] = frozenset({
-    "assigned_employee_id", "due_at", "urgency_tier", "subcontractor_name",
+    "assigned_employee_id", "due_at", "urgency_tier", "subcontractor_name", "description",
 })
 
 

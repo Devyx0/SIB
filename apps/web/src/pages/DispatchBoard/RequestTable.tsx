@@ -4,6 +4,9 @@ import { statusLabel, t, timeEstimateLabel, type Lang } from '../../i18n';
 import { urgencyLabel } from '../../lib/urgencyLevels';
 import { googleMapsUrl } from '../../lib/maps';
 import styles from './RequestTable.module.css';
+import { PersonName } from '../../components/Avatar';
+import { cleanCallTitle } from '../../lib/callTitle';
+import { unitNumberOf } from '../../lib/unitNumber';
 
 interface Props {
   lang?: Lang;
@@ -34,6 +37,7 @@ const MANDATORY_COLS: ColDef[] = [
   { key: 'asnu',                  fr: 'ASNU',           en: 'ASNU',          sortable: true  },
   { key: 'urgency_tier',          fr: 'Urgence',        en: 'Urgency',       sortable: true  },
   { key: 'raw_title',             fr: 'Appel',          en: 'Call',          sortable: true  },
+  { key: 'category',              fr: 'Catégorie',      en: 'Category',      sortable: false },
   { key: 'territoire',            fr: 'Territoire',     en: 'Territory',     sortable: true  },
   { key: 'building_address',      fr: 'Immeuble',       en: 'Building',      sortable: true  },
   { key: 'unique_unit_number',    fr: "N° d'unité",     en: 'Unit #',        sortable: true  },
@@ -208,17 +212,24 @@ export default function RequestTable({
           <td className={styles.nowrap + ' ' + styles.mono}>{row.asnu ?? '—'}</td>
           <td className={styles.nowrap}><UrgencyTag tier={row.urgency_tier} lang={lang} /></td>
           <td className={styles.titleCell}>
-            <span className={styles.clamp} title={row.raw_title ?? undefined}>{row.raw_title ?? '—'}</span>
+            <span className={styles.clamp} title={row.raw_title ?? undefined}>{cleanCallTitle(row.raw_title) || '—'}</span>
             {isDup && (
               <span className={styles.tagDup} data-testid="dup-badge">
-                {t(lang, 'Doublon', 'Duplicate')} #{row.duplicate_of_request_id}
+                {t(lang, 'Doublon', 'Duplicate')}{row.duplicate_of_asnu ? ` ${row.duplicate_of_asnu}` : ''}
               </span>
             )}
             {isAdd && (
               <span className={styles.tagAdd} data-testid="add-badge">
-                {t(lang, 'Ajout', 'Addition')} #{row.addition_to_request_id}
+                {t(lang, 'Ajout', 'Addition')}{row.addition_to_asnu ? ` ${row.addition_to_asnu}` : ''}
               </span>
             )}
+          </td>
+          <td className={styles.categoryCell} data-testid="row-category">
+            {(row.category_raw || row.element)
+              ? <span className={styles.tagCategory} title={row.category_raw || row.element || undefined}>
+                  {row.category_raw || row.element}
+                </span>
+              : <span className={styles.muted}>—</span>}
           </td>
           <td className={styles.nowrap}>{row.territoire ?? '—'}</td>
           <td className={styles.buildingCell}>
@@ -240,9 +251,11 @@ export default function RequestTable({
             ) : '—'}
           </td>
           <td className={styles.nowrap + ' ' + styles.mono} title={row.unique_unit_number ?? undefined}>
-            {row.unique_unit_number ?? '—'}
+            {unitNumberOf(row.unique_unit_number, row.unit_label) ?? '—'}
           </td>
-          <td className={styles.nowrap + ' ' + styles.bold}>{row.assigned_employee_name ?? '—'}</td>
+          <td className={styles.nowrap + ' ' + styles.bold}>
+            {row.assigned_employee_name ? <PersonName name={row.assigned_employee_name} size="xs" /> : '—'}
+          </td>
           <td className={styles.titleCell}>
             <span className={styles.clamp} title={row.subcontractor_name ?? undefined}>
               {row.subcontractor_name ?? '—'}

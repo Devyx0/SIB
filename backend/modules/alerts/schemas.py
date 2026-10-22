@@ -22,6 +22,7 @@ class AlertRow(BaseModel):
     created_at: datetime
     read_at: Optional[datetime] = None
     raw_title: Optional[str] = None
+    asnu: Optional[str] = None
 
 
 class AlertListResponse(BaseModel):

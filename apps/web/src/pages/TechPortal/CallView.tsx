@@ -16,6 +16,10 @@ import TechHeader from './TechHeader';
 import { elapsedLabel } from './elapsed';
 import { pickMyTask, taskIdParam } from './myTask';
 import styles from './TechPortal.module.css';
+import { cleanCallTitle } from '../../lib/callTitle';
+import { formatPhone, telHref } from '../../lib/phone';
+import { unitNumberOf } from '../../lib/unitNumber';
+import { splitTask } from '../../lib/taskText';
 
 interface Props {
   lang: Lang;
@@ -156,7 +160,15 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
                 <span className={styles.urgencyBadge}>{urgencyLabel(lang, req.urgency_tier)}</span>
               )}
             </div>
-            <h1 className={styles.callViewTitle}>{req.raw_title ?? `#${req.request_id}`}</h1>
+            {/* Opened for a task: the task is the heading, the service call a line under it. */}
+            <h1 className={styles.callViewTitle} data-testid="tech-view-title">
+              {task ? splitTask(task.description).name : (cleanCallTitle(req.raw_title, req.project_label) || req.asnu || '—')}
+            </h1>
+            {task && (
+              <p className={styles.callViewSub} data-testid="tech-view-call">
+                {t(lang, 'Appel', 'Call')} : {[req.asnu, cleanCallTitle(req.raw_title, req.project_label)].filter(Boolean).join(' · ')}
+              </p>
+            )}
             {(req.asnu || req.time_estimate_bucket || req.next_follow_up_date) && (
               <dl className={styles.callFacts} data-testid="call-facts">
                 {req.asnu && (
@@ -183,7 +195,7 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
             {task && (
               <section className={styles.card} data-testid="my-task">
                 <h2 className={styles.cardTitle}>{t(lang, 'Ma tâche', 'My task')}</h2>
-                <p className={styles.preWrap}>{task.description}</p>
+                <p className={styles.preWrap}>{splitTask(task.description).details || splitTask(task.description).name}</p>
               </section>
             )}
 
@@ -257,10 +269,10 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
                     {buildingAddress}
                     <span aria-hidden="true"> ↗</span>
                   </a>
-                  {req.unit_label ? `, app. ${req.unit_label}` : ''}
+                  {req.unit_label ? `, app. ${unitNumberOf(req.unit_label, req.unique_unit_number)}` : ''}
                 </p>
               ) : (
-                <p>{req.unit_label ? `app. ${req.unit_label}` : '—'}</p>
+                <p>{req.unit_label ? `app. ${unitNumberOf(req.unit_label, req.unique_unit_number)}` : '—'}</p>
               )}
               {req.building_name && <p className={styles.muted}>{req.building_name}</p>}
             </section>
@@ -365,7 +377,7 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
                 <>
                   {req.caller_name && <p>{req.caller_name}</p>}
                   {req.caller_phone && (
-                    <p><a href={`tel:${req.caller_phone}`} className={styles.contactLink}>{req.caller_phone}</a></p>
+                    <p><a href={telHref(req.caller_phone)} className={styles.contactLink}>{formatPhone(req.caller_phone)}</a></p>
                   )}
                   {req.caller_email && (
                     <p><a href={`mailto:${req.caller_email}`} className={styles.contactLink}>{req.caller_email}</a></p>

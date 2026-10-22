@@ -15,6 +15,7 @@ import RequestTable from './RequestTable';
 import TaskTable, { sortTasks, taskUrgency, type TaskSortKey } from './TaskTable';
 import TaskWeekGrid, { addDays, mondayOf, torontoYmd } from './TaskWeekGrid';
 import DetailPanel from './DetailPanel';
+import TaskCard from './TaskCard';
 import NouvelAppelModal from './NouvelAppelModal';
 import Pagination from '../../components/Pagination';
 import { DEMO_ROW, isDemoEnabled } from '../../dev/demoRequest';
@@ -187,9 +188,9 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
     )
     : [];
 
+  // A task row opens its task card; the card's button opens the service call.
   function selectTask(row: TaskListItem) {
     setSelectedTaskId(row.task_id);
-    setSelectedId(row.request_id);
   }
 
   const { data: sectors } = useQuery({
@@ -531,6 +532,20 @@ export default function DispatchBoard({ lang, me, mode }: Props) {
           onNext={() => setPage(offset + PAGE_SIZE)}
         />
       )}
+
+      {(() => {
+        if (isTriage || selectedTaskId == null || selectedId != null) return null;
+        const row = [...taskRows, ...undatedTasks].find((r) => r.task_id === selectedTaskId);
+        return row ? (
+          <TaskCard
+            task={row}
+            lang={lang}
+            me={me}
+            onClose={() => setSelectedTaskId(null)}
+            onOpenCall={(id) => { setSelectedTaskId(null); setSelectedId(id); }}
+          />
+        ) : null;
+      })()}
 
       {selectedId !== null && (
         <DetailPanel

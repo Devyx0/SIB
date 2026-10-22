@@ -329,6 +329,8 @@ export function updateTask(
   body: {
     urgency_tier?: string | null;
     subcontractor_name?: string | null;
+    /** Task name (first line) + description. */
+    description?: string;
     justification: Justification;
   },
 ): Promise<TaskOut> {
@@ -409,6 +411,16 @@ export interface DispatchFields {
   next_follow_up_date: string | null;
   next_steps: string | null;
   estimated_cost: number | null;
+  // Call details the dispatcher can correct from the popup.
+  raw_title?: string | null;
+  problem_summary?: string | null;
+  entry_permission?: string | null;
+  animals?: string | null;
+  caller_name?: string | null;
+  caller_phone?: string | null;
+  caller_email?: string | null;
+  subcontractor_name?: string | null;
+  time_estimate_bucket?: string | null;
 }
 
 /** One « Enregistrer » in the call details: only the changed fields, one justification. */
@@ -556,7 +568,7 @@ export function publicIntakeLookup(body: PublicIntakeLookupBody): Promise<Public
   return apiPost('/api/v1/public/intake/lookup', body);
 }
 
-export function publicIntakeSubmit(body: PublicIntakeSubmitBody): Promise<{ request_id: number }> {
+export function publicIntakeSubmit(body: PublicIntakeSubmitBody): Promise<{ request_id: number; asnu?: string | null }> {
   return apiPost('/api/v1/public/intake/submit', body);
 }
 

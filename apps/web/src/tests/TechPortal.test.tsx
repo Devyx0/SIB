@@ -247,8 +247,8 @@ describe('call view', () => {
     }));
     wrap(['/tech/appels/5']);
     await waitFor(() => expect(screen.getByText('Jean Locataire')).toBeTruthy());
-    const tel = screen.getByText('418-555-1234');
-    expect(tel.getAttribute('href')).toBe('tel:418-555-1234');
+    const tel = screen.getByText('418 555-1234');
+    expect(tel.getAttribute('href')).toBe('tel:4185551234');
     expect(screen.getByText('Fuite sous évier')).toBeTruthy();
     expect(screen.getByText('Fiche 123').getAttribute('href')).toBe('https://example.com/ft');
   });

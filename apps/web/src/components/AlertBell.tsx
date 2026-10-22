@@ -5,6 +5,7 @@ import { fetchAlerts, markAlertRead, markAllAlertsRead } from '../api/client';
 import type { Lang } from '../i18n';
 import { t } from '../i18n';
 import styles from './AlertBell.module.css';
+import { cleanCallTitle } from '../lib/callTitle';
 
 export default function AlertBell({ lang }: { lang: Lang }) {
   const [open, setOpen] = useState(false);
@@ -87,8 +88,7 @@ export default function AlertBell({ lang }: { lang: Lang }) {
             >
               <p className={styles.summary}>{a.summary}</p>
               <p className={styles.meta}>
-                #{a.request_id}
-                {a.raw_title ? ` · ${a.raw_title}` : ''}
+                {[a.asnu, a.raw_title && cleanCallTitle(a.raw_title)].filter(Boolean).join(' · ')}
               </p>
             </button>
           ))}

@@ -6,6 +6,10 @@ import { googleMapsUrl } from '../../lib/maps';
 import { dueDay } from '../../lib/taskDates';
 import { StatusTag, UrgencyTag } from './RequestTable';
 import styles from './RequestTable.module.css';
+import { PersonName } from '../../components/Avatar';
+import { cleanCallTitle } from '../../lib/callTitle';
+import { unitNumberOf } from '../../lib/unitNumber';
+import { splitTask } from '../../lib/taskText';
 
 export type TaskSortKey =
   | 'due_at' | 'urgency_tier' | 'description' | 'territoire'
@@ -165,7 +169,7 @@ export default function TaskTable({
       const isSelected = row.task_id === selectedTaskId;
       const isEscalated = row.status === 'needs_expertise';
       const address = row.building_address
-        ? `${row.building_address}${row.unit_label ? `, app. ${row.unit_label}` : ''}`
+        ? `${row.building_address}${row.unit_label ? `, app. ${unitNumberOf(row.unit_label)}` : ''}`
         : null;
       out.push(
         <tr
@@ -186,9 +190,17 @@ export default function TaskTable({
           <td className={`${styles.nowrap} ${styles.dateCell}`}>{day ?? '—'}</td>
           <td className={styles.nowrap}><UrgencyTag tier={urgency} lang={lang} /></td>
           <td className={styles.titleCell}>
-            <span className={styles.clamp} title={row.description}>{row.description}</span>
-            <span className={`${styles.clamp} ${styles.muted}`} title={row.request_title ?? undefined}>
-              #{row.request_id} {row.request_title ?? ''}
+            {(() => {
+              const { name, details } = splitTask(row.description);
+              return (
+                <>
+                  <span className={`${styles.oneLine} ${styles.taskName}`} title={name}>{name}</span>
+                  {details && <span className={`${styles.oneLine} ${styles.taskDetails}`} title={details}>{details}</span>}
+                </>
+              );
+            })()}
+            <span className={`${styles.oneLine} ${styles.muted}`} title={row.request_title ?? undefined}>
+              {[row.request_asnu, cleanCallTitle(row.request_title)].filter(Boolean).join(' · ')}
             </span>
           </td>
           <td className={styles.nowrap}>{row.territoire ?? '—'}</td>
@@ -209,7 +221,9 @@ export default function TaskTable({
             ) : '—'}
           </td>
           <td className={`${styles.nowrap} ${styles.bold}`}>
-            {row.assigned_employee_name ?? row.subcontractor_name ?? '—'}
+            {row.assigned_employee_name
+              ? <PersonName name={row.assigned_employee_name} size="xs" />
+              : row.subcontractor_name ?? '—'}
           </td>
           <td className={styles.nowrap}><StatusTag status={row.status} lang={lang} /></td>
         </tr>,

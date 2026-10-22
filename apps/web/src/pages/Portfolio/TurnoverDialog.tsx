@@ -8,6 +8,7 @@ import type { Lang } from '../../i18n';
 import { fmtDate, fmtMoney, fmtTime } from './format';
 import { MailIcon, PhoneIcon } from './icons';
 import styles from './Portfolio.module.css';
+import { formatPhone, telHref } from '../../lib/phone';
 
 type Pair = readonly [string, string];
 
@@ -272,9 +273,9 @@ export default function TurnoverDialog({ unitId, tenantId, tenant: initial, lang
             {tenant && (tenant.telephone || tenant.courriel) && (
               <div className={styles.dialogContacts} data-testid="turnover-contacts">
                 {tenant.telephone && (
-                  <a className={styles.contact} href={`tel:${tenant.telephone_international ?? tenant.telephone}`}
-                     aria-label={`${L('Appeler', 'Call')} ${tenant.telephone}`}>
-                    <span className={styles.contactIcon}><PhoneIcon /></span>{tenant.telephone}
+                  <a className={styles.contact} href={telHref(tenant.telephone_international ?? tenant.telephone)}
+                     aria-label={`${L('Appeler', 'Call')} ${formatPhone(tenant.telephone)}`}>
+                    <span className={styles.contactIcon}><PhoneIcon /></span>{formatPhone(tenant.telephone)}
                   </a>
                 )}
                 {tenant.courriel && (

@@ -16,6 +16,7 @@ import type { Lang } from '../i18n';
 import { urgencyLabel } from '../lib/urgencyLevels';
 import { VisitPhoto, formatDurationMinutes } from './RequestSections';
 import styles from './HistoryTimeline.module.css';
+import { Avatar } from './Avatar';
 
 type Kind = 'decision' | 'followup' | 'visit' | 'status';
 type Filter = 'all' | 'decision' | 'followup' | 'visit';
@@ -58,6 +59,23 @@ const DECISION_LABELS: Record<string, [string, string]> = {
   task_schedule: ['Date prévue (tâche)', 'Task scheduled date'],
   task_cancel: ['Tâche annulée', 'Task cancelled'],
   call_cancel: ['Appel annulé', 'Call cancelled'],
+  details: ["Détails de l'appel", 'Call details'],
+};
+
+/** Call details corrected from the popup: one line per field. */
+const DETAIL_LABELS: Record<string, [string, string]> = {
+  raw_title: ['Titre', 'Title'],
+  problem_summary: ['Problème', 'Issue'],
+  entry_permission: ['Accès', 'Access'],
+  animals: ['Animaux', 'Animals'],
+  caller_name: ['Appelant', 'Caller'],
+  caller_phone: ['Téléphone', 'Phone'],
+  caller_email: ['Courriel', 'Email'],
+  element: ['Élément', 'Element'],
+  symptome: ['Symptôme', 'Symptom'],
+  composante: ['Composante', 'Component'],
+  emplacement: ['Emplacement', 'Location'],
+  category_raw: ['Catégorie', 'Category'],
 };
 
 const locale = (lang: Lang) => (lang === 'fr' ? 'fr-CA' : 'en-CA');
@@ -281,7 +299,13 @@ export function buildTimeline(
       title: g.rows.length > 1
         ? t(lang, `Répartition modifiée (${g.rows.length} changements)`, `Dispatch updated (${g.rows.length} changes)`)
         : L(lang, DECISION_LABELS[head.decision_type], head.decision_type),
-      changes: g.rows.map((r) => decisionChange(r, lang)),
+      changes: g.rows.flatMap((r) => r.decision_type === 'details'
+        ? Object.keys(r.after_value ?? {}).map((k) => ({
+          label: L(lang, DETAIL_LABELS[k], k),
+          before: short((r.before_value ?? {})[k]),
+          after: short((r.after_value ?? {})[k]),
+        }))
+        : [decisionChange(r, lang)]),
       text: head.justification_text,
       textNote: head.input_method === 'voice' ? t(lang, 'dicté', 'dictated') : null,
     };
@@ -394,7 +418,15 @@ export default function HistoryTimeline({ requestId, visits, followups, decision
                     <div className={styles.meta}>
                       <span className={styles.kind}>{L(lang, KIND_LABEL[item.kind], item.kind)}</span>
                       {item.time && <span>{item.time}</span>}
-                      {item.who && <span className={styles.who}>{item.who}</span>}
+                      {item.who && (
+                        // Follow-ups only store initials: the disc alone says it.
+                        <span className={styles.who} title={item.who}>
+                          <Avatar name={item.who} size="xs" />
+                          {/^[A-ZÀ-Ý]{1,4}$/.test(item.who.trim())
+                            ? <span className={styles.srOnly}>{item.who}</span>
+                            : item.who}
+                        </span>
+                      )}
                     </div>
                     <p className={styles.title}>{item.title}</p>
                     {item.detail && <p className={styles.detail}>{item.detail}</p>}

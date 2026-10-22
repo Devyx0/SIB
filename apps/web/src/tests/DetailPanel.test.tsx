@@ -203,7 +203,7 @@ describe('DetailPanel', () => {
     const create = vi.spyOn(client, 'createTask').mockResolvedValue(task(8) as never);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />);
     expect((screen.getByTestId('new-task-btn') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByTestId('new-task-desc'), { target: { value: 'Remplacer le robinet' } });
+    fireEvent.change(screen.getByTestId('new-task-name'), { target: { value: 'Remplacer le robinet' } });
     await waitFor(() => expect(screen.getByTestId('new-task-assign').querySelectorAll('option').length).toBeGreaterThan(1));
     await userEvent.selectOptions(screen.getByTestId('new-task-assign'), '14');
     fireEvent.change(screen.getByTestId('new-task-due'), { target: { value: '2026-11-02' } });
@@ -227,7 +227,7 @@ describe('DetailPanel', () => {
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />);
     await userEvent.click(screen.getByTestId('task-redispatch-5'));
     expect(screen.getByTestId('new-task-parent').textContent).toContain('Fuite toiture');
-    expect((screen.getByTestId('new-task-desc') as HTMLTextAreaElement).value).toBe('Fuite toiture');
+    expect((screen.getByTestId('new-task-name') as HTMLInputElement).value).toBe('Fuite toiture');
     await userEvent.click(screen.getByTestId('new-task-btn'));
     await justifyWith('Couvreur requis pour la toiture');
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
@@ -390,7 +390,7 @@ describe('DetailPanel', () => {
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     const create = vi.spyOn(client, 'createTask').mockResolvedValue(task(11) as never);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
-    fireEvent.change(screen.getByTestId('new-task-desc'), { target: { value: 'Inspection du toit' } });
+    fireEvent.change(screen.getByTestId('new-task-name'), { target: { value: 'Inspection du toit' } });
     await userEvent.click(screen.getByTestId('new-task-btn'));
     await justifyWith('Le problème décrit exige une inspection');
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
@@ -541,19 +541,47 @@ describe('DetailPanel', () => {
     expect(screen.queryByText('st_maj')).toBeNull();
   });
 
-  it('shows dual display section only when AI ran and fields differ', () => {
+  it('leads with the AI summary; the tenant\'s original words open from « Demande originale »', async () => {
     const withRaw = {
       ...MOCK_REQUEST,
       triage_model_version: 'gpt-4o-mini',
-      raw_caller_body: { entry_permission: 'Accès autorisé (traitement prioritaire)', animals: null, problems: 'Fuite' },
+      problem_summary: 'Fuite active sous l’évier de cuisine.',
+      raw_caller_body: { entry_permission: 'Accès autorisé (traitement prioritaire)', animals: null, problems: 'ya de leau partout sous levier' },
       entry_permission: 'N/A Non applicable (exemple espace commun)',
     };
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: withRaw, isPending: false, isError: false, error: null });
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
-    const dd = screen.getByTestId('dual-display');
-    expect(dd).toBeTruthy();
-    expect(within(dd).getByText(/Accès autorisé/)).toBeTruthy();
-    expect(within(dd).getByText(/N\/A Non applicable/)).toBeTruthy();
+    expect(screen.getByTestId('issue-summary')).toHaveTextContent('Fuite active sous l’évier de cuisine.');
+    expect(screen.queryByTestId('original-request')).toBeNull();
+    const toggle = screen.getByTestId('original-toggle');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(toggle);
+    const original = screen.getByTestId('original-request');
+    expect(within(original).getByText('ya de leau partout sous levier')).toBeTruthy();
+    expect(within(original).getByText(/Accès autorisé/)).toBeTruthy();
+    expect(screen.queryByTestId('dual-display')).toBeNull();
+  });
+
+  it('shows the tenant as a contact card with call and email buttons', () => {
+    const req = { ...MOCK_REQUEST, caller_name: 'Sophie Gagnon', caller_phone: '418 555-0142', caller_phone_placeholder: false,
+                  caller_email: 'sophie@example.com', caller_email_placeholder: false, caller_type: 'tenant' };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
+    const card = screen.getByTestId('tenant-card');
+    expect(within(card).getByText('Sophie Gagnon')).toBeTruthy();
+    expect(within(card).getByTestId('avatar')).toHaveTextContent('SG');
+    expect(within(card).getByTestId('contact-call')).toHaveAttribute('href', 'tel:4185550142');
+    expect(within(card).getByTestId('contact-mail')).toHaveAttribute('href', 'mailto:sophie@example.com');
+    expect(screen.getByTestId('unit-card')).toBeTruthy();
+  });
+
+  it('shows a clean one-line title without codes or the unit head', () => {
+    const req = { ...MOCK_REQUEST, raw_title: 'CHGE AJD 1035-308 Pie XII: Fuite sous évier' };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
+    const h = screen.getByRole('heading', { level: 2 });
+    expect(h).toHaveTextContent('Fuite sous évier');
+    expect(h).toHaveAttribute('title', 'CHGE AJD 1035-308 Pie XII: Fuite sous évier');
   });
 
   it('hides dual display when triage_model_version not set (no AI ran)', () => {
@@ -661,6 +689,9 @@ describe('DetailPanel', () => {
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
     expect(screen.getByTestId('ai-notes-important').textContent).toContain('RÉQUÉRANT ABSENT');
     expect(screen.getByTestId('ai-notes-next').textContent).toContain("Couper l'eau");
+    // Reasoning stays folded until asked for.
+    expect(screen.queryByTestId('ai-reasoning')).toBeNull();
+    fireEvent.click(screen.getByTestId('reasoning-toggle'));
     expect(screen.getByTestId('ai-reasoning').textContent).toContain('eau active');
     expect(screen.queryByText(/Notes IA/)).toBeNull();
   });
@@ -882,6 +913,7 @@ describe('single footer save (notes + AI feedback)', () => {
     vi.spyOn(client, 'dispatchSave').mockImplementation(async () => { order.push('notes'); return MOCK_REQUEST as unknown as RequestDetail; });
     vi.spyOn(client, 'upsertFeedback').mockImplementation(async () => { order.push('feedback'); return FEEDBACK_OK; });
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coordMe} />);
+    await userEvent.click(screen.getByTestId('edit-planning-toggle'));
     fireEvent.change(screen.getByTestId('cost-input'), { target: { value: '250' } });
     await waitFor(() => screen.getByTestId('feedback-level-utile'));
     await userEvent.click(screen.getByTestId('feedback-level-utile'));
@@ -935,6 +967,7 @@ describe('decision justification (system-wide)', () => {
 
     fireEvent.change(screen.getByTestId('next-steps-input'), { target: { value: 'Commander la pièce' } });
     fireEvent.keyDown(screen.getByTestId('next-steps-input'), { key: 'Enter' });
+    await userEvent.click(screen.getByTestId('edit-planning-toggle'));
     fireEvent.change(screen.getByTestId('cost-input'), { target: { value: '250' } });
     expect(screen.getByTestId('save-bar').textContent).toMatch(/2 modifications non enregistrées/);
 
@@ -950,6 +983,37 @@ describe('decision justification (system-wide)', () => {
       justification: expect.objectContaining({ input_method: 'typed' }),
     }));
   });
+  it('corrected call details (title, caller) save in the same « Enregistrer » with a stale snapshot', async () => {
+    const req = { ...MOCK_REQUEST, raw_title: 'Fuite', caller_name: 'Jean Tremblay', caller_phone_placeholder: false,
+                  caller_phone: '418 555-0100' };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    const save = vi.spyOn(client, 'dispatchSave').mockResolvedValue(ok);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
+
+    await userEvent.click(screen.getByTestId('edit-title-toggle'));
+    fireEvent.change(screen.getByTestId('edit-raw_title'), { target: { value: 'Fuite sous l’évier' } });
+    await userEvent.click(screen.getByTestId('edit-caller-toggle'));
+    fireEvent.change(screen.getByTestId('edit-caller_name'), { target: { value: 'Jeanne Tremblay' } });
+    expect(screen.getByTestId('save-bar').textContent).toMatch(/2 modifications non enregistrées/);
+
+    await userEvent.click(screen.getByTestId('save-btn'));
+    await justifyWith('Correction du nom au téléphone');
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save).toHaveBeenCalledWith(1, expect.objectContaining({
+      changes: { raw_title: 'Fuite sous l’évier', caller_name: 'Jeanne Tremblay' },
+      current: expect.objectContaining({ raw_title: 'Fuite', caller_name: 'Jean Tremblay' }),
+    }));
+  });
+
+  it('header shows the ASNU, never the internal call id', () => {
+    const req = { ...MOCK_REQUEST, request_id: 135, asnu: 'A-2041' };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={135} onClose={vi.fn()} lang="fr" me={null} />);
+    expect(screen.getByTestId('header-asnu').textContent).toBe('A-2041');
+    expect(screen.queryByText('#135')).toBeNull();
+  });
+
   it('task urgency saves via updateTask; no subcontractor field to edit', async () => {
     (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: WITH_TASK, isPending: false, isError: false, error: null });
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([JEAN]);
@@ -980,5 +1044,87 @@ describe('decision justification (system-wide)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Fermer' }));
     expect(onClose).toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+});
+
+describe('Planning card: editable from triage, view-only from the task table', () => {
+  const coord = { employee_id: 4, nom_employe: 'Coord', roles: ['coordinator'] } as unknown as MeResponse;
+  const ok = MOCK_REQUEST as unknown as RequestDetail;
+
+  it('from the task table only the task card is editable: no pencils, planning as text, no AI feedback', () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: { ...WITH_TASK, estimated_cost: 250 }, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([JEAN]);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} readOnly />);
+    expect(screen.queryByTestId('planning-form')).toBeNull();
+    expect(screen.queryByTestId('edit-controls')).toBeNull();
+    expect(screen.queryByTestId('edit-title-toggle')).toBeNull();
+    expect(screen.queryByTestId('feedback-level-utile')).toBeNull();
+    // The task card works as it always did, with the save bar for its edits.
+    expect(screen.getByTestId('task-assign-7')).not.toBeDisabled();
+    expect(screen.getByTestId('save-bar')).toBeTruthy();
+    // Cost now reads in the planning card.
+    expect(screen.getByText('Coût estimé')).toBeTruthy();
+  });
+
+  it('from triage every planning field is editable; urgency applies to the open tasks, estimate + cost to the call', async () => {
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: WITH_TASK, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([JEAN]);
+    const update = vi.spyOn(client, 'updateTask').mockResolvedValue(task(7) as never);
+    const save = vi.spyOn(client, 'dispatchSave').mockResolvedValue(ok);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
+
+    // Read-only until the pencil is pressed, like the other cards.
+    expect(screen.queryByTestId('planning-form')).toBeNull();
+    await userEvent.click(screen.getByTestId('edit-planning-toggle'));
+    const form = screen.getByTestId('planning-form');
+    expect(within(form).getByTestId('cost-input')).toBeTruthy();
+    expect(screen.getByTestId('edit-controls').querySelector('[data-testid="cost-input"]')).toBeNull();
+
+    await userEvent.selectOptions(screen.getByTestId('plan-urgency'), 'URGENT');
+    await userEvent.selectOptions(screen.getByTestId('plan-estimate'), 'H1_TO_2H');
+    fireEvent.change(screen.getByTestId('cost-input'), { target: { value: '300' } });
+    expect(screen.getByTestId('save-bar').textContent).toMatch(/3 modifications non enregistrées/);
+
+    await userEvent.click(screen.getByTestId('save-btn'));
+    await justifyWith('Dégât d’eau actif chez le locataire');
+    await waitFor(() => expect(update).toHaveBeenCalledWith(7, expect.objectContaining({ urgency_tier: 'URGENT' })));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(1, expect.objectContaining({
+      changes: { time_estimate_bucket: 'H1_TO_2H', estimated_cost: 300 },
+    })));
+  });
+});
+
+describe('Notes tab', () => {
+  const coord = { employee_id: 4, nom_employe: 'Coord', roles: ['coordinator'] } as unknown as MeResponse;
+
+  it('lists the notes newest first and adds one from the composer', async () => {
+    const req = {
+      ...MOCK_REQUEST,
+      followup_log: [
+        { followup_id: 1, entry_date: '2026-10-20', entered_by_initials: 'JB', entry_text: 'Locataire avisée.' },
+        { followup_id: 2, entry_date: '2026-10-22', entered_by_initials: 'CL', entry_text: 'Pièce commandée.' },
+      ],
+    };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
+    const add = vi.spyOn(client, 'dispatchAddLog').mockResolvedValue(req as unknown as RequestDetail);
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={coord} />);
+
+    expect(screen.queryByTestId('call-notes')).toBeNull();
+    await userEvent.click(screen.getByTestId('tab-notes'));
+    expect(screen.getByTestId('tab-notes')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getAllByTestId('note').map((n) => n.textContent)).toEqual([
+      expect.stringContaining('Pièce commandée.'), expect.stringContaining('Locataire avisée.'),
+    ]);
+    await userEvent.type(screen.getByTestId('note-draft'), 'Rappeler demain matin');
+    await userEvent.click(screen.getByTestId('note-add'));
+    await waitFor(() => expect(add).toHaveBeenCalledWith(1, { entry_text: 'Rappeler demain matin' }));
+  });
+
+  it('shows the unit number without the building address', () => {
+    const req = { ...MOCK_REQUEST, unit_label: null, unique_unit_number: '1580-204 Perigord' };
+    (useRequest as ReturnType<typeof vi.fn>).mockReturnValue({ data: req, isPending: false, isError: false, error: null });
+    wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={null} />);
+    expect(screen.getByTestId('unit-number').textContent?.trim()).toBe('204');
   });
 });

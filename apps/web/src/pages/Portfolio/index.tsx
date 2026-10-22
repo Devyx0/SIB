@@ -29,6 +29,7 @@ import {
   sectorName, unitName,
 } from './shared';
 import styles from './Portfolio.module.css';
+import { formatPhone, telHref } from '../../lib/phone';
 
 export { portfolioPath } from './shared';
 
@@ -925,9 +926,9 @@ function UnitView({ lang }: { lang: Lang }) {
                     </div>
                     <div className={styles.tenantContacts}>
                       {tn.telephone ? (
-                        <a className={styles.contact} href={`tel:${tn.telephone_international ?? tn.telephone}`}
-                           aria-label={`${t(lang, 'Appeler', 'Call')} ${tn.telephone}`}>
-                          <span className={styles.contactIcon}><PhoneIcon /></span>{tn.telephone}
+                        <a className={styles.contact} href={telHref(tn.telephone_international ?? tn.telephone)}
+                           aria-label={`${t(lang, 'Appeler', 'Call')} ${formatPhone(tn.telephone)}`}>
+                          <span className={styles.contactIcon}><PhoneIcon /></span>{formatPhone(tn.telephone)}
                         </a>
                       ) : (
                         <span className={styles.contactNone}>

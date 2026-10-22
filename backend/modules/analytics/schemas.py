@@ -73,6 +73,7 @@ class TechnicianReview(BaseModel):
     problem_solved: Optional[bool] = None
     comments: Optional[str] = None
     building_address: Optional[str] = None
+    asnu: Optional[str] = None
 
 
 class UtilizationRow(BaseModel):

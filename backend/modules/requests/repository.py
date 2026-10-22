@@ -32,6 +32,16 @@ _UPDATABLE_FIELDS: dict[str, str] = {
     "work_performed":        "work_performed = %(v)s",
 }
 
+# Call details the dispatcher can correct from the call popup (plain text columns).
+DETAIL_FIELDS: tuple[str, ...] = (
+    "raw_title", "problem_summary", "entry_permission", "animals",
+    "caller_name", "caller_phone", "caller_email",
+    "element", "symptome", "composante", "emplacement", "category_raw",
+    "subcontractor_name", "time_estimate_bucket",
+)
+_UPDATABLE_FIELDS.update({f: f"{f} = %(v)s" for f in DETAIL_FIELDS})
+_UPDATABLE_FIELDS["time_estimate_bucket"] = "time_estimate_bucket = %(v)s::time_estimate_bucket"
+
 _LIST_SELECT = """
     SELECT
         mr.request_id,
@@ -67,7 +77,11 @@ _LIST_SELECT = """
         mr.closeout_outcome::text        AS closeout_outcome,
         mr.closeout_urgent,
         mr.duplicate_of_request_id,
-        mr.addition_to_request_id
+        mr.addition_to_request_id,
+        mr.category_raw,
+        mr.element,
+        (SELECT p.asnu FROM maintenance_request p WHERE p.request_id = mr.duplicate_of_request_id) AS duplicate_of_asnu,
+        (SELECT p.asnu FROM maintenance_request p WHERE p.request_id = mr.addition_to_request_id) AS addition_to_asnu
     FROM maintenance_request mr
     LEFT JOIN building  b ON b.building_id = mr.building_id
     LEFT JOIN sector    s ON s.sector_id   = mr.sector_id
@@ -289,6 +303,8 @@ def get_request(
             mr.triage_model_version,
             mr.duplicate_of_request_id,
             mr.addition_to_request_id,
+            (SELECT p.asnu FROM maintenance_request p WHERE p.request_id = mr.duplicate_of_request_id) AS duplicate_of_asnu,
+            (SELECT p.asnu FROM maintenance_request p WHERE p.request_id = mr.addition_to_request_id) AS addition_to_asnu,
             mr.ft_link,
             mr.ft_name,
             mr.en_route_at,
@@ -322,6 +338,22 @@ def list_followup_entries(conn, request_id: int) -> list[dict]:
         {"request_id": request_id},
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_detail_fields(conn, request_id: int) -> dict:
+    """Current call-detail values (contact sentinels read as empty), for stale checks."""
+    # fixed tuple above — never user input; the enum reads back as text
+    cols = ", ".join(f"{f}::text AS {f}" if f == "time_estimate_bucket" else f for f in DETAIL_FIELDS)
+    row = conn.execute(
+        f"SELECT {cols} FROM maintenance_request WHERE request_id = %(request_id)s",
+        {"request_id": request_id},
+    ).fetchone()
+    d = dict(row) if row else {}
+    if d.get("caller_email") == _SENTINEL_EMAIL:
+        d["caller_email"] = None
+    if d.get("caller_phone") == _SENTINEL_PHONE:
+        d["caller_phone"] = None
+    return d
 
 
 def lock_request(conn, request_id: int) -> dict | None:

@@ -6,6 +6,7 @@ import BrandMark from '../../components/BrandMark';
 import DemoUserSwitcher from '../../dev/DemoUserSwitcher';
 import { demoUserSwitchEnabled } from '../../dev/demoUserSwitch';
 import styles from './TechPortal.module.css';
+import { Avatar } from '../../components/Avatar';
 
 interface Props {
   lang: Lang;
@@ -40,7 +41,7 @@ export default function TechHeader({ lang, me, onSignOut, onToggleLang, backTo }
             compact
           />
         ) : (
-          <span className={styles.userName}>{me.nom_employe}</span>
+          <span className={styles.userName}><Avatar name={me.nom_employe} size="sm" />{me.nom_employe}</span>
         ))}
         <button
           type="button"

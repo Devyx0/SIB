@@ -4,6 +4,8 @@ import { urgencyLabel } from '../../lib/urgencyLevels';
 import { statusLabel, t, type Lang } from '../../i18n';
 import type { TaskListItem } from '../../api/schema.d.ts';
 import styles from './TaskWeekGrid.module.css';
+import { Avatar } from '../../components/Avatar';
+import { unitNumberOf } from '../../lib/unitNumber';
 
 export function addDays(ymd: string, delta: number): string {
   const d = new Date(`${ymd}T12:00:00`);
@@ -37,7 +39,7 @@ function TaskChip({
   onSelect: () => void;
 }) {
   const urgency = row.urgency_tier ?? row.request_urgency_tier;
-  const where = [row.building_address, row.unit_label ? `app. ${row.unit_label}` : null]
+  const where = [row.building_address, row.unit_label ? `app. ${unitNumberOf(row.unit_label)}` : null]
     .filter(Boolean).join(', ');
   return (
     <button
@@ -48,7 +50,8 @@ function TaskChip({
     >
       <span className={styles.taskDesc}>{row.description}</span>
       {where && <span className={styles.taskMeta}>{where}</span>}
-      <span className={styles.taskMeta}>
+      <span className={`${styles.taskMeta} ${styles.taskWho}`}>
+        {row.assigned_employee_name && <Avatar name={row.assigned_employee_name} size="xs" />}
         {[
           row.assigned_employee_name,
           urgency ? urgencyLabel(lang, urgency) : null,

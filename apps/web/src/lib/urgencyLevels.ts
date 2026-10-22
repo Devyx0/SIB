@@ -1,28 +1,29 @@
-/** Urgency dropdown — Générale!E (Niveau d'urgence): URGENT / Intermédiaire / Faible. */
+/** Urgency dropdown — stored values (Générale!E): URGENT / Intermédiaire / Faible.
+ *  Shown on the staff scale: Urgent (high) · Normal (medium) · Non urgent (routine).
+ *  « Urgence majeure » (level 1) needs a 4th stored value; not added yet. */
 export const URGENCY_LEVELS = ['URGENT', 'Intermédiaire', 'Faible'] as const;
 
 export type UrgencyLevel = (typeof URGENCY_LEVELS)[number];
 
-const URGENCY_EN: Record<UrgencyLevel, string> = {
+const URGENCY_FR: Record<UrgencyLevel, string> = {
   URGENT: 'Urgent',
-  Intermédiaire: 'Medium',
-  Faible: 'Low',
+  Intermédiaire: 'Normal',
+  Faible: 'Non urgent',
+};
+
+const URGENCY_EN: Record<UrgencyLevel, string> = {
+  URGENT: 'High urgency',
+  Intermédiaire: 'Medium urgency',
+  Faible: 'Routine',
 };
 
 export function urgencyLabel(lang: 'fr' | 'en', value: string | null | undefined): string {
   if (!value || value === 'none') return lang === 'fr' ? 'Aucune' : 'None';
-  if (lang === 'fr') {
-    if (value === 'URGENT') return 'Urgent';
-    if (value === 'Intermédiaire') return 'Intermédiaire';
-    if (value === 'Faible') return 'Faible';
-    // legacy
-    if (value === 'AJD') return 'Urgent';
-    if (value === 'ajd') return 'Intermédiaire';
-    return value;
-  }
-  if (value in URGENCY_EN) return URGENCY_EN[value as UrgencyLevel];
-  if (value === 'AJD') return 'Urgent';
-  if (value === 'ajd') return 'Medium';
+  const labels = lang === 'fr' ? URGENCY_FR : URGENCY_EN;
+  if (value in labels) return labels[value as UrgencyLevel];
+  // legacy codes
+  if (value === 'AJD') return labels.URGENT;
+  if (value === 'ajd') return labels['Intermédiaire'];
   return value;
 }
 

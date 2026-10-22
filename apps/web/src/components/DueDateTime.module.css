@@ -1,0 +1,35 @@
+.wrap {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.date {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The time picker carries a small clock so it reads as « heure ». */
+.time {
+  position: relative;
+  flex: 0 0 116px;
+  display: flex;
+}
+
+.time > span { flex: 1; min-width: 0; }
+
+.clock {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  color: var(--color-neutral-600);
+  pointer-events: none;
+}
+
+.timeSelect {
+  width: 100%;
+  padding-left: 32px !important;
+  font-variant-numeric: tabular-nums;
+}

@@ -3,6 +3,7 @@ import {
 } from 'react';
 import type { ReactElement, ReactNode, SelectHTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
+import { Avatar } from './Avatar';
 import styles from './Select.module.css';
 
 // Themed drop-in for <select>. Same props, same <option> children, same
@@ -49,13 +50,28 @@ function collectOptions(children: ReactNode): Opt[] {
 
 const setNativeValue = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
 
-type Props = SelectHTMLAttributes<HTMLSelectElement> & { children: ReactNode };
+type Props = SelectHTMLAttributes<HTMLSelectElement> & {
+  children: ReactNode;
+  /** A search box at the top of the open list (long lists such as employees). */
+  searchable?: boolean;
+  searchPlaceholder?: string;
+  noResultsText?: string;
+  /** An initials disc before each option and the chosen value (people lists). */
+  avatars?: boolean;
+};
+
+/** Accent- and case-insensitive, so « andre » finds « André ». */
+const fold = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 export default function Select({
   className = '', children, value, defaultValue, disabled, id, onChange, style,
-  'aria-label': ariaLabel, ...rest
+  'aria-label': ariaLabel, searchable = false, searchPlaceholder = 'Rechercher…',
+  noResultsText = 'Aucun résultat', avatars = false, ...rest
 }: Props) {
   const options = collectOptions(children);
+  const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const visible = options.map((_, i) => i).filter((i) => !query || fold(options[i].text).includes(fold(query)));
   const nativeRef = useRef<HTMLSelectElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -95,8 +111,14 @@ export default function Select({
     place();
     const idx = options.findIndex((o) => o.value === selected?.value);
     setActive(idx >= 0 ? idx : options.findIndex((o) => !o.disabled));
+    setQuery('');
     setOpen(true);
   }
+
+  // Search box takes focus when the list opens.
+  useEffect(() => {
+    if (open && searchable) searchRef.current?.focus();
+  }, [open, searchable]);
 
   function close(focusTrigger = true) {
     setOpen(false);
@@ -142,11 +164,14 @@ export default function Select({
     listRef.current?.querySelector<HTMLElement>(`[data-index="${active}"]`)?.scrollIntoView?.({ block: 'nearest' });
   }, [open, active]);
 
+  /** Next enabled option among the ones the search leaves visible. */
   function step(from: number, dir: 1 | -1): number {
-    let i = from;
-    for (let n = 0; n < options.length; n++) {
-      i = (i + dir + options.length) % options.length;
-      if (!options[i].disabled) return i;
+    if (visible.length === 0) return -1;
+    let pos = visible.indexOf(from);
+    if (pos < 0) pos = dir === 1 ? -1 : visible.length;
+    for (let n = 0; n < visible.length; n++) {
+      pos = (pos + dir + visible.length) % visible.length;
+      if (!options[visible[pos]].disabled) return visible[pos];
     }
     return from;
   }
@@ -163,12 +188,13 @@ export default function Select({
     switch (e.key) {
       case 'ArrowDown': e.preventDefault(); setActive((a) => step(a, 1)); break;
       case 'ArrowUp': e.preventDefault(); setActive((a) => step(a, -1)); break;
-      case 'Home': e.preventDefault(); setActive(step(-1, 1)); break;
-      case 'End': e.preventDefault(); setActive(step(options.length, -1)); break;
-      case 'Enter':
+      case 'Home': if (!searchable) { e.preventDefault(); setActive(step(-1, 1)); } break;
+      case 'End': if (!searchable) { e.preventDefault(); setActive(step(options.length, -1)); } break;
       case ' ':
+      case 'Enter':
+        if (e.key === ' ' && searchable) break; // a space typed into the search box
         e.preventDefault();
-        if (options[active]) choose(options[active]);
+        if (options[active] && visible.includes(active)) choose(options[active]);
         break;
       case 'Escape':
         // Close the list only — not the dialog it sits in.
@@ -180,7 +206,7 @@ export default function Select({
         setOpen(false);
         break;
       default:
-        if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+        if (!searchable && e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
           const now = Date.now();
           const buf = now - typeBuf.current.at > 600 ? e.key : typeBuf.current.text + e.key;
           typeBuf.current = { text: buf, at: now };
@@ -228,7 +254,7 @@ export default function Select({
         <span className={styles.value}>
           {options.map((o, i) => (
             <span key={`${o.value}-${i}`} className={o === selected ? styles.shown : styles.sizer} aria-hidden={o === selected ? undefined : true}>
-              {o.label}
+              {avatars && o.value !== '' ? <span className={styles.withAvatar}><Avatar name={o.text} size="xs" />{o.label}</span> : o.label}
             </span>
           ))}
         </span>
@@ -247,7 +273,33 @@ export default function Select({
           }}
           onKeyDown={onKeyDown}
         >
-          {options.map((o, i) => (
+          {searchable && (
+            <li role="presentation" className={styles.searchRow}>
+              <input
+                ref={searchRef}
+                type="search"
+                className={styles.search}
+                value={query}
+                placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
+                aria-controls={listId}
+                aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
+                autoComplete="off"
+                onChange={(e) => {
+                  const q = e.target.value;
+                  setQuery(q);
+                  const first = options.findIndex((o) => !o.disabled && (!q || fold(o.text).includes(fold(q))));
+                  setActive(first);
+                }}
+                onKeyDown={(e) => { e.stopPropagation(); onKeyDown(e); }}
+                data-testid="select-search"
+              />
+            </li>
+          )}
+          {searchable && visible.length === 0 && (
+            <li role="presentation" className={styles.noResults}>{noResultsText}</li>
+          )}
+          {visible.map((i) => options[i]).map((o, n) => { const i = visible[n]; return (
             <li
               key={`${o.value}-${i}`}
               id={`${listId}-${i}`}
@@ -265,6 +317,7 @@ export default function Select({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => choose(o)}
             >
+              {avatars && o.value !== '' && <Avatar name={o.text} size="xs" />}
               <span className={styles.optionText}>{o.label}</span>
               {o.value === selected?.value && (
                 <svg className={styles.check} viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -272,7 +325,7 @@ export default function Select({
                 </svg>
               )}
             </li>
-          ))}
+          ); })}
         </ul>,
         document.body,
       )}

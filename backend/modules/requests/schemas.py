@@ -140,6 +140,21 @@ class DispatchSnapshot(BaseModel):
     next_follow_up_date: Optional[date] = None
     next_steps: Optional[str] = None
     estimated_cost: Optional[Decimal] = None
+    # Call details (title, issue, access, caller, classification).
+    raw_title: Optional[str] = None
+    problem_summary: Optional[str] = None
+    entry_permission: Optional[str] = None
+    animals: Optional[str] = None
+    caller_name: Optional[str] = None
+    caller_phone: Optional[str] = None
+    caller_email: Optional[str] = None
+    element: Optional[str] = None
+    symptome: Optional[str] = None
+    composante: Optional[str] = None
+    emplacement: Optional[str] = None
+    category_raw: Optional[str] = None
+    subcontractor_name: Optional[str] = None
+    time_estimate_bucket: Optional[str] = None
 
 
 class DispatchChanges(BaseModel):
@@ -150,6 +165,21 @@ class DispatchChanges(BaseModel):
     next_follow_up_date: Optional[date] = None
     next_steps: Optional[str] = None
     estimated_cost: Optional[Decimal] = Field(None, ge=0)
+    raw_title: Optional[str] = Field(None, max_length=300)
+    problem_summary: Optional[str] = Field(None, max_length=4000)
+    entry_permission: Optional[str] = Field(None, max_length=1000)
+    animals: Optional[str] = Field(None, max_length=500)
+    caller_name: Optional[str] = Field(None, max_length=200)
+    caller_phone: Optional[str] = Field(None, max_length=40)
+    caller_email: Optional[str] = Field(None, max_length=254)
+    element: Optional[str] = Field(None, max_length=120)
+    symptome: Optional[str] = Field(None, max_length=120)
+    composante: Optional[str] = Field(None, max_length=120)
+    emplacement: Optional[str] = Field(None, max_length=120)
+    category_raw: Optional[str] = Field(None, max_length=120)
+    subcontractor_name: Optional[str] = Field(None, max_length=120)
+    time_estimate_bucket: Optional[Literal[
+        "UNDER_30_MIN", "MIN30_TO_1H", "H1_TO_2H", "H2_TO_4H", "HALF_DAY_PLUS", "TBD_ON_SITE"]] = None
 
 
 class SaveDispatchBody(BaseModel):
@@ -242,6 +272,12 @@ class ListRow(BaseModel):
     closeout_urgent: Optional[bool] = None
     duplicate_of_request_id: Optional[int] = None
     addition_to_request_id: Optional[int] = None
+    # Category shown in the triage table (intake category, else the triaged element).
+    category_raw: Optional[str] = None
+    element: Optional[str] = None
+    # ASNU of the linked call (staff refer to calls by ASNU, not internal ids).
+    duplicate_of_asnu: Optional[str] = None
+    addition_to_asnu: Optional[str] = None
 
 
 class RequestDetail(ListRow):

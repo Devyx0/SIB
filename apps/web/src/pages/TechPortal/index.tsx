@@ -9,6 +9,9 @@ import TechHeader from './TechHeader';
 import { elapsedLabel } from './elapsed';
 import { IN_PROGRESS_TASK_STATUSES, MY_OPEN_TASK_STATUSES } from './myTask';
 import styles from './TechPortal.module.css';
+import { unitNumberOf } from '../../lib/unitNumber';
+import { splitTask } from '../../lib/taskText';
+import { cleanCallTitle } from '../../lib/callTitle';
 
 interface Props {
   lang: Lang;
@@ -36,11 +39,17 @@ function TaskRow({ row, lang }: { row: TaskListItem; lang: Lang }) {
           <span className={styles.urgencyBadge}>{urgencyLabel(lang, urgency)}</span>
         )}
       </div>
-      <div className={styles.callTitle}>{row.request_title ?? `#${row.request_id}`}</div>
-      <div className={styles.callAddress}>{row.description}</div>
+      {/* The task leads; the service call it belongs to is a small line under it. */}
+      <div className={styles.callTitle} data-testid="task-row-name">{splitTask(row.description).name}</div>
+      {splitTask(row.description).details && (
+        <div className={`${styles.callAddress} ${styles.oneLine}`}>{splitTask(row.description).details}</div>
+      )}
+      <div className={`${styles.callMeta} ${styles.oneLine}`}>
+        {[row.request_asnu, cleanCallTitle(row.request_title)].filter(Boolean).join(' · ')}
+      </div>
       <div className={styles.callAddress}>
         {row.building_address ?? '—'}
-        {row.unit_label ? `, app. ${row.unit_label}` : ''}
+        {row.unit_label ? `, app. ${unitNumberOf(row.unit_label)}` : ''}
       </div>
     </Link>
   );

@@ -131,7 +131,7 @@ describe('buildTimeline', () => {
     expect(items).toHaveLength(2);
     const [update, create] = items;
     expect(update.title).toBe('Tâche modifiée');
-    expect(update.changes?.[0]).toEqual({ label: 'Urgence', before: 'Aucune', after: 'Intermédiaire' });
+    expect(update.changes?.[0]).toEqual({ label: 'Urgence', before: 'Aucune', after: 'Normal' });
     expect(JSON.stringify(update.changes)).not.toMatch(/task_id/);
     expect(create.title).toBe('Tâche créée');
     expect(create.changes?.[0].before).toBe('—');
