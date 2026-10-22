@@ -49,7 +49,7 @@ const CAN_CANCEL = new Set(['queued', 'scheduled', 'needs_expertise', 'return_vi
 // « Créer suivi » (POST /tasks/{id}/follow-up) is also open on done tasks (backend _FOLLOW_UP_PARENTS).
 const CAN_FOLLOW_UP = new Set(['needs_expertise', 'return_visit', 'done']);
 // Task creation opens the call (also from triage_proposal); refused before triage is done.
-const NO_NEW_TASK = new Set([
+export const NO_NEW_TASK = new Set([
   'intake_received', 'triage_pending', 'triage_clarify', 'triage_failed', 'closed',
 ]);
 
