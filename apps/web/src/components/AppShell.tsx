@@ -7,6 +7,7 @@ import DemoUserSwitcher from '../dev/DemoUserSwitcher';
 import { demoUserSwitchEnabled } from '../dev/demoUserSwitch';
 import AlertBell from './AlertBell';
 import BrandMark from './BrandMark';
+import GlobalSearch from './GlobalSearch';
 import styles from './AppShell.module.css';
 import { Avatar } from './Avatar';
 
@@ -98,6 +99,12 @@ export default function AppShell({ lang, onToggleLang, me, onSignOut, children }
             </svg>
           </button>
         </div>
+
+        {!intakeOnly && (
+          <div className={styles.search}>
+            <GlobalSearch lang={lang} onNavigate={() => setMenuOpen(false)} />
+          </div>
+        )}
 
         <nav className={styles.nav} onClick={() => setMenuOpen(false)}>
           {!intakeOnly && (

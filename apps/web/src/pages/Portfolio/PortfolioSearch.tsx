@@ -13,8 +13,8 @@ import styles from './PortfolioSearch.module.css';
 // tenants and building reference facts (fiche technique, paint specs). Every
 // word must match, so "peinture 1234 maple" lands on that building's paint code.
 
-type Hit = { key: string; href: string; primary: string; secondary?: string | null; tag?: string | null };
-type Group = { id: string; label: string; hits: Hit[] };
+export type Hit = { key: string; href: string; primary: string; secondary?: string | null; tag?: string | null };
+export type Group = { id: string; label: string; hits: Hit[] };
 
 const MIN_CHARS = 2;
 
@@ -29,7 +29,7 @@ function snippet(text: string, q: string): string {
   return `${start > 0 ? '…' : ''}${flat.slice(start, start + 120)}${start + 120 < flat.length ? '…' : ''}`;
 }
 
-function groups(data: PortfolioSearchResult, lang: Lang, q: string): Group[] {
+export function groups(data: PortfolioSearchResult, lang: Lang, q: string): Group[] {
   const unit = (n: string | null, id: number) =>
     n ? t(lang, `Logement ${n}`, `Unit ${n}`) : t(lang, `Logement #${id}`, `Unit #${id}`);
   return [
