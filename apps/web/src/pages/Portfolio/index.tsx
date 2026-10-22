@@ -7,6 +7,7 @@ import {
   fetchPortfolioSector,
   fetchPortfolioSectors,
   fetchPortfolioUnit,
+  fetchPortfolioUnits,
 } from '../../api/client';
 import type { PortfolioBuildingDetail, PortfolioLease, PortfolioUnitDetail } from '../../api/client';
 import type { PortfolioSectorSummary, PortfolioUnitSummary } from '../../api/schema.d.ts';
@@ -187,12 +188,12 @@ function SectorsView({ lang }: { lang: Lang }) {
       />
       {data && data.length > 0 && (
         <dl className={styles.totals} data-testid="portfolio-totals">
-          <div><dt><span className={styles.totalIcon}><CityIcon /></span>{t(lang, 'Secteurs', 'Sectors')}</dt><dd>{n(data.length)}</dd></div>
-          <div><dt><span className={styles.totalIcon}><DocumentIcon /></span>{t(lang, 'Projets', 'Projects')}</dt><dd>{n(sum('project_count'))}</dd></div>
-          <div><dt><span className={styles.totalIcon}><BuildingIcon size={24} /></span>{t(lang, 'Bâtiments', 'Buildings')}</dt><dd>{n(sum('building_count'))}</dd></div>
-          <div><dt><span className={styles.totalIcon}><UsersIcon size={24} /></span>{t(lang, 'Logements', 'Units')}</dt><dd>{n(units)}</dd></div>
+          <div><dt><span className={styles.totalIcon}><CityIcon size={32} /></span>{t(lang, 'Secteurs', 'Sectors')}</dt><dd>{n(data.length)}</dd></div>
+          <div><dt><span className={styles.totalIcon}><DocumentIcon size={32} /></span>{t(lang, 'Projets', 'Projects')}</dt><dd>{n(sum('project_count'))}</dd></div>
+          <div><dt><span className={styles.totalIcon}><BuildingIcon size={32} /></span>{t(lang, 'Bâtiments', 'Buildings')}</dt><dd>{n(sum('building_count'))}</dd></div>
+          <div><dt><span className={styles.totalIcon}><UsersIcon size={32} /></span>{t(lang, 'Logements', 'Units')}</dt><dd>{n(units)}</dd></div>
           <div>
-            <dt><span className={styles.totalIcon}><PieIcon /></span>{t(lang, 'Occupation', 'Occupancy')}</dt>
+            <dt><span className={styles.totalIcon}><PieIcon size={32} /></span>{t(lang, 'Occupation', 'Occupancy')}</dt>
             <dd className={styles.occLine}>
               <span>{pct(occupied, units)} %</span>
               <Link className={`${styles.totalsNote} ${styles.vacantLink}`} to={unitsPath({ occupation: 'vacant' })}
@@ -233,6 +234,11 @@ function SectorView({ lang }: { lang: Lang }) {
     queryKey: ['portfolio', 'sector', sectorId],
     queryFn: () => fetchPortfolioSector(sectorId),
   });
+  // total / vacant_total for the whole sector, from the unit list (one row is enough).
+  const { data: occ } = useQuery({
+    queryKey: ['portfolio', 'sector-occupancy', sectorId],
+    queryFn: () => fetchPortfolioUnits({ sector_id: sectorId, page_size: 1 }),
+  });
   const editing = dialog && dialog !== 'new' ? data?.projects.find((p) => p.project_id === dialog.edit) : null;
   const [size, setSize] = useState<'all' | '1' | '2-3' | '4+'>('all');
   const [sort, setSort] = useState<'name' | 'number' | 'buildings'>('name');
@@ -267,6 +273,11 @@ function SectorView({ lang }: { lang: Lang }) {
         facts={data && [
           { key: 'projects', icon: <FolderIcon />, label: plural(data.project_count, lang, PROJECT_FR, PROJECT_EN) },
           { key: 'buildings', icon: <BuildingIcon />, label: plural(data.building_count, lang, BUILDING_FR, BUILDING_EN) },
+          occ && occ.total > 0 && {
+            key: 'occupancy', icon: <PieIcon />,
+            label: t(lang, `${pct(occ.total - occ.vacant_total, occ.total)} % occupé`, `${pct(occ.total - occ.vacant_total, occ.total)} % occupied`),
+            to: unitsPath({ secteur: sectorId, occupation: 'vacant' }),
+          },
         ]}
         actions={!phone && data && <div className={styles.headerActions}>{viewUnits}{addProject}</div>}
       />
@@ -398,6 +409,11 @@ function ProjectView({ lang }: { lang: Lang }) {
     queryKey: ['portfolio', 'project', projectId, sectorId],
     queryFn: () => fetchPortfolioProject(projectId, sectorId),
   });
+  // total / vacant_total for the whole project, from the unit list (one row is enough).
+  const { data: occ } = useQuery({
+    queryKey: ['portfolio', 'project-occupancy', projectId],
+    queryFn: () => fetchPortfolioUnits({ project_id: projectId, page_size: 1 }),
+  });
   const [dialog, setDialog] = useState<'project' | 'new' | { edit: number } | null>(null);
   const [q, setQ] = useState('');
   const name = data ? projectName(lang, data.nom_unique_projet, data.project_id) : '…';
@@ -424,6 +440,11 @@ function ProjectView({ lang }: { lang: Lang }) {
         facts={data && [
           data.accounting_project_number && { key: 'number', icon: <HashIcon />, label: t(lang, `Projet N° ${data.accounting_project_number}`, `Project No. ${data.accounting_project_number}`) },
           { key: 'buildings', icon: <BuildingIcon />, label: plural(data.building_count, lang, BUILDING_FR, BUILDING_EN) },
+          occ && occ.total > 0 && {
+            key: 'occupancy', icon: <PieIcon />,
+            label: t(lang, `${pct(occ.total - occ.vacant_total, occ.total)} % occupé`, `${pct(occ.total - occ.vacant_total, occ.total)} % occupied`),
+            to: unitsPath({ secteur: sectorId, projet: projectId, occupation: 'vacant' }),
+          },
           sector && { key: 'sector', icon: <MapPinIcon />, label: sectorName(lang, sector.territoire, sectorId), to: portfolioPath.sector(sectorId) },
         ]}
         actions={data && (phone ? <div className={styles.headerActions}>{editProject}</div> : (
@@ -652,8 +673,8 @@ function buildingFacts(b: PortfolioBuildingDetail, lang: Lang, occupied?: number
   const floors = b.nb_etages || null;
   return [
     { key: 'units', icon: <HomeIcon />, label: plural(b.unit_count, lang, UNIT_FR, UNIT_EN) },
-    occupied != null
-      ? { key: 'occupied', icon: <UsersIcon />, label: t(lang, `${occupied} occupé${occupied === 1 ? '' : 's'}`, `${occupied} occupied`) }
+    occupied != null && b.unit_count > 0
+      ? { key: 'occupied', icon: <PieIcon />, label: t(lang, `${pct(occupied, b.unit_count)} % occupé`, `${pct(occupied, b.unit_count)} % occupied`) }
       : null,
     floors
       ? { key: 'floors', icon: <LayersIcon />, label: t(lang, `${floors} étage${Number(floors) === 1 ? '' : 's'}`, `${floors} floor${Number(floors) === 1 ? '' : 's'}`) }

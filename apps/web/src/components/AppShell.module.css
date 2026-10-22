@@ -5,8 +5,7 @@
 }
 
 /* Fixed sidebar: full viewport height, scrollable nav section in the middle,
-   brand pinned at top and bottom controls pinned at bottom. The charcoal
-   top rule echoes the strip above the public site's header. */
+   brand pinned at top and bottom controls pinned at bottom. */
 .sidebar {
   position: fixed;
   top: 0;
@@ -14,7 +13,6 @@
   bottom: 0;
   width: 232px;
   background: var(--color-surface);
-  border-top: 4px solid var(--charcoal);
   border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
@@ -126,10 +124,58 @@
   gap: 12px;
 }
 
-/* "New call" sits at the foot of the sidebar, directly above the user block. */
+/* "New call" sits at the foot of the sidebar, above the divider that starts the user block. */
 .newCall {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  padding: 0 10px 12px;
+}
+
+/* Primary action: a solid button, not a nav tab. */
+.newCallBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 14px;
+  border-radius: var(--r-md);
+  background: #fff;
+  color: var(--navy-800);
+  border: 1.5px solid var(--navy-800);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  box-sizing: border-box;
+  box-shadow: 0 1px 2px rgba(7, 35, 74, 0.12);
+  transition: background var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+
+.newCallBtn:hover {
+  background: var(--navy-50);
+  color: var(--navy-800);
+  text-decoration: none;
+  box-shadow: 0 2px 6px rgba(7, 35, 74, 0.18);
+}
+
+.newCallBtn:active {
+  background: var(--navy-100);
+}
+
+.newCallBtn:focus-visible {
+  outline: 2px solid var(--navy-400);
+  outline-offset: 2px;
+}
+
+.newCallBtn .plus {
+  background: transparent;
+  color: var(--navy-800);
+  width: auto;
+  height: auto;
+  font-size: 18px;
+  font-weight: 500;
 }
 
 .userInfo {
@@ -244,7 +290,6 @@
     height: 56px;
     padding: 0 12px;
     background: var(--color-surface);
-    border-top: 3px solid var(--charcoal);
     border-bottom: 1px solid var(--color-border);
   }
 
