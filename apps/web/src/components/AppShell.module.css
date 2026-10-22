@@ -5,8 +5,7 @@
 }
 
 /* Fixed sidebar: full viewport height, scrollable nav section in the middle,
-   brand pinned at top and bottom controls pinned at bottom. The charcoal
-   top rule echoes the strip above the public site's header. */
+   brand pinned at top and bottom controls pinned at bottom. */
 .sidebar {
   position: fixed;
   top: 0;
@@ -14,7 +13,6 @@
   bottom: 0;
   width: 232px;
   background: var(--color-surface);
-  border-top: 4px solid var(--charcoal);
   border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
@@ -292,7 +290,6 @@
     height: 56px;
     padding: 0 12px;
     background: var(--color-surface);
-    border-top: 3px solid var(--charcoal);
     border-bottom: 1px solid var(--color-border);
   }
 
