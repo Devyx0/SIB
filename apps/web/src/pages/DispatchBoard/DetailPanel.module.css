@@ -88,6 +88,21 @@
   color: #fff;
 }
 
+.statusBadge[data-status='arrived'] {
+  background: #2f6f4e;
+  color: #fff;
+}
+
+.statusBadge[data-status='scheduled'] {
+  background: #e4eef6;
+  color: #1a4a6e;
+}
+
+.statusBadge[data-status='awaiting_redispatch'] {
+  background: #f3e6d4;
+  color: #8a4b0f;
+}
+
 .statusBadge[data-status='closed'] {
   background: var(--color-bg);
   color: var(--color-neutral-700);
@@ -125,16 +140,18 @@
   gap: 6px;
 }
 
+/* Field names lead (larger, bold); their values follow, lighter. */
 .headFacts dt {
-  font-size: 12px;
-  color: var(--color-neutral-600);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .headFacts dd {
   margin: 0;
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-neutral-700);
 }
 
 .mono {
@@ -173,9 +190,25 @@
 
 .grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(300px, 1fr);
+  /* Equal columns: text wraps alike on both sides, so they end closer. */
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 1fr);
   gap: 16px;
-  align-items: start;
+  /* Both columns share the taller one's height… */
+  align-items: stretch;
+}
+
+/* …and the last card of each column takes up what is left, so both end on
+   the same line; with balanced columns that leftover is small. */
+.colMain > .historyCard:last-child,
+.colSide > .card:last-child {
+  flex: 1 0 auto;
+}
+
+/* Caller facts under the location facts, in the same card. */
+.factsSplit {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-divider);
 }
 
 .colMain,
@@ -203,6 +236,12 @@
   margin: 0 0 12px;
 }
 
+.reasoning {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-divider, #e5e7eb);
+}
+
 .subTitle {
   font-size: 13px;
   font-weight: 600;
@@ -228,6 +267,17 @@
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* Building address → Google Maps (new tab). */
+.mapLink {
+  color: var(--color-accent, #0b57d0);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.mapLink:hover {
+  text-decoration-thickness: 2px;
 }
 
 .dupBanner {
@@ -263,13 +313,16 @@
 
 .facts dt {
   padding-right: 16px;
-  color: var(--color-neutral-600);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .facts dd {
   margin: 0;
-  font-weight: 500;
-  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-neutral-700);
   overflow-wrap: anywhere;
 }
 
@@ -307,10 +360,15 @@
 
 .compareWho {
   display: block;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--color-neutral-600);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-text);
   margin-bottom: 4px;
+}
+
+.compareCols .prose {
+  font-size: 13px;
+  color: var(--color-neutral-700);
 }
 
 .compareAi .compareWho {
@@ -322,12 +380,6 @@
   margin-top: 0;
   padding-top: 0;
   border-top: none;
-}
-
-.emptyHistory {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-neutral-600);
 }
 
 .loading {
@@ -350,6 +402,16 @@
   margin: 0 0 16px;
 }
 
+.okMsg {
+  font-size: 13px;
+  color: var(--color-success, #0f6b3c);
+  background: var(--color-success-t, #e8f6ee);
+  border: 1px solid var(--color-success-border, #a8d5b8);
+  border-radius: var(--r-md);
+  padding: 8px 12px;
+  margin: 0 0 16px;
+}
+
 /* ── Dispatcher actions ─────────────────────────────────────────── */
 
 /* Full width under both columns, fields laid out as a grid of tiles. */
@@ -364,10 +426,35 @@
   margin-bottom: 0;
 }
 
+/* Call notes in the right column: fields stacked, one per row. */
+.notesCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.notesCard .cardTitle {
+  margin-bottom: 0;
+}
+
+.notesCard .actionsGrid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.notesCard .actionsGrid > .editField:has(textarea) {
+  grid-column: auto;
+}
+
 .actionsGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
+}
+
+/* Tasks: cards in a row share one height, so the existing task and
+   « Nouvelle tâche » line up top and bottom. */
+.tasksGrid {
+  align-items: stretch;
 }
 
 /* Free-text fields get two tiles' width when there is room. */
@@ -410,14 +497,14 @@
 }
 
 .editLabel {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--color-neutral-700);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .editInput {
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   min-height: 38px;
   border: 1px solid var(--color-border);
   border-radius: var(--r-md);
@@ -479,6 +566,154 @@
   border-color: var(--navy-800);
 }
 
+.suggestBlock {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.suggestList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.suggestBtn {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-bg);
+  cursor: pointer;
+}
+
+.suggestBtn:hover:not(:disabled) {
+  border-color: var(--navy-800);
+}
+
+.suggestBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.suggestName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--navy-900);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.suggestWhy {
+  font-size: 12px;
+  color: var(--color-neutral-700);
+}
+
+.suggestEnRoute {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* Existing tasks: suggestions as one line of chips (initials + first
+   name; full name and the reason on hover / for screen readers). */
+.suggestCompact {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.suggestCompactLabel {
+  font-size: 12px;
+  color: var(--color-neutral-600);
+}
+
+.suggestChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 2px 10px 2px 3px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--navy-900);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease-out), background var(--dur) var(--ease-out);
+}
+
+.suggestChip:hover:not(:disabled) {
+  border-color: var(--navy-300);
+  background: var(--navy-50);
+}
+
+.suggestChip:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.suggestChip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.suggestChipInit {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--navy-100);
+  color: var(--navy-800);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.suggestChipOn,
+.suggestChipOn:hover:not(:disabled) {
+  border-color: var(--navy-800);
+  background: var(--navy-800);
+  color: #fff;
+}
+
+.suggestChipOn .suggestChipInit {
+  background: rgb(255 255 255 / 0.2);
+  color: #fff;
+}
+
+/* « En route » shown as a small amber dot; spelled out in the tooltip. */
+.suggestChipDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-warning);
+}
+
+@media (max-width: 639px) {
+  .suggestChip { min-height: 38px; }
+}
+
 .applyBtn {
   font: inherit;
   font-size: 13px;
@@ -537,24 +772,34 @@
 }
 
 /* One « Enregistrer » for every field above */
+/* One « Enregistrer » for the whole popup: pinned under the scrolling body,
+   saves the call notes, task drafts and the AI-summary feedback together. */
 .saveBar {
-  position: sticky;
-  bottom: -24px;
-  z-index: 2;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  margin: 4px -18px -16px;
-  padding: 12px 18px;
+  padding: 12px 24px;
   background: var(--color-surface);
-  border-top: 1px solid var(--color-divider);
-  border-radius: 0 0 var(--r-lg) var(--r-lg);
+  border-top: 1px solid var(--color-border);
 }
 
 .saveBarDirty {
   background: var(--navy-50);
   border-top-color: var(--navy-200);
+}
+
+.saveBarFeedback {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-right: 8px;
+}
+
+/* A comment box opened under the levels: the feedback takes the full row. */
+.saveBarFeedback:has(textarea) {
+  flex-basis: 100%;
+  margin-right: 0;
 }
 
 .saveStatus {
@@ -727,5 +972,11 @@
 
   .compareCols {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 639px) {
+  .saveBar {
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   }
 }

@@ -1,70 +1,9 @@
-/* Moved from DetailPanel.module.css — only followupSection/followupHeading
-   remain there (shared by the panel's problems and AI-summary sections). */
-.followupSection {
-  margin-top: 24px;
-  border-top: 1px solid var(--color-divider);
-  padding-top: 16px;
-}
-
-.followupHeading {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--navy-800);
-  margin: 0 0 12px;
-}
-
-.followupEntry {
-  margin-bottom: 10px;
-  padding-left: 12px;
-  border-left: 2px solid var(--navy-200);
-}
-
 .followupMeta {
   display: block;
   font-size: 11px;
   font-weight: 600;
   color: var(--color-neutral-700);
   margin-bottom: 2px;
-}
-
-.followupText {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-neutral-800);
-  line-height: 1.5;
-  overflow-wrap: break-word;
-  word-break: break-word;
-}
-
-.justifSection {
-  margin-top: 24px;
-  border-top: 1px solid var(--color-divider);
-  padding-top: 16px;
-}
-
-.justifEntry {
-  margin-bottom: 10px;
-  padding-left: 12px;
-  border-left: 2px solid var(--color-divider);
-}
-
-.justifMeta {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-neutral-700);
-  margin-bottom: 2px;
-}
-
-.justifText {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-neutral-700);
-  line-height: 1.5;
-  overflow-wrap: break-word;
-  word-break: break-word;
 }
 
 .visitPhotos {

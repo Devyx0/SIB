@@ -21,8 +21,9 @@ vi.mock('../lib/supabase', () => ({
 const mocks = vi.hoisted(() => ({
   fetchMe: vi.fn(),
   fetchRequests: vi.fn(),
+  fetchTasks: vi.fn(),
   fetchRequest: vi.fn(),
-  goEnRoute: vi.fn(),
+  taskEnRoute: vi.fn(),
 }));
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -31,8 +32,9 @@ vi.mock('../api/client', async (importOriginal) => {
     ...actual,
     fetchMe: mocks.fetchMe,
     fetchRequests: mocks.fetchRequests,
+    fetchTasks: mocks.fetchTasks,
     fetchRequest: mocks.fetchRequest,
-    goEnRoute: mocks.goEnRoute,
+    taskEnRoute: mocks.taskEnRoute,
     fetchSectors: () => Promise.resolve([]),
     fetchEmployees: () => Promise.resolve([]),
   };
@@ -43,25 +45,61 @@ const CONTRACTOR = { employee_id: 20, nom_employe: 'Mahmoud Chachia', roles: ['c
 const COORD = { employee_id: 4, nom_employe: 'Test Coord', roles: ['coordinator'] };
 const TECH_COORD = { employee_id: 7, nom_employe: 'Chef Tech', roles: ['technician', 'coordinator'] };
 
-function row(id: number, status: string, extra: Record<string, unknown> = {}) {
+/** Local noon on a Toronto day — dueDay() reads it back as that day. */
+const dueOn = (ymd: string) => `${ymd}T12:00:00-05:00`;
+
+function task(id: number, status: string, extra: Record<string, unknown> = {}) {
   return {
-    request_id: id,
-    start_date: '2026-10-20',
+    task_id: id,
+    request_id: 5,
+    description: `Tâche ${id}`,
     status,
+    assigned_employee_id: 24,
+    vendor_id: null,
+    subcontractor_name: null,
+    due_at: dueOn('2026-10-20'),
     urgency_tier: null,
-    raw_title: `Appel ${id}`,
-    building_address: '123 rue Test',
-    unit_label: null,
-    en_route_at: null,
+    source: 'dispatcher',
+    accepted_at: '2026-10-19T12:00:00Z',
+    parent_task_id: null,
+    sort_order: 0,
+    created_at: '2026-10-19T12:00:00Z',
+    updated_at: '2026-10-19T12:00:00Z',
     ...extra,
   };
 }
 
-// Full-enough RequestDetail for the call view.
+// GET /tasks row: the task plus its call's list context.
+function row(id: number, status: string, extra: Record<string, unknown> = {}) {
+  return {
+    ...task(id, status),
+    request_id: id,
+    request_title: `Appel ${id}`,
+    request_status: 'open',
+    request_asnu: null,
+    request_urgency_tier: null,
+    assigned_employee_name: 'Martin Poirier',
+    sector_id: 1,
+    territoire: null,
+    building_address: '123 rue Test',
+    unit_label: null,
+    ...extra,
+  };
+}
+
+// Full-enough RequestDetail for the call view; tech 24 holds scheduled task 50.
 function detail(extra: Record<string, unknown> = {}) {
   return {
-    ...row(5, 'triaged'),
-    assigned_employee_id: 24,
+    request_id: 5,
+    start_date: '2026-10-20',
+    status: 'open',
+    urgency_tier: null,
+    raw_title: 'Appel 5',
+    building_address: '123 rue Test',
+    unit_label: null,
+    assigned_employee_id: null,
+    tasks: [task(50, 'scheduled')],
+    visits: [],
     problem_summary: null,
     problems: null,
     raw_caller_body: null,
@@ -77,6 +115,7 @@ function detail(extra: Record<string, unknown> = {}) {
 }
 
 const EMPTY_LIST = { total: 0, items: [], unscheduled_items: [] };
+const NO_TASKS = { total: 0, items: [] };
 
 function wrap(initialEntries: string[] = ['/']) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -92,8 +131,9 @@ function wrap(initialEntries: string[] = ['/']) {
 beforeEach(() => {
   mocks.fetchMe.mockReset();
   mocks.fetchRequests.mockReset().mockResolvedValue(EMPTY_LIST);
+  mocks.fetchTasks.mockReset().mockResolvedValue(NO_TASKS);
   mocks.fetchRequest.mockReset();
-  mocks.goEnRoute.mockReset();
+  mocks.taskEnRoute.mockReset();
 });
 
 describe('role routing', () => {
@@ -109,38 +149,39 @@ describe('role routing', () => {
     await waitFor(() => expect(screen.getByText(/Mes appels/)).toBeTruthy());
   });
 
-  it('coordinator keeps the dispatch board', async () => {
+  it('coordinator keeps the triage board', async () => {
     mocks.fetchMe.mockResolvedValue(COORD);
     wrap(['/board']);
-    await waitFor(() => expect(screen.getAllByText('Répartition').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Triage').length).toBeGreaterThan(0));
     expect(screen.queryByText(/Mes appels/)).toBeNull();
   });
 
-  it('technician+coordinator keeps the dispatch board', async () => {
+  it('technician+coordinator keeps the triage board', async () => {
     mocks.fetchMe.mockResolvedValue(TECH_COORD);
     wrap(['/board']);
-    await waitFor(() => expect(screen.getAllByText('Répartition').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Triage').length).toBeGreaterThan(0));
   });
 });
 
 describe('Mes appels list', () => {
-  it('fetches assigned-only, no date window, open statuses only', async () => {
+  it('fetches my tasks, no date window, open task statuses only', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
     wrap(['/tech']);
     await waitFor(() =>
-      expect(mocks.fetchRequests).toHaveBeenCalledWith(
+      expect(mocks.fetchTasks).toHaveBeenCalledWith(
         expect.objectContaining({ assigned_employee_id: 24 })
       )
     );
-    const params = mocks.fetchRequests.mock.calls[0][0];
+    const params = mocks.fetchTasks.mock.calls[0][0];
     expect(params.start_date).toBeUndefined();
     expect(params.end_date).toBeUndefined();
-    expect(params.status).not.toContain('closed');
-    expect(params.status).toContain('triaged');
-    expect(params.status).toContain('en_route');
+    expect(params.status).toEqual(expect.arrayContaining(['queued', 'scheduled', 'en_route', 'arrived', 'working']));
+    expect(params.status).not.toContain('done');
+    expect(params.status).not.toContain('cancelled');
+    expect(mocks.fetchRequests).not.toHaveBeenCalled();
   });
 
-  it('shows an old open call under « En retard » and never a closed one', async () => {
+  it('groups tasks by due day: « En retard », « À venir », « Sans date »', async () => {
     const dayMs = 86400000;
     const toronto = (ms: number) =>
       new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
@@ -148,40 +189,43 @@ describe('Mes appels list', () => {
     const tomorrow = toronto(Date.now() + dayMs);
 
     mocks.fetchMe.mockResolvedValue(TECH);
-    mocks.fetchRequests.mockResolvedValue({
+    mocks.fetchTasks.mockResolvedValue({
       total: 3,
       items: [
-        row(30, 'triaged', { start_date: tenDaysAgo }),
-        row(31, 'closed', { start_date: tenDaysAgo }),
-        row(32, 'triaged', { start_date: tomorrow }),
+        row(30, 'scheduled', { due_at: dueOn(tenDaysAgo) }),
+        row(32, 'scheduled', { due_at: dueOn(tomorrow) }),
+        row(33, 'queued', { due_at: null }),
       ],
-      unscheduled_items: [row(33, 'triaged', { start_date: null })],
     });
     wrap(['/tech']);
     await waitFor(() => expect(screen.getByText('En retard')).toBeTruthy());
-    // The overdue call sits in the « En retard » section…
     const overdueSection = screen.getByText('En retard').nextElementSibling;
     expect(overdueSection?.textContent).toContain('Appel 30');
-    // …the closed one is nowhere, the future one is under « À venir »,
-    // the undated one under « Sans date ».
-    expect(screen.queryByText('Appel 31')).toBeNull();
     expect(screen.getByText('À venir').nextElementSibling?.textContent).toContain('Appel 32');
     const sansDate = screen.getByRole('heading', { name: 'Sans date' });
     expect(sansDate.nextElementSibling?.textContent).toContain('Appel 33');
   });
 
-  it('shows empty state when no assigned calls', async () => {
+  it('rows link to the call with the task id', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchTasks.mockResolvedValue({ total: 1, items: [row(30, 'scheduled')] });
+    wrap(['/tech']);
+    await waitFor(() => expect(screen.getByText('Appel 30')).toBeTruthy());
+    expect(screen.getByText('Appel 30').closest('a')?.getAttribute('href')).toBe('/tech/appels/30?task=30');
+    expect(screen.getByText('Tâche 30')).toBeTruthy();
+  });
+
+  it('shows empty state when no assigned tasks', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
     wrap(['/tech']);
     await waitFor(() => expect(screen.getByText('Aucun appel assigné')).toBeTruthy());
   });
 
-  it('pins the open en_route call with a banner', async () => {
+  it('pins the en_route task with a banner', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
-    mocks.fetchRequests.mockResolvedValue({
+    mocks.fetchTasks.mockResolvedValue({
       total: 2,
-      items: [row(10, 'triaged'), row(11, 'en_route')],
-      unscheduled_items: [],
+      items: [row(10, 'scheduled'), row(11, 'en_route')],
     });
     wrap(['/tech']);
     await waitFor(() => expect(screen.getByText(/Appel en cours/)).toBeTruthy());
@@ -211,7 +255,7 @@ describe('call view', () => {
 
   it('hides tenant contact when the API nulls it (case-scoped rule)', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
-    mocks.fetchRequest.mockResolvedValue(detail({ request_id: 6, assigned_employee_id: 99 }));
+    mocks.fetchRequest.mockResolvedValue(detail({ request_id: 6, tasks: [task(60, 'scheduled', { assigned_employee_id: 99 })] }));
     wrap(['/tech/appels/6']);
     await waitFor(() => expect(screen.getByText('Contact locataire')).toBeTruthy());
     expect(screen.queryByText(/tel:/)).toBeNull();
@@ -251,13 +295,86 @@ describe('call view', () => {
     mocks.fetchRequest.mockResolvedValue(detail({
       problem_summary: 'RÉSUMÉ IA — NE PAS AFFICHER',
       problems: 'Texte brut du calendrier',
+      entry_permission: 'Présence exigée',
+      animals: 'Non',
       raw_caller_body: null,
     }));
     wrap(['/tech/appels/5']);
     await waitFor(() => expect(screen.getByText('Texte brut du calendrier')).toBeTruthy());
     expect(screen.getByText('Problème')).toBeTruthy();
+    expect(screen.getByText('Présence exigée')).toBeTruthy();
+    expect(screen.getByText('Non')).toBeTruthy();
     expect(screen.queryByText(/version du locataire/)).toBeNull();
     expect(screen.queryByText('RÉSUMÉ IA — NE PAS AFFICHER')).toBeNull();
+  });
+
+  it('links the full building address to Google Maps', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({
+      building_address: '123 rue Test',
+      building_full_address: '123 rue Test, Québec, G1K 0A1',
+      unit_label: '4',
+      problems: 'Fuite',
+    }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByTestId('building-map-link')).toBeTruthy());
+    const link = screen.getByTestId('building-map-link') as HTMLAnchorElement;
+    expect(link.textContent).toContain('123 rue Test, Québec, G1K 0A1');
+    expect(link.href).toContain('google.com/maps');
+    expect(link.href).toContain(encodeURIComponent('123 rue Test, Québec, G1K 0A1'));
+    expect(screen.getByText(/app\. 4/)).toBeTruthy();
+  });
+
+  it('shows ai_important_notes as AI notes', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({
+      other_notes: null,
+      ai_important_notes: ['Plomberie d’abord, puis plancher une fois sec.'],
+      ai_next_steps: ["Couper l'eau"],
+      triage_summary: 'Clarify reason — not for tech',
+      problems: 'Fuite',
+    }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByTestId('call-ai-notes')).toBeTruthy());
+    expect(screen.getByText('Notes IA')).toBeTruthy();
+    expect(screen.getByTestId('ai-notes-important').textContent).toContain(
+      'Plomberie d’abord, puis plancher une fois sec.',
+    );
+    expect(screen.getByTestId('ai-notes-next').textContent).toContain("Couper l'eau");
+    expect(screen.queryByText('Clarify reason — not for tech')).toBeNull();
+  });
+
+  it('hides AI notes when arrays and other_notes are empty', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({
+      other_notes: null, ai_important_notes: null, ai_next_steps: null, problems: 'Fuite',
+    }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByText('Fuite')).toBeTruthy());
+    expect(screen.queryByTestId('call-ai-notes')).toBeNull();
+  });
+
+  it('shows taxonomy, next steps, ASNU and estimate for the technician', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({
+      asnu: 'ASNUF42',
+      time_estimate_bucket: 'MIN30_TO_1H',
+      element: 'Plomberie',
+      symptome: 'Fuite',
+      composante: 'Robinet',
+      emplacement: 'Cuisine',
+      next_steps: 'Couper l’eau avant d’ouvrir le mur.',
+      work_performed: null,
+      problems: 'Fuite sous évier',
+    }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByTestId('call-taxonomy')).toBeTruthy());
+    expect(screen.getByTestId('call-facts').textContent).toMatch(/ASNUF42/);
+    expect(screen.getByText('Plomberie')).toBeTruthy();
+    expect(screen.getByText('Fuite')).toBeTruthy();
+    expect(screen.getByText('Robinet')).toBeTruthy();
+    expect(screen.getByText('Cuisine')).toBeTruthy();
+    expect(screen.getByTestId('call-next-steps').textContent).toMatch(/Couper l’eau/);
   });
 
   it('shows « Fiche technique non disponible » when both ft fields are null', async () => {
@@ -285,39 +402,66 @@ describe('call view', () => {
 });
 
 describe('en route (stop 2)', () => {
-  it('shows the button only on my assigned open call', async () => {
+  it('shows the button on my scheduled task', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
     mocks.fetchRequest.mockResolvedValue(detail());
     wrap(['/tech/appels/5']);
     await waitFor(() => expect(screen.getByTestId('en-route-btn')).toBeTruthy());
+    expect(screen.getByTestId('my-task').textContent).toContain('Tâche 50');
   });
 
-  it('hides the button when the call is not assigned to me', async () => {
+  it('hides the button when no task on the call is mine', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
-    mocks.fetchRequest.mockResolvedValue(detail({ assigned_employee_id: 99 }));
+    mocks.fetchRequest.mockResolvedValue(detail({ tasks: [task(50, 'scheduled', { assigned_employee_id: 99 })] }));
     wrap(['/tech/appels/5']);
     await waitFor(() => expect(screen.getByText('Contact locataire')).toBeTruthy());
     expect(screen.queryByTestId('en-route-btn')).toBeNull();
   });
 
+  it('hides the button on a queued (undated) task', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({ tasks: [task(50, 'queued', { due_at: null })] }));
+    wrap(['/tech/appels/5']);
+    await waitFor(() => expect(screen.getByTestId('my-task')).toBeTruthy());
+    expect(screen.queryByTestId('en-route-btn')).toBeNull();
+  });
+
+  it('acts on the task named in the URL', async () => {
+    mocks.fetchMe.mockResolvedValue(TECH);
+    mocks.fetchRequest.mockResolvedValue(detail({
+      tasks: [task(50, 'scheduled'), task(51, 'scheduled', { description: 'Deuxième tâche' })],
+    }));
+    mocks.taskEnRoute.mockResolvedValue(task(51, 'en_route'));
+    wrap(['/tech/appels/5?task=51']);
+    await waitFor(() => expect(screen.getByTestId('my-task').textContent).toContain('Deuxième tâche'));
+    fireEvent.click(screen.getByTestId('en-route-btn'));
+    await waitFor(() => expect(mocks.taskEnRoute).toHaveBeenCalledWith(51, expect.anything()));
+  });
+
   it('tap: sends null location when geolocation is unavailable, then shows the banner and the no-contact message', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
     mocks.fetchRequest.mockResolvedValue(detail());
-    mocks.goEnRoute.mockResolvedValue(detail({
-      status: 'en_route',
-      en_route_at: new Date(Date.now() - 5 * 60000).toISOString(),
-    }));
+    mocks.taskEnRoute.mockImplementation(async () => {
+      // The refetch after the tap brings the open visit.
+      mocks.fetchRequest.mockResolvedValue(detail({
+        tasks: [task(50, 'en_route')],
+        visits: [{ visit_id: 1, task_id: 50, employee_id: 24, employee_name: null,
+          en_route_at: new Date(Date.now() - 5 * 60000).toISOString(), arrived_at: null, closeout_at: null,
+          travel_minutes: null, on_site_minutes: null, duration_minutes: null, outcome: null,
+          closeout_comment: null, photo_ids: [] }],
+      }));
+      return task(50, 'en_route');
+    });
     wrap(['/tech/appels/5']);
     await waitFor(() => expect(screen.getByTestId('en-route-btn')).toBeTruthy());
     fireEvent.click(screen.getByTestId('en-route-btn'));
     await waitFor(() => expect(screen.getByTestId('no-contact-warning')).toBeTruthy());
-    expect(mocks.goEnRoute).toHaveBeenCalledWith(5, {
-      current_status: 'triaged',
-      current_start_date: '2026-10-20',
+    expect(mocks.taskEnRoute).toHaveBeenCalledWith(50, {
+      current_status: 'scheduled',
       lat: null,
       lng: null,
     });
-    expect(screen.getByText(/En route depuis 5 min/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/En route depuis 5 min/)).toBeTruthy());
     expect(screen.getByText('Aucun contact pour aviser le locataire')).toBeTruthy();
     expect(screen.queryByTestId('en-route-btn')).toBeNull();
   });
@@ -325,7 +469,7 @@ describe('en route (stop 2)', () => {
   it('tap: sends the granted location', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
     mocks.fetchRequest.mockResolvedValue(detail());
-    mocks.goEnRoute.mockResolvedValue(detail({ status: 'en_route' }));
+    mocks.taskEnRoute.mockResolvedValue(task(50, 'en_route'));
     Object.defineProperty(navigator, 'geolocation', {
       configurable: true,
       value: {
@@ -338,7 +482,7 @@ describe('en route (stop 2)', () => {
       await waitFor(() => expect(screen.getByTestId('en-route-btn')).toBeTruthy());
       fireEvent.click(screen.getByTestId('en-route-btn'));
       await waitFor(() =>
-        expect(mocks.goEnRoute).toHaveBeenCalledWith(5, expect.objectContaining({
+        expect(mocks.taskEnRoute).toHaveBeenCalledWith(50, expect.objectContaining({
           lat: 46.81,
           lng: -71.21,
         }))
@@ -348,15 +492,15 @@ describe('en route (stop 2)', () => {
     }
   });
 
-  it('blocks with the open call shown when another call is already en route', async () => {
+  it('blocks with the open call shown when another task is already en route', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
     mocks.fetchRequest.mockResolvedValue(detail());
     const { ApiError } = await import('../api/client');
-    mocks.goEnRoute.mockRejectedValue(new ApiError(
+    mocks.taskEnRoute.mockRejectedValue(new ApiError(
       'CONFLICT',
       "Appel 77 déjà en route — clôturez-le d'abord",
       undefined,
-      { open_request_id: 77, open_request_title: 'Premier appel' },
+      { open_task_id: 9, open_request_id: 77, open_request_title: 'Premier appel' },
     ));
     wrap(['/tech/appels/5']);
     await waitFor(() => expect(screen.getByTestId('en-route-btn')).toBeTruthy());
@@ -369,12 +513,9 @@ describe('en route (stop 2)', () => {
 
   it('pinned list banner shows elapsed time', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
-    mocks.fetchRequests.mockResolvedValue({
+    mocks.fetchTasks.mockResolvedValue({
       total: 1,
-      items: [row(11, 'en_route', {
-        en_route_at: new Date(Date.now() - 30 * 60000).toISOString(),
-      })],
-      unscheduled_items: [],
+      items: [row(11, 'en_route', { updated_at: new Date(Date.now() - 30 * 60000).toISOString() })],
     });
     wrap(['/tech']);
     await waitFor(() => expect(screen.getByText(/Appel en cours/)).toBeTruthy());
@@ -383,20 +524,17 @@ describe('en route (stop 2)', () => {
 });
 
 describe('closeout entry (stop 3)', () => {
-  it('shows « Clôturer » on my en_route call', async () => {
+  it('shows « Clôturer » on my arrived task, linking with the task id', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
-    mocks.fetchRequest.mockResolvedValue(detail({
-      status: 'en_route',
-      en_route_at: new Date(Date.now() - 60000).toISOString(),
-    }));
+    mocks.fetchRequest.mockResolvedValue(detail({ tasks: [task(50, 'arrived')] }));
     wrap(['/tech/appels/5']);
     await waitFor(() => expect(screen.getByTestId('closeout-btn')).toBeTruthy());
-    expect(screen.getByTestId('closeout-btn').getAttribute('href')).toBe('/tech/appels/5/cloture');
+    expect(screen.getByTestId('closeout-btn').getAttribute('href')).toBe('/tech/appels/5/cloture?task=50');
   });
 
-  it('no « Clôturer » on a call not assigned to me', async () => {
+  it('no « Clôturer » when the arrived task is not mine', async () => {
     mocks.fetchMe.mockResolvedValue(TECH);
-    mocks.fetchRequest.mockResolvedValue(detail({ status: 'en_route', assigned_employee_id: 99 }));
+    mocks.fetchRequest.mockResolvedValue(detail({ tasks: [task(50, 'arrived', { assigned_employee_id: 99 })] }));
     wrap(['/tech/appels/5']);
     await waitFor(() => expect(screen.getByText('Contact locataire')).toBeTruthy());
     expect(screen.queryByTestId('closeout-btn')).toBeNull();

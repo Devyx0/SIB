@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchUtilization } from '../../api/client';
 import type { UtilizationResponse } from '../../api/schema.d.ts';
@@ -6,10 +6,13 @@ import { closeoutOutcomeLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import styles from './Utilization.module.css';
 import Select from '../../components/Select';
+import RangeCalendar from '../../components/RangeCalendar';
+import ReviewsDialog from './ReviewsDialog';
 
 type Row = UtilizationResponse['rows'][number];
 type OutcomeKey = keyof Row['outcome_mix'];
-type SortKey = 'name' | 'assigned' | 'closed' | 'rate' | 'planned' | 'visit';
+type Review = Row['reviews'][number];
+type SortKey ='name' | 'assigned' | 'closed' | 'rate' | 'planned' | 'visit' | 'rating';
 
 const OUTCOMES: Array<{ key: OutcomeKey; short: readonly [string, string]; cls: string }> = [
   { key: 'complete', short: ['Terminé', 'Done'], cls: 'oComplete' },
@@ -38,6 +41,57 @@ function initials(name: string): string {
   return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
 }
 
+/** Read-only 5-star display; rounds to the nearest whole star. */
+function Stars({ value, label }: { value: number; label: string }) {
+  const full = Math.round(value);
+  return (
+    <span className={styles.stars} role="img" aria-label={label}>
+      {'★'.repeat(full)}
+      <span className={styles.starsOff}>{'★'.repeat(5 - full)}</span>
+    </span>
+  );
+}
+
+function fmtRating(n: number, lang: Lang): string {
+  return lang === 'fr' ? n.toFixed(1).replace('.', ',') : n.toFixed(1);
+}
+
+function YesNoChip({ lang, value, label }: { lang: Lang; value: boolean | null; label: readonly [string, string] }) {
+  if (value == null) return null;
+  return (
+    <span className={`${styles.chip} ${value ? styles.chipYes : styles.chipNo}`}>
+      {t(lang, label[0], label[1])} : {value ? t(lang, 'oui', 'yes') : t(lang, 'non', 'no')}
+    </span>
+  );
+}
+
+function ReviewItem({ lang, review, technician }: { lang: Lang; review: Review; technician?: string }) {
+  const when = new Date(review.submitted_at).toLocaleDateString(lang === 'fr' ? 'fr-CA' : 'en-CA', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  });
+  return (
+    <li className={styles.review}>
+      <div className={styles.reviewHead}>
+        {technician && <span className={styles.reviewTech}>{technician}</span>}
+        {review.rating != null
+          ? <Stars value={review.rating} label={t(lang, `${review.rating} sur 5`, `${review.rating} out of 5`)} />
+          : <span className={styles.muted}>{t(lang, 'Sans note', 'No rating')}</span>}
+        <YesNoChip lang={lang} value={review.polite} label={['Poli', 'Polite']} />
+        <YesNoChip lang={lang} value={review.problem_solved} label={['Résolu', 'Solved']} />
+        <span className={styles.reviewMeta}>
+          {when} · #{review.request_id}{review.building_address ? ` · ${review.building_address}` : ''}
+        </span>
+      </div>
+      {review.comments
+        ? <p className={styles.reviewText}>{review.comments}</p>
+        : <span className={styles.muted}>{t(lang, 'Aucun commentaire', 'No comment')}</span>}
+    </li>
+  );
+}
+
+const newestFirst = (reviews: Review[]) =>
+  [...reviews].sort((a, b) => b.submitted_at.localeCompare(a.submitted_at));
+
 const closeRate = (r: Row) => (r.calls_assigned > 0 ? r.calls_closed / r.calls_assigned : 0);
 const outcomeTotal = (r: Row) => OUTCOMES.reduce((n, o) => n + r.outcome_mix[o.key], 0);
 
@@ -47,6 +101,25 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('assigned');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [showAllReviews, setShowAllReviews] = useState(false);
+  // Technician whose reviews are open in the modal.
+  const [dialogFor, setDialogFor] = useState<number | null>(null);
+  // Phone: the period's calendar popover and the sort menu.
+  const [calOpen, setCalOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const calRef = useRef<HTMLDivElement>(null);
+  const sortRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!calOpen && !sortOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (calOpen && calRef.current && !calRef.current.contains(e.target as Node)) setCalOpen(false);
+      if (sortOpen && sortRef.current && !sortRef.current.contains(e.target as Node)) setSortOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setCalOpen(false); setSortOpen(false); } };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [calOpen, sortOpen]);
 
   const { data, isError, isLoading } = useQuery({
     queryKey: ['utilization', start, end],
@@ -75,9 +148,14 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
         case 'rate': return closeRate(r);
         case 'planned': return r.planned_minutes;
         case 'visit': return r.visit_minutes;
+        case 'rating': return r.avg_rating ?? -1;
       }
     };
     return [...filtered].sort((a, b) => {
+      // Unrated people always sink to the bottom when sorting by rating.
+      if (sortKey === 'rating' && (a.avg_rating == null) !== (b.avg_rating == null)) {
+        return a.avg_rating == null ? 1 : -1;
+      }
       const va = val(a);
       const vb = val(b);
       const cmp = va < vb ? -1 : va > vb ? 1 : 0;
@@ -88,7 +166,12 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
   const totals = useMemo(() => {
     const all = data?.rows ?? [];
     const sum = (f: (r: Row) => number) => all.reduce((n, r) => n + f(r), 0);
+    const ratingCount = sum((r) => r.rating_count);
+    // Weighted by review count; avg_rating is already rounded, so sum raw ratings.
+    const ratingSum = sum((r) => r.reviews.reduce((n, rv) => n + (rv.rating ?? 0), 0));
     return {
+      ratingCount,
+      avgRating: ratingCount > 0 ? ratingSum / ratingCount : null,
       people: all.length,
       assigned: sum((r) => r.calls_assigned),
       closed: sum((r) => r.calls_closed),
@@ -97,6 +180,16 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
       visits: sum((r) => r.visits_count),
     };
   }, [data]);
+
+  // Every review in the range across the team, newest first.
+  const dialogRow = dialogFor == null ? undefined : data?.rows.find((r) => r.employee_id === dialogFor);
+
+  const allReviews = useMemo(
+    () => (data?.rows ?? [])
+      .flatMap((r) => r.reviews.map((review) => ({ review, technician: r.nom_employe })))
+      .sort((a, b) => b.review.submitted_at.localeCompare(a.review.submitted_at)),
+    [data],
+  );
 
   // Bars are scaled against the busiest person so rows compare at a glance.
   const maxMinutes = Math.max(1, ...rows.map((r) => Math.max(r.planned_minutes, r.visit_minutes)));
@@ -107,6 +200,7 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
     { key: 'rate', label: t(lang, 'Taux de clôture', 'Close rate') },
     { key: 'visit', label: t(lang, 'Temps sur place', 'Time on site') },
     { key: 'planned', label: t(lang, 'Temps planifié', 'Planned time') },
+    { key: 'rating', label: t(lang, 'Note client', 'Customer rating') },
     { key: 'name', label: t(lang, 'Nom', 'Name') },
   ];
 
@@ -117,7 +211,9 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
 
   // Which column the current sort belongs to — that header gets a marker.
   const sortedCol =
-    sortKey === 'name' ? 'person' : sortKey === 'planned' || sortKey === 'visit' ? 'time' : 'calls';
+    sortKey === 'name' ? 'person'
+      : sortKey === 'planned' || sortKey === 'visit' ? 'time'
+        : sortKey === 'rating' ? 'rating' : 'calls';
   const sortMark = <span className={styles.sortMark} aria-hidden="true">{sortDir === 'asc' ? '↑' : '↓'}</span>;
 
   const pct = (n: number) => `${Math.round(n * 100)} %`;
@@ -133,6 +229,7 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
         </div>
 
         <div className={styles.controls}>
+          <div className={styles.periodRow} ref={calRef}>
           <div className={styles.presets} role="group" aria-label={t(lang, 'Période rapide', 'Quick range')}>
             {presets.map((p) => (
               <button
@@ -145,6 +242,33 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                 {p.label}
               </button>
             ))}
+            {/* Phone: the custom range opens a calendar instead of two date fields. */}
+            <button
+              type="button"
+              className={`${styles.preset} ${styles.calBtn} ${!activePreset ? styles.presetActive : ''}`}
+              aria-haspopup="dialog"
+              aria-expanded={calOpen}
+              aria-label={t(lang, `Période personnalisée : ${start} au ${end}`, `Custom range: ${start} to ${end}`)}
+              onClick={() => setCalOpen((o) => !o)}
+              data-testid="util-cal-btn"
+            >
+              <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4.5" width="14" height="12" rx="2" /><path d="M3 8.5h14M7 3v3M13 3v3" />
+              </svg>
+              {!activePreset && <span className={styles.calLabel}>{`${start.slice(8)}/${start.slice(5, 7)} → ${end.slice(8)}/${end.slice(5, 7)}`}</span>}
+            </button>
+          </div>
+          {calOpen && (
+            <div className={styles.calPopover} role="dialog" aria-label={t(lang, 'Période personnalisée', 'Custom range')}>
+              <RangeCalendar
+                lang={lang}
+                start={start}
+                end={end}
+                maxDays={92}
+                onChange={(a, b) => { setStart(a); setEnd(b); setCalOpen(false); }}
+              />
+            </div>
+          )}
           </div>
           <div className={styles.dateRange}>
             <label className={styles.srOnly} htmlFor="util-start">{t(lang, 'Du', 'From')}</label>
@@ -196,7 +320,58 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                 <span className={styles.kpiLabel}>{t(lang, 'Temps planifié', 'Planned time')}</span>
                 <span className={styles.kpiValue}>{fmtMinutes(totals.planned)}</span>
               </div>
+              <button
+                type="button"
+                className={`${styles.kpi} ${styles.kpiBtn}`}
+                data-testid="kpi-rating"
+                disabled={allReviews.length === 0}
+                aria-expanded={showAllReviews && allReviews.length > 0}
+                aria-controls="util-all-reviews"
+                onClick={() => setShowAllReviews((v) => !v)}
+              >
+                <span className={styles.kpiLabel}>
+                  {t(lang, 'Note client moyenne', 'Avg customer rating')}
+                  {allReviews.length > 0 && (
+                    <span className={styles.kpiAction}>
+                      {showAllReviews ? t(lang, 'Masquer ▴', 'Hide ▴') : t(lang, 'Voir les avis ▾', 'View reviews ▾')}
+                    </span>
+                  )}
+                </span>
+                <span className={styles.kpiValue}>
+                  {totals.avgRating != null ? (
+                    <>
+                      {fmtRating(totals.avgRating, lang)}
+                      <span className={styles.kpiSub}>
+                        <Stars value={totals.avgRating}
+                          label={t(lang, `${fmtRating(totals.avgRating, lang)} sur 5`, `${fmtRating(totals.avgRating, lang)} out of 5`)} />
+                        {' '}{totals.ratingCount} {t(lang, 'avis', totals.ratingCount === 1 ? 'review' : 'reviews')}
+                      </span>
+                    </>
+                  ) : '—'}
+                </span>
+              </button>
             </section>
+
+            {showAllReviews && allReviews.length > 0 && (
+              <section className={styles.allReviews} id="util-all-reviews" data-testid="util-all-reviews"
+                aria-label={t(lang, 'Tous les avis clients', 'All customer reviews')}>
+                <div className={styles.allReviewsHead}>
+                  <h2 className={styles.allReviewsTitle}>
+                    {t(lang, 'Avis clients', 'Customer reviews')}
+                    <span className={styles.note}> · {allReviews.length}</span>
+                  </h2>
+                  <button type="button" className={styles.dirBtn} onClick={() => setShowAllReviews(false)}
+                    aria-label={t(lang, 'Fermer', 'Close')} title={t(lang, 'Fermer', 'Close')}>
+                    ×
+                  </button>
+                </div>
+                <ul className={styles.reviewList}>
+                  {allReviews.map(({ review, technician }) => (
+                    <ReviewItem key={review.survey_id} lang={lang} review={review} technician={technician} />
+                  ))}
+                </ul>
+              </section>
+            )}
 
             <section className={styles.card}>
               <div className={styles.toolbar}>
@@ -208,6 +383,54 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+                {/* Phone: one sort button beside the search; its menu has the options and the order. */}
+                <div className={styles.sortMenuWrap} ref={sortRef}>
+                  <button
+                    type="button"
+                    className={styles.sortIconBtn}
+                    aria-haspopup="menu"
+                    aria-expanded={sortOpen}
+                    aria-label={t(lang, 'Trier', 'Sort')}
+                    onClick={() => setSortOpen((o) => !o)}
+                    data-testid="util-sort-btn"
+                  >
+                    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M6 4v12M3 13l3 3 3-3M14 16V4M11 7l3-3 3 3" />
+                    </svg>
+                  </button>
+                  {sortOpen && (
+                    <div className={styles.sortMenu} role="menu" data-testid="util-sort-menu">
+                      <p className={styles.sortMenuLabel}>{t(lang, 'Trier par', 'Sort by')}</p>
+                      {SORT_OPTIONS.map((o) => (
+                        <button
+                          key={o.key}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={sortKey === o.key}
+                          className={`${styles.sortMenuItem} ${sortKey === o.key ? styles.sortMenuOn : ''}`}
+                          onClick={() => { changeSort(o.key); setSortOpen(false); }}
+                        >
+                          {o.label}
+                          {sortKey === o.key && <span aria-hidden="true">✓</span>}
+                        </button>
+                      ))}
+                      <div className={styles.sortMenuDir} role="group" aria-label={t(lang, 'Ordre', 'Order')}>
+                        {(['desc', 'asc'] as const).map((d) => (
+                          <button
+                            key={d}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={sortDir === d}
+                            className={`${styles.sortDirOpt} ${sortDir === d ? styles.sortDirOn : ''}`}
+                            onClick={() => { setSortDir(d); setSortOpen(false); }}
+                          >
+                            {d === 'desc' ? t(lang, '↓ Décroissant', '↓ Descending') : t(lang, '↑ Croissant', '↑ Ascending')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className={styles.sortControl}>
                   <label htmlFor="util-sort">{t(lang, 'Trier par', 'Sort by')}</label>
                   <Select
@@ -231,6 +454,16 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                   </button>
                 </div>
               </div>
+
+              {/* Phone: a compact colour key above the cards (the full one is below on desktop). */}
+              <ul className={styles.legendTop} aria-label={t(lang, 'Légende des résultats', 'Outcome legend')}>
+                {OUTCOMES.map((o) => (
+                  <li key={o.key} title={closeoutOutcomeLabel(lang, o.key)}>
+                    <span className={`${styles.dot} ${styles[o.cls]}`} aria-hidden="true" />
+                    {t(lang, o.short[0], o.short[1])}
+                  </li>
+                ))}
+              </ul>
 
               <div className={styles.tableWrap}>
                 <table className={styles.table} data-testid="util-table">
@@ -258,12 +491,18 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                         <span className={styles.colTitle}>{t(lang, 'Résultats de clôture', 'Closeout outcomes')}</span>
                         <span className={styles.colHint}>{t(lang, 'par type de résultat', 'by outcome type')}</span>
                       </th>
+                      <th scope="col">
+                        <span className={styles.colTitle}>
+                          {t(lang, 'Avis clients', 'Customer reviews')}{sortedCol === 'rating' && sortMark}
+                        </span>
+                        <span className={styles.colHint}>{t(lang, 'note moyenne sur 5', 'average out of 5')}</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.length === 0 && (
                       <tr>
-                        <td colSpan={4} className={styles.empty}>
+                        <td colSpan={5} className={styles.empty}>
                           {search
                             ? t(lang, 'Aucun employé ne correspond au filtre.', 'No employee matches the filter.')
                             : t(lang, 'Aucune activité sur cette période.', 'No activity in this period.')}
@@ -285,7 +524,7 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                             </div>
                           </th>
 
-                          <td>
+                          <td className={styles.cellCalls} data-label={t(lang, 'Appels', 'Calls')}>
                             <div className={styles.calls}>
                               <span className={styles.callsFig}>
                                 <span className={styles.big}>{r.calls_closed}</span>
@@ -302,7 +541,7 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                             </div>
                           </td>
 
-                          <td>
+                          <td className={styles.cellTime} data-label={t(lang, 'Temps', 'Time')}>
                             <div className={styles.time}>
                               <span className={styles.timeLabel}>{t(lang, 'Sur place', 'On site')}</span>
                               <div className={styles.timeBar}>
@@ -328,7 +567,7 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                             </div>
                           </td>
 
-                          <td>
+                          <td className={styles.cellOutcomes} data-label={t(lang, 'Résultats de clôture', 'Closeout outcomes')}>
                             {oTotal === 0 ? (
                               <span className={styles.muted}>{t(lang, 'Aucune clôture', 'No closeouts')}</span>
                             ) : (
@@ -356,6 +595,34 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
                               </div>
                             )}
                           </td>
+
+                          <td className={styles.cellRating} data-label={t(lang, 'Avis clients', 'Customer reviews')}>
+                            {r.reviews.length === 0 ? (
+                              <span className={styles.muted}>{t(lang, 'Aucun avis', 'No reviews')}</span>
+                            ) : (
+                              <button
+                                type="button"
+                                className={styles.ratingBtn}
+                                aria-haspopup="dialog"
+                                onClick={() => setDialogFor(r.employee_id)}
+                                data-testid={`util-rating-${r.employee_id}`}
+                              >
+                                {r.avg_rating != null ? (
+                                  <span className={styles.ratingTop}>
+                                    <Stars value={r.avg_rating}
+                                      label={t(lang, `${fmtRating(r.avg_rating, lang)} sur 5`, `${fmtRating(r.avg_rating, lang)} out of 5`)} />
+                                    <span className={styles.ratingValue}>{fmtRating(r.avg_rating, lang)}</span>
+                                  </span>
+                                ) : (
+                                  <span className={styles.muted}>{t(lang, 'Sans note', 'No rating')}</span>
+                                )}
+                                <span className={styles.ratingCount}>
+                                  {r.reviews.length} {t(lang, 'avis', r.reviews.length === 1 ? 'review' : 'reviews')}
+                                  {' '}›
+                                </span>
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
@@ -381,6 +648,34 @@ export default function Utilization({ lang = 'fr' }: { lang?: Lang }) {
           </>
         )}
       </div>
+
+      {dialogRow && (
+        <ReviewsDialog
+          lang={lang}
+          technician={dialogRow.nom_employe}
+          onClose={() => setDialogFor(null)}
+          summary={
+            <>
+              {dialogRow.avg_rating != null && (
+                <>
+                  <Stars value={dialogRow.avg_rating}
+                    label={t(lang, `${fmtRating(dialogRow.avg_rating, lang)} sur 5`, `${fmtRating(dialogRow.avg_rating, lang)} out of 5`)} />
+                  <strong>{fmtRating(dialogRow.avg_rating, lang)}</strong>
+                </>
+              )}
+              <span>
+                {dialogRow.reviews.length} {t(lang, 'avis', dialogRow.reviews.length === 1 ? 'review' : 'reviews')}
+                {dialogRow.territoire ? ` · ${dialogRow.territoire}` : ''}
+              </span>
+            </>
+          }
+        >
+          <ul className={styles.reviewList} data-testid="reviews-dialog-list">
+            {newestFirst(dialogRow.reviews).map((rv) =>
+              <ReviewItem key={rv.survey_id} lang={lang} review={rv} />)}
+          </ul>
+        </ReviewsDialog>
+      )}
     </div>
   );
 }

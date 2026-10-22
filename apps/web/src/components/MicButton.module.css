@@ -1,17 +1,63 @@
-.micBtn {
-  font-size: 16px;
-  background: transparent;
-  border: 1px solid var(--color-divider);
-  border-radius: var(--r-md);
-  padding: 6px 10px;
-  cursor: pointer;
-  color: var(--color-neutral-700);
-  line-height: 1;
+.wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
   margin-right: auto;
 }
 
-.micActive {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-  background: var(--color-accent-100);
+.micBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--navy-800);
+  cursor: pointer;
+}
+
+.micBtn:hover {
+  background: var(--navy-50);
+  border-color: var(--navy-300);
+}
+
+.micActive,
+.micActive:hover {
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: #fff;
+  animation: ring 1.6s ease-out infinite;
+}
+
+.note,
+.interim,
+.error {
+  font-size: 12.5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note {
+  color: var(--color-neutral-600);
+}
+
+.interim {
+  color: var(--navy-600);
+  font-style: italic;
+}
+
+.error {
+  color: var(--color-danger);
+  font-weight: 500;
+}
+
+@keyframes ring {
+  0% { box-shadow: 0 0 0 0 rgb(180 35 24 / 0.4); }
+  100% { box-shadow: 0 0 0 10px rgb(180 35 24 / 0); }
 }

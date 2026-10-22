@@ -1,4 +1,4 @@
-"""RRIA cross-checks: lease language, recent move-in, pets, caller, missing lease."""
+"""RRIA cross-checks: lease language, recent move-in, caller, missing lease."""
 from __future__ import annotations
 
 from datetime import date
@@ -16,7 +16,6 @@ def _base(**kw):
         "title": "Robinet qui fuit",
         "problems": ["Fuite sous le lavabo"],
         "entry_permission": None,
-        "animals": None,
         "urgency_tier": None,
         "complexity_tier": "C1",
         "congestion_level": "N2",
@@ -28,6 +27,7 @@ def _base(**kw):
         "vendor_id": None,
         "synergy_request_ids": [],
         "other_notes": None,
+        "recommended_tasks": [{"description": "Réparer le robinet"}],
     }
     d.update(kw)
     return d
@@ -117,7 +117,7 @@ def _ctx(cur, req):
     return {"request": req, "unit": unit, "rentroll": rentroll_checks(req, unit)}
 
 
-def test_flags_for_recent_english_pets_and_stranger(db_conn):
+def test_flags_for_recent_english_and_stranger(db_conn):
     with db_conn.cursor() as cur:
         b = _building(cur)
         unit_id, lease_id, tenant_id, tenancy_id = _ids(cur)
@@ -138,10 +138,8 @@ def test_flags_for_recent_english_pets_and_stranger(db_conn):
     assert rr["lease_missing"] is False
     assert rr["recent_move_in"] is True
     assert rr["langue_en"] is True
-    assert rr["pet_mismatch"] is True
     assert rr["caller_mismatch"] is True
     assert rr["required_notes"] == [
-        "ÉCART ANIMAUX",
         "RÉQUÉRANT ABSENT",
         "emménagement récent",
         "bail anglais",
@@ -149,9 +147,11 @@ def test_flags_for_recent_english_pets_and_stranger(db_conn):
     text = _format_context(ctx)
     for phrase in rr["required_notes"]:
         assert phrase in text
+    assert "Animaux" not in text
+    assert "ÉCART ANIMAUX" not in text
 
 
-def test_holder_and_allowed_pets_need_no_extra_notes(db_conn):
+def test_holder_needs_no_extra_notes(db_conn):
     with db_conn.cursor() as cur:
         b = _building(cur)
         unit_id, lease_id, tenant_id, tenancy_id = _ids(cur)
@@ -235,12 +235,12 @@ def test_common_area_skips_rentroll():
 
 def test_gate_requires_the_phrases(db_conn):
     result, detail = validate(
-        _base(), db_conn, 1, required_notes=["ÉCART ANIMAUX", "bail anglais"],
+        _base(), db_conn, 1, required_notes=["RÉQUÉRANT ABSENT", "bail anglais"],
     )
     assert result == "rejected_rentroll", detail
     result, detail = validate(
-        _base(other_notes="ÉCART ANIMAUX. bail anglais."),
-        db_conn, 1, required_notes=["ÉCART ANIMAUX", "bail anglais"],
+        _base(other_notes="RÉQUÉRANT ABSENT. bail anglais."),
+        db_conn, 1, required_notes=["RÉQUÉRANT ABSENT", "bail anglais"],
     )
     assert result == "accepted", detail
 

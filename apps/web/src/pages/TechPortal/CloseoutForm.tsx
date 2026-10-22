@@ -1,13 +1,14 @@
 import { useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRequest } from '../../hooks/useRequest';
-import { uploadPhoto, closeoutRequest, ApiError, GENERIC_ERROR_FR } from '../../api/client';
+import { uploadPhoto, closeoutTask, apiErrorMessage } from '../../api/client';
 import type { MeResponse } from '../../api/schema.d.ts';
 import type { Lang } from '../../i18n';
 import { t, closeoutOutcomeLabel } from '../../i18n';
 import MicButton from '../../components/MicButton';
 import TechHeader from './TechHeader';
+import { pickMyTask, taskIdParam } from './myTask';
 import styles from './TechPortal.module.css';
 
 interface Props {
@@ -18,6 +19,7 @@ interface Props {
 }
 
 const OUTCOMES = ['complete', 'partial_reschedule', 'partial_expertise', 'failed'] as const;
+const COMMENT_MIN = 10;
 type Outcome = (typeof OUTCOMES)[number];
 
 interface PhotoItem {
@@ -44,6 +46,8 @@ export default function CloseoutForm({ lang, me, onSignOut, onToggleLang }: Prop
   const { id } = useParams();
   const requestId = Number(id);
   const { data: req } = useRequest(Number.isFinite(requestId) ? requestId : null);
+  const [search] = useSearchParams();
+  const task = pickMyTask(req, me?.employee_id, taskIdParam(search));
   const navigate = useNavigate();
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -61,10 +65,12 @@ export default function CloseoutForm({ lang, me, onSignOut, onToggleLang }: Prop
   const needsDate = outcome === 'partial_reschedule';
   const allowsUrgent = outcome === 'partial_expertise' || outcome === 'failed';
 
+  const commentLen = comment.trim().length;
   const valid =
+    task !== null &&
     outcome !== null &&
     photos.length >= 1 &&
-    comment.trim().length >= 10 &&
+    commentLen >= COMMENT_MIN &&
     (!needsDate || (nextDate !== '' && nextDate >= today));
 
   async function handleAddPhoto(e: React.ChangeEvent<HTMLInputElement>) {
@@ -77,34 +83,34 @@ export default function CloseoutForm({ lang, me, onSignOut, onToggleLang }: Prop
       const { attachment_id } = await uploadPhoto(req.request_id, file);
       setPhotos((p) => [...p, { attachment_id, objectUrl: URL.createObjectURL(file) }]);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : GENERIC_ERROR_FR);
+      setError(apiErrorMessage(lang, err));
     } finally {
       setBusy(false);
     }
   }
 
   async function handleSubmit() {
-    if (!req || !outcome || !valid) return;
+    if (!req || !task || !outcome || !valid) return;
     setBusy(true);
     setError(null);
     const pos = await getPosition();
     try {
-      await closeoutRequest(req.request_id, {
+      await closeoutTask(task.task_id, {
         outcome,
         comment: comment.trim(),
         input_method: micUsed ? 'voice' : 'typed',
         attachment_ids: photos.map((p) => p.attachment_id),
         next_date: needsDate ? nextDate : null,
         urgent: allowsUrgent ? urgent : false,
-        current_status: req.status,
+        current_status: task.status,
         lat: pos?.lat ?? null,
         lng: pos?.lng ?? null,
       });
-      qc.invalidateQueries({ queryKey: ['requests'] });
+      qc.invalidateQueries({ queryKey: ['tasks'] });
       qc.invalidateQueries({ queryKey: ['request', req.request_id] });
       navigate('/tech');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : GENERIC_ERROR_FR);
+      setError(apiErrorMessage(lang, err));
     } finally {
       setBusy(false);
     }
@@ -112,11 +118,20 @@ export default function CloseoutForm({ lang, me, onSignOut, onToggleLang }: Prop
 
   return (
     <div className={styles.page}>
-      <TechHeader lang={lang} me={me} onSignOut={onSignOut} onToggleLang={onToggleLang} backTo={`/tech/appels/${requestId}`} />
+      <TechHeader
+        lang={lang} me={me} onSignOut={onSignOut} onToggleLang={onToggleLang}
+        backTo={`/tech/appels/${requestId}${task ? `?task=${task.task_id}` : ''}`}
+      />
       <main className={styles.main}>
         <h1 className={styles.callViewTitle}>
           {t(lang, 'Clôturer', 'Close out')} — {req?.raw_title ?? `#${requestId}`}
         </h1>
+        {task && <p className={styles.preWrap} data-testid="closeout-task">{task.description}</p>}
+        {req && !task && (
+          <p className={styles.error} data-testid="closeout-no-task">
+            {t(lang, 'Aucune tâche à clôturer sur cet appel', 'No task to close out on this call')}
+          </p>
+        )}
 
         <section className={styles.card}>
           <h2 className={styles.cardTitle}>{t(lang, 'Résultat', 'Outcome')}</h2>
@@ -191,11 +206,24 @@ export default function CloseoutForm({ lang, me, onSignOut, onToggleLang }: Prop
 
         <section className={styles.card}>
           <h2 className={styles.cardTitle}>{t(lang, 'Explication', 'Explanation')}</h2>
+          <p id="closeout-comment-hint" className={styles.commentHint} data-testid="closeout-comment-hint">
+            {t(
+              lang,
+              `Minimum ${COMMENT_MIN} caractères`,
+              `Minimum ${COMMENT_MIN} characters`,
+            )}
+            {' · '}
+            <span className={commentLen >= COMMENT_MIN ? undefined : styles.commentShort}>
+              {commentLen}/{COMMENT_MIN}
+            </span>
+          </p>
           <div className={styles.commentRow}>
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               rows={4}
+              minLength={COMMENT_MIN}
+              aria-describedby="closeout-comment-hint"
               placeholder={t(lang, 'Décrivez le travail et les prochaines étapes…', 'Describe the work and next steps…')}
               data-testid="closeout-comment"
             />

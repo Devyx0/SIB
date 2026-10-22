@@ -1,7 +1,8 @@
 import { useRef, KeyboardEvent } from 'react';
 import type { ListRow } from '../../api/schema.d.ts';
-import { statusLabel, t, timeEstimateLabel } from '../../i18n';
-import type { Lang } from '../../i18n';
+import { statusLabel, t, timeEstimateLabel, type Lang } from '../../i18n';
+import { urgencyLabel } from '../../lib/urgencyLevels';
+import { googleMapsUrl } from '../../lib/maps';
 import styles from './RequestTable.module.css';
 
 interface Props {
@@ -17,7 +18,7 @@ interface Props {
   total: number;
   showAllCols?: boolean;
   errorMsg?: string;
-  /** Rendered inside a scrolling parent: let the header stick to it. */
+  /** Rendered in a height-bounded flex column: the card scrolls internally. */
   inScroller?: boolean;
 }
 
@@ -49,14 +50,18 @@ const OPTIONAL_COLS: ColDef[] = [
   { key: 'next_steps',            fr: 'Prochaines étapes',  en: 'Next steps',    sortable: false },
 ];
 
-function UrgencyTag({ tier }: { tier: string | null }) {
-  if (tier === 'AJD') return <span className={styles.tagAJD}>AJD</span>;
-  if (tier === 'ajd') return <span className={styles.tagAjd}>ajd</span>;
+export function UrgencyTag({ tier, lang = 'fr' }: { tier: string | null; lang?: Lang }) {
+  if (tier === 'URGENT') {
+    return <span className={styles.tagAJD}>{urgencyLabel(lang, 'URGENT')}</span>;
+  }
+  if (tier === 'Intermédiaire' || tier === 'Faible') {
+    return <span className={styles.tagAjd}>{urgencyLabel(lang, tier)}</span>;
+  }
   return <span className={styles.muted}>—</span>;
 }
 
-function StatusTag({ status, lang = 'fr' }: { status: string; lang?: Lang }) {
-  // en_route is highlighted — the calendar's "X" prefix equivalent.
+export function StatusTag({ status, lang = 'fr' }: { status: string; lang?: Lang }) {
+  // en_route highlighted (calendar "X"); awaiting_redispatch = expertise queue.
   return <span className={styles.tagStatus} data-status={status}>{statusLabel(lang, status)}</span>;
 }
 
@@ -111,7 +116,7 @@ export default function RequestTable({
       const msg = errorMsg ?? t(lang, 'Erreur lors du chargement.', 'Loading error.');
       return (
         <tr>
-          <td colSpan={colCount} className={styles.emptyState}>{msg}</td>
+          <td colSpan={colCount} className={styles.emptyState}><div className={styles.emptyInner}>{msg}</div></td>
         </tr>
       );
     }
@@ -120,14 +125,16 @@ export default function RequestTable({
       return (
         <tr>
           <td colSpan={colCount} className={styles.emptyState}>
-            <span className={styles.emptyTitle}>
-              {t(lang, 'Aucun appel dans cette plage.', 'No calls in this range.')}
-            </span>
-            <span className={styles.emptyHint}>
-              {t(lang,
-                'Élargissez la période ou retirez des filtres pour voir plus de résultats.',
-                'Widen the period or remove filters to see more results.')}
-            </span>
+            <div className={styles.emptyInner}>
+              <span className={styles.emptyTitle}>
+                {t(lang, 'Aucun appel dans cette plage.', 'No calls in this range.')}
+              </span>
+              <span className={styles.emptyHint}>
+                {t(lang,
+                  'Élargissez la période ou retirez des filtres pour voir plus de résultats.',
+                  'Widen the period or remove filters to see more results.')}
+              </span>
+            </div>
           </td>
         </tr>
       );
@@ -169,17 +176,20 @@ export default function RequestTable({
         }
       }
 
-      const isAJD = row.urgency_tier === 'AJD';
+      const isUrgent = row.urgency_tier === 'URGENT';
+      const isEscalated = row.status === 'awaiting_redispatch';
       const isDup = row.duplicate_of_request_id != null;
       const isAdd = row.addition_to_request_id != null;
       const isSelected = row.request_id === selectedId;
+      const mapAddress = row.building_full_address ?? row.building_address;
 
       result.push(
         <tr
           key={row.request_id}
           className={[
             styles.row,
-            isAJD ? styles.ajdRow : '',
+            isUrgent ? styles.ajdRow : '',
+            isEscalated ? styles.escalatedRow : '',
             isDup ? styles.dupRow : '',
             isAdd ? styles.addRow : '',
             isSelected ? styles.selectedRow : '',
@@ -190,12 +200,13 @@ export default function RequestTable({
           data-testid="request-row"
           data-duplicate={isDup || undefined}
           data-addition={isAdd || undefined}
+          data-escalated={isEscalated || undefined}
           tabIndex={0}
         >
           {/* mandatory cells */}
           <td className={styles.nowrap + ' ' + styles.dateCell}>{row.start_date ?? '—'}</td>
           <td className={styles.nowrap + ' ' + styles.mono}>{row.asnu ?? '—'}</td>
-          <td className={styles.nowrap}><UrgencyTag tier={row.urgency_tier} /></td>
+          <td className={styles.nowrap}><UrgencyTag tier={row.urgency_tier} lang={lang} /></td>
           <td className={styles.titleCell}>
             <span className={styles.clamp} title={row.raw_title ?? undefined}>{row.raw_title ?? '—'}</span>
             {isDup && (
@@ -211,7 +222,22 @@ export default function RequestTable({
           </td>
           <td className={styles.nowrap}>{row.territoire ?? '—'}</td>
           <td className={styles.buildingCell}>
-            <span className={styles.clamp} title={row.building_address ?? undefined}>{row.building_address ?? '—'}</span>
+            {mapAddress ? (
+              <a
+                className={`${styles.clamp} ${styles.mapLink}`}
+                href={googleMapsUrl(mapAddress)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`${mapAddress} — ${t(lang, 'Ouvrir dans Google Maps', 'Open in Google Maps')}`}
+                data-testid="row-map-link"
+                // Opening Maps must not also open the detail panel.
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                {row.building_address ?? mapAddress}
+                <span aria-hidden="true"> ↗</span>
+              </a>
+            ) : '—'}
           </td>
           <td className={styles.nowrap + ' ' + styles.mono} title={row.unique_unit_number ?? undefined}>
             {row.unique_unit_number ?? '—'}

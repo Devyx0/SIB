@@ -1,12 +1,15 @@
 """Satisfaction survey (public) + coordinator alerts on closeout / log / follow-up."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.core.db import get_db_conn
 from backend.core.security import CurrentUser, get_current_user
 from backend.core.utils import today_local
+from backend.modules.tasks.repository import insert_task
 
 _COMMENT = "Travail effectué, remplacement du joint."
 _JUSTIF = {"text": "Justification de test valide", "input_method": "typed"}
@@ -68,29 +71,32 @@ def _seed(db_conn):
 
 
 def _en_route_call(ac, db_conn, building_id, tech_id):
+    """Open call with one task, en route + arrived. Returns (tech_client, rid, tid)."""
     rid = db_conn.execute(
-        "INSERT INTO maintenance_request "
-        "(status, building_id, assigned_employee_id, raw_title) "
-        "VALUES ('triaged', %s, %s, 'Fuite survey') RETURNING request_id",
-        [building_id, tech_id],
+        "INSERT INTO maintenance_request (status, building_id, raw_title) "
+        "VALUES ('open', %s, 'Fuite survey') RETURNING request_id",
+        [building_id],
     ).fetchone()["request_id"]
+    now = datetime.now(timezone.utc)
+    tid = insert_task(
+        db_conn, request_id=rid, description="Fuite", status="scheduled",
+        assigned_employee_id=tech_id, due_at=now, source="dispatcher", accepted_at=now,
+    )["task_id"]
     tech = ac(_user(tech_id, "technician"))
-    assert tech.post(f"/api/v1/requests/{rid}/en-route", json={
-        "current_status": "triaged", "current_start_date": None,
-        "lat": None, "lng": None,
-    }).status_code == 200
-    return tech, rid
+    assert tech.post(f"/api/v1/tasks/{tid}/en-route", json={}).status_code == 200
+    assert tech.post(f"/api/v1/tasks/{tid}/arrived", json={}).status_code == 200
+    return tech, rid, tid
 
 
 def test_complete_creates_survey_and_alert(ac, app, db_conn):
     building_id, tech_id, coord_id = _seed(db_conn)
-    tech, rid = _en_route_call(ac, db_conn, building_id, tech_id)
+    tech, rid, tid = _en_route_call(ac, db_conn, building_id, tech_id)
     pid = tech.post(f"/api/v1/requests/{rid}/photos", content=b"x" * 64,
                     headers={"Content-Type": "image/jpeg"}).json()["attachment_id"]
-    r = tech.post(f"/api/v1/requests/{rid}/closeout", json={
+    r = tech.post(f"/api/v1/tasks/{tid}/closeout", json={
         "outcome": "complete", "comment": _COMMENT, "input_method": "typed",
         "attachment_ids": [pid], "next_date": None, "urgent": False,
-        "current_status": "en_route", "lat": None, "lng": None,
+        "lat": None, "lng": None,
     })
     assert r.status_code == 200, r.text
 
@@ -112,14 +118,25 @@ def test_complete_creates_survey_and_alert(ac, app, db_conn):
     assert g.json()["already_submitted"] is False
     assert g.json()["technician_name"] == "Tech Survey"
 
+    for bad in (0, 6):
+        r_bad = client.post(f"/api/v1/survey/{survey['token']}", json={
+            "polite": True, "satisfaction_rating": bad, "problem_solved": False,
+            "comments": None,
+        })
+        assert r_bad.status_code == 422, r_bad.text
+
     s = client.post(f"/api/v1/survey/{survey['token']}", json={
-        "polite": True, "satisfied": True, "problem_solved": False,
+        "polite": True, "satisfaction_rating": 4, "problem_solved": False,
         "comments": "Fuite réduite mais goutte encore.",
     })
     assert s.status_code == 200, s.text
+    assert db_conn.execute(
+        "SELECT satisfaction_rating FROM satisfaction_survey WHERE token = %s",
+        [survey["token"]],
+    ).fetchone()["satisfaction_rating"] == 4
 
     again = client.post(f"/api/v1/survey/{survey['token']}", json={
-        "polite": True, "satisfied": True, "problem_solved": True, "comments": None,
+        "polite": True, "satisfaction_rating": 5, "problem_solved": True, "comments": None,
     })
     assert again.status_code == 409
 
@@ -132,13 +149,13 @@ def test_complete_creates_survey_and_alert(ac, app, db_conn):
 
 def test_expertise_and_followup_alerts(ac, db_conn):
     building_id, tech_id, coord_id = _seed(db_conn)
-    tech, rid = _en_route_call(ac, db_conn, building_id, tech_id)
+    tech, rid, tid = _en_route_call(ac, db_conn, building_id, tech_id)
     pid = tech.post(f"/api/v1/requests/{rid}/photos", content=b"x" * 64,
                     headers={"Content-Type": "image/jpeg"}).json()["attachment_id"]
-    assert tech.post(f"/api/v1/requests/{rid}/closeout", json={
+    assert tech.post(f"/api/v1/tasks/{tid}/closeout", json={
         "outcome": "partial_expertise", "comment": _COMMENT, "input_method": "typed",
         "attachment_ids": [pid], "next_date": None, "urgent": True,
-        "current_status": "en_route", "lat": None, "lng": None,
+        "lat": None, "lng": None,
     }).status_code == 200
 
     # No survey on expertise

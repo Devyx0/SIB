@@ -10,7 +10,9 @@ from .security import CurrentUser, get_current_user
 # employee.role carries French ingest values; the mapping to these canonical
 # names lives in the ingestion layer, not here.
 # Open decision: DB-vs-SoW role naming not yet finalised.
-ROLES: frozenset[str] = frozenset({"technician", "coordinator", "director", "contractor"})
+ROLES: frozenset[str] = frozenset({
+    "technician", "coordinator", "director", "contractor", "receptionist",
+})
 
 
 def require_role(*roles: str):

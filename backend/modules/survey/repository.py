@@ -33,14 +33,14 @@ def get_by_token(conn, token: str) -> dict | None:
     return dict(row) if row else None
 
 
-def submit(conn, *, token: str, polite: bool, satisfied: bool,
+def submit(conn, *, token: str, polite: bool, satisfaction_rating: int,
            problem_solved: bool, comments: str | None) -> bool:
     """Returns False if already submitted or token missing."""
     row = conn.execute(
         """
         UPDATE satisfaction_survey
         SET polite = %(polite)s,
-            satisfied = %(satisfied)s,
+            satisfaction_rating = %(rating)s,
             problem_solved = %(solved)s,
             comments = %(comments)s,
             submitted_at = now()
@@ -48,7 +48,7 @@ def submit(conn, *, token: str, polite: bool, satisfied: bool,
         RETURNING survey_id
         """,
         {
-            "token": token, "polite": polite, "satisfied": satisfied,
+            "token": token, "polite": polite, "rating": satisfaction_rating,
             "solved": problem_solved, "comments": comments,
         },
     ).fetchone()

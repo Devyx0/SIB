@@ -6,7 +6,7 @@ from backend.triage.context_builder import same_problem
 
 def test_same_problem_shared_tokens():
     assert same_problem(
-        "AJD 3048-2 Châtelets: Bruit de goutte d'eau dans le mur",
+        "3048-2 Châtelets: Bruit de goutte d'eau dans le mur",
         "3048-2 Châtelets: Goutte d'eau mur salle de bain",
     )
 

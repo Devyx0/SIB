@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel
@@ -23,8 +23,8 @@ class TerritoryRow(BaseModel):
     sector_id: int
     territoire: str
     active: int
-    AJD: int  # noqa: N815 — matches urgency_tier enum / UI column
-    ajd: int
+    urgent: int
+    medium: int
     untriaged: int
     board_link: str
 
@@ -63,6 +63,18 @@ class OutcomeMix(BaseModel):
     failed: int = 0
 
 
+class TechnicianReview(BaseModel):
+    """One submitted tenant satisfaction survey."""
+    survey_id: int
+    request_id: int
+    submitted_at: datetime
+    rating: Optional[int] = None  # 1–5; null for surveys submitted before star rating
+    polite: Optional[bool] = None
+    problem_solved: Optional[bool] = None
+    comments: Optional[str] = None
+    building_address: Optional[str] = None
+
+
 class UtilizationRow(BaseModel):
     employee_id: int
     nom_employe: str
@@ -76,6 +88,10 @@ class UtilizationRow(BaseModel):
     outcome_mix: OutcomeMix
     capacity_minutes: None = None
     utilization_pct: None = None
+    # Tenant reviews submitted in the range (newest first)
+    avg_rating: Optional[float] = None
+    rating_count: int = 0
+    reviews: list[TechnicianReview] = []
 
 
 class UtilizationResponse(BaseModel):

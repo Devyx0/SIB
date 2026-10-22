@@ -13,14 +13,13 @@ from backend.core.security import CurrentUser
 
 from . import repository as repo
 from . import service
+from backend.modules.tasks import service as task_service
+from backend.modules.tasks.schemas import RejectAllOut, TaskOut
 from .schemas import (
     AddLogBody,
     AssignBody,
     BuildingLookup,
     EmployeeLookup,
-    CloseoutBody,
-    DossierListResponse,
-    EnRouteBody,
     ListResponse,
     PhotoUploadResponse,
     PhotoUrlResponse,
@@ -35,6 +34,7 @@ from .schemas import (
     SetUrgencyBody,
     SortKey,
     StatusValue,
+    TechnicianSuggestionsResponse,
     TriageTriggerBody,
     UnitByNumberLookup,
     UnitLookup,
@@ -43,11 +43,14 @@ from .schemas import (
 
 router = APIRouter(prefix="/requests", tags=["requests"])
 lookup_router = APIRouter(prefix="/lookup", tags=["lookup"])
-# Own prefix: a literal /requests/dossiers would be captured by /requests/{request_id}.
-dossiers_router = APIRouter(prefix="/dossiers", tags=["dossiers"])
 
 _ALL_ROLES = require_role("technician", "coordinator", "director", "contractor")
 _COORD_DIR  = require_role("coordinator", "director")
+_INTAKE = require_role("coordinator", "director", "receptionist")
+# Lookups needed to fill the intake form (not request list/detail).
+_INTAKE_LOOKUP = require_role(
+    "technician", "coordinator", "director", "contractor", "receptionist",
+)
 _TECH_CONTRACTOR = require_role("technician", "contractor")
 
 
@@ -64,7 +67,7 @@ class RequestListParams:
         building_id: Optional[int] = Query(default=None),
         sector_id: Optional[int] = Query(default=None),
         assigned_employee_id: Optional[int] = Query(default=None),
-        urgency: Optional[Literal["AJD", "ajd", "none"]] = Query(default=None),
+        urgency: Optional[Literal["URGENT", "Intermédiaire", "Faible"]] = Query(default=None),
         source_calendar: Optional[Literal["main", "st_maj", "unrouted"]] = Query(default=None),
         q: Optional[str] = Query(default=None),
         has_subcontractor: Optional[bool] = Query(default=None),
@@ -130,7 +133,7 @@ def request_get(
     response_model=list[SectorLookup],
 )
 def lookup_sectors(
-    user: CurrentUser = _ALL_ROLES,
+    user: CurrentUser = _INTAKE_LOOKUP,
     conn=Depends(get_db_conn),
 ) -> list[SectorLookup]:
     from backend.modules.intake.service import allowed_sector_ids
@@ -145,7 +148,7 @@ def lookup_sectors(
 )
 def lookup_buildings(
     sector_id: Optional[int] = Query(default=None),
-    user: CurrentUser = _ALL_ROLES,
+    user: CurrentUser = _INTAKE_LOOKUP,
     conn=Depends(get_db_conn),
 ) -> list[BuildingLookup]:
     from backend.modules.intake.service import allowed_sector_ids
@@ -199,6 +202,36 @@ def request_trigger_triage(
     return {"request_id": request_id, "status": "triage_pending"}
 
 
+@router.post("/{request_id}/tasks/accept-all", operation_id="request_tasks_accept_all",
+             response_model=list[TaskOut])
+def request_tasks_accept_all(
+    request_id: int, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn),
+) -> list[TaskOut]:
+    return task_service.accept_all(conn, request_id, user)
+
+
+@router.post("/{request_id}/tasks/reject-all", operation_id="request_tasks_reject_all",
+             response_model=RejectAllOut)
+def request_tasks_reject_all(
+    request_id: int, user: CurrentUser = _COORD_DIR, conn=Depends(get_db_conn),
+) -> RejectAllOut:
+    return task_service.reject_all(conn, request_id, user)
+
+
+@router.get(
+    "/{request_id}/technician-suggestions",
+    operation_id="request_technician_suggestions",
+    response_model=TechnicianSuggestionsResponse,
+)
+def request_technician_suggestions(
+    request_id: int,
+    lang: Literal["fr", "en"] = Query(default="fr"),
+    user: CurrentUser = _COORD_DIR,
+    conn=Depends(get_db_conn),
+) -> TechnicianSuggestionsResponse:
+    return service.get_technician_suggestions(conn, request_id, lang=lang)
+
+
 @router.post("/{request_id}/route", operation_id="request_route", response_model=RequestDetail)
 def request_route(
     request_id: int,
@@ -210,8 +243,14 @@ def request_route(
 
 
 @router.post("/{request_id}/en-route", operation_id="request_en_route", response_model=RequestDetail)
-def request_en_route(request_id: int, body: EnRouteBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
-    return service.action_en_route(conn, request_id, body, user)
+def request_en_route(request_id: int, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
+    # No body: always 410, whatever a legacy client sends.
+    return service.action_en_route(conn, request_id, user)
+
+
+@router.post("/{request_id}/arrived", operation_id="request_arrived", response_model=RequestDetail)
+def request_arrived(request_id: int, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_arrived(conn, request_id, user)
 
 
 @router.post("/{request_id}/photos", operation_id="request_upload_photo",
@@ -228,32 +267,13 @@ def request_upload_photo(
 
 
 @router.post("/{request_id}/closeout", operation_id="request_closeout", response_model=RequestDetail)
-def request_closeout(request_id: int, body: CloseoutBody, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
-    return service.action_closeout(conn, request_id, body, user)
+def request_closeout(request_id: int, user: CurrentUser = _TECH_CONTRACTOR, conn=Depends(get_db_conn)) -> RequestDetail:
+    return service.action_closeout(conn, request_id, user)
 
 
 @router.get("/{request_id}/photos/{attachment_id}", operation_id="request_photo_url", response_model=PhotoUrlResponse)
 def request_photo_url(request_id: int, attachment_id: int, user: CurrentUser = _ALL_ROLES, conn=Depends(get_db_conn)) -> PhotoUrlResponse:
     return service.get_photo_url(conn, request_id, attachment_id, user)
-
-
-@dossiers_router.get("", operation_id="dossier_list", response_model=DossierListResponse)
-def dossier_list(
-    outcome: Optional[Literal["complete", "partial_reschedule", "partial_expertise", "failed"]] = Query(default=None),
-    employee_id: Optional[int] = Query(default=None),
-    start_date: Optional[date] = Query(default=None),
-    end_date: Optional[date] = Query(default=None),
-    q: Optional[str] = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
-    user: CurrentUser = _COORD_DIR,
-    conn=Depends(get_db_conn),
-) -> DossierListResponse:
-    return service.list_dossiers(
-        conn, outcome=outcome, employee_id=employee_id,
-        start_date=start_date, end_date=end_date, q=q,
-        limit=limit, offset=offset,
-    )
 
 
 @router.post("/{request_id}/assign", operation_id="request_assign", response_model=RequestDetail)
@@ -304,7 +324,7 @@ def request_add_log(request_id: int, body: AddLogBody, user: CurrentUser = _ALL_
 )
 def lookup_units(
     building_id: int = Query(...),
-    user: CurrentUser = _ALL_ROLES,
+    user: CurrentUser = _INTAKE_LOOKUP,
     conn=Depends(get_db_conn),
 ) -> list[UnitLookup]:
     return [UnitLookup(**r) for r in repo.list_units(conn, building_id)]
@@ -318,7 +338,7 @@ def lookup_units(
 def lookup_unit_numbers(
     q: str = Query(..., min_length=1),
     limit: int = Query(default=20, ge=1, le=50),
-    user: CurrentUser = _COORD_DIR,
+    user: CurrentUser = _INTAKE,
     conn=Depends(get_db_conn),
 ) -> list[UnitNumberHit]:
     return [UnitNumberHit(**r) for r in repo.search_unique_unit_numbers(conn, q, limit=limit)]
@@ -331,7 +351,7 @@ def lookup_unit_numbers(
 )
 def lookup_unit_by_number(
     unique_unit_number: str = Query(..., min_length=1),
-    user: CurrentUser = _COORD_DIR,
+    user: CurrentUser = _INTAKE,
     conn=Depends(get_db_conn),
 ) -> UnitByNumberLookup:
     from backend.core.exceptions import NotFoundError
@@ -350,7 +370,7 @@ def lookup_unit_by_number(
 )
 def lookup_unit_context(
     unit_id: int = Query(...),
-    user: CurrentUser = _COORD_DIR,
+    user: CurrentUser = _INTAKE,
     conn=Depends(get_db_conn),
 ) -> UnitByNumberLookup:
     from backend.core.exceptions import NotFoundError

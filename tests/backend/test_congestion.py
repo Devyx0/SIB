@@ -55,6 +55,7 @@ def test_gate_rejects_wrong_level():
         "time_estimate_bucket": "UNDER_30_MIN", "delegable_status": "YES",
         "report_status": "CAN_WAIT", "routing_rule": "A1", "subcontractor_name": None,
         "vendor_id": None, "synergy_request_ids": [], "other_notes": None,
+        "recommended_tasks": [{"description": "Réparer le robinet"}],
     }
     result, _ = validate(parsed, None, 1, expected_congestion="N2")
     assert result == "rejected_congestion"

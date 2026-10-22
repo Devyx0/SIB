@@ -16,7 +16,7 @@ class SurveyPublic(BaseModel):
 
 class SurveySubmitBody(BaseModel):
     polite: bool
-    satisfied: bool
+    satisfaction_rating: int = Field(ge=1, le=5)
     problem_solved: bool
     comments: Optional[str] = Field(default=None, max_length=2000)
 

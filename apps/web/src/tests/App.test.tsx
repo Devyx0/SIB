@@ -32,7 +32,7 @@ vi.mock('../api/client', async (importOriginal) => {
   };
 });
 
-function wrap(initialEntries: string[] = ['/board']) {
+function wrap(initialEntries: string[] = ['/triage']) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
@@ -44,13 +44,18 @@ function wrap(initialEntries: string[] = ['/board']) {
 }
 
 describe('App routing', () => {
-  it('renders dispatch board at /board', async () => {
-    wrap(['/board']);
-    await waitFor(() => expect(screen.getAllByText('Répartition').length).toBeGreaterThan(0));
+  it('renders triage board at /triage', async () => {
+    wrap(['/triage']);
+    await waitFor(() => expect(screen.getAllByText('Triage').length).toBeGreaterThan(0));
   });
 
-  it('redirects unknown path to /board', async () => {
+  it('redirects /board to /triage', async () => {
+    wrap(['/board']);
+    await waitFor(() => expect(screen.getAllByText('Triage').length).toBeGreaterThan(0));
+  });
+
+  it('redirects unknown path to /triage', async () => {
     wrap(['/whatever']);
-    await waitFor(() => expect(screen.getAllByText('Répartition').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Triage').length).toBeGreaterThan(0));
   });
 });

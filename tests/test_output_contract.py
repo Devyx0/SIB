@@ -8,11 +8,12 @@ from backend.triage.output_contract import validate
 _BASE = {
     "verdict": "single", "duplicate_of_request_id": None, "addition_to_request_id": None,
     "title": "Robinet qui fuit", "problems": ["Fuite sous le lavabo"],
-    "entry_permission": None, "animals": None, "urgency_tier": None,
+    "entry_permission": None, "urgency_tier": None,
     "complexity_tier": "C1", "congestion_level": "N2",
     "time_estimate_bucket": "UNDER_30_MIN", "delegable_status": "YES",
     "report_status": "CAN_WAIT", "routing_rule": "A1", "subcontractor_name": None,
     "vendor_id": None, "synergy_request_ids": [], "other_notes": None,
+    "recommended_tasks": [{"description": "Réparer le robinet"}],
 }
 
 
@@ -66,11 +67,10 @@ def test_parking_borne_a5_notes():            chk({**_BASE, "other_notes": "Clé
 def test_a5_sector_label_still_fires():       chk({**_BASE, "other_notes": "Périmètre A5 rive-sud — immeuble attitré"}, "rejected_internal_vocabulary")
 def test_fiche_ref_before_digit():            chk({**_BASE, "other_notes": "Boîte à clé : voir fiche Chamonix 1175 pour accès"}, "accepted")
 def test_fiche_ref_after_digit():             chk({**_BASE, "other_notes": "Fiche Sully 7885 (boîte à clé dans la fiche)"}, "accepted")
-def test_ajd_title_matches():                 chk({**_BASE, "urgency_tier": "ajd", "title": "ajd 125-103 Cèdres: Fourmis"}, "accepted")
-def test_AJD_title_matches():                 chk({**_BASE, "urgency_tier": "AJD", "title": "AJD 3048-2 Châtelets: Goutte d'eau dans le mur"}, "accepted")
-def test_urgency_title_mismatch():            chk({**_BASE, "urgency_tier": "AJD", "title": "Robinet qui fuit"}, "rejected_urgency_title")
-def test_ajd_not_uppercase_prefix():          chk({**_BASE, "urgency_tier": "ajd", "title": "AJD 125-103: Fourmis"}, "rejected_urgency_title")
-def test_invalid_urgency_value():             chk({**_BASE, "urgency_tier": "URGENT"}, "rejected_invalid_urgency")
+def test_urgent_plain_title_ok():             chk({**_BASE, "urgency_tier": "URGENT", "title": "3048-2 Châtelets: Goutte d'eau dans le mur"}, "accepted")
+def test_medium_plain_title_ok():             chk({**_BASE, "urgency_tier": "Intermédiaire", "title": "125-103 Cèdres: Fourmis"}, "accepted")
+def test_faible_ok():                         chk({**_BASE, "urgency_tier": "Faible", "title": "Peinture écaille couloir"}, "accepted")
+def test_invalid_urgency_value():             chk({**_BASE, "urgency_tier": "HIGH"}, "rejected_invalid_urgency")
 def test_employee_initials_rejected():        chk({**_BASE, "other_notes": "À voir avec CHGE demain"}, "rejected_assignee_initials")
 def test_sdb_is_not_initials():               chk({**_BASE, "problems": ["Ventilateur SDB à réinstaller"]}, "accepted")
 def test_duplicate_missing_mark():
@@ -87,3 +87,106 @@ def test_duplicate_missing_ref():
          "title": "103: DOUBLON POTENTIEL — Fuite"},
         "rejected_invalid_duplicate_ref",
     )
+
+
+# ── recommended_tasks[] (Task 7) ──────────────────────────────────────────────
+
+def _task(**kw):
+    return {"description": "Réparer le robinet", **kw}
+
+
+def test_single_requires_recommended_tasks():
+    chk({**_BASE, "recommended_tasks": []}, "rejected_missing_recommended_tasks")
+
+
+def test_single_missing_key_rejected():
+    d = {k: v for k, v in _BASE.items() if k != "recommended_tasks"}
+    chk(d, "rejected_missing_recommended_tasks")
+
+
+def test_single_null_tasks_rejected():
+    chk({**_BASE, "recommended_tasks": None}, "rejected_missing_recommended_tasks")
+
+
+def test_accepts_two_tasks():
+    d = {**_BASE, "recommended_tasks": [
+        {"description": "Plomberie", "suggested_trade": "plomberie"},
+        {"description": "Plancher", "urgency_tier": "Faible", "notes": "après la plomberie"},
+    ]}
+    chk(d, "accepted")
+    assert len(d["recommended_tasks"]) == 2
+
+
+def test_task_full_shape_accepted():
+    chk({**_BASE, "routing_rule": "A0", "recommended_tasks": [_task(
+        suggested_trade="plomberie", urgency_tier="URGENT", vendor_id=None,
+        subcontractor_name="Fortin", notes=None,
+    )]}, "accepted")
+
+
+def test_duplicate_needs_no_tasks():
+    chk({**_BASE, "verdict": "duplicate", "duplicate_of_request_id": 99,
+         "title": "103: DOUBLON POTENTIEL — Fuite", "recommended_tasks": []}, "accepted")
+
+
+def test_addition_tasks_optional():
+    add = {**_BASE, "verdict": "addition", "addition_to_request_id": 99, "routing_rule": "A0"}
+    chk({**add, "recommended_tasks": []}, "accepted")
+    chk({**add, "recommended_tasks": [_task()]}, "accepted")
+
+
+def test_exclusive_addition_requires_tasks():
+    """Exclusive routing rewrites addition → single downstream, so it needs tasks like single."""
+    for rule, sub in (("A1", None), ("A2", "Body Gym"), ("A3", "Duclos"), ("A3b", None), ("A4", "Éric")):
+        add = {**_BASE, "verdict": "addition", "addition_to_request_id": 99,
+               "routing_rule": rule, "subcontractor_name": sub, "problems": ["Autre problème"]}
+        chk({**add, "recommended_tasks": []}, "rejected_missing_recommended_tasks")
+        chk({**add, "recommended_tasks": [_task()]}, "accepted")
+    chk({**_BASE, "verdict": "addition", "addition_to_request_id": 99, "routing_rule": "A5",
+         "recommended_tasks": []}, "accepted")
+
+
+def test_task_vendor_must_match_routing():
+    chk({**_BASE, "recommended_tasks": [_task(subcontractor_name="Duclos")]}, "rejected_routing_inconsistent")
+    chk({**_BASE, "routing_rule": "A0", "recommended_tasks": [_task(subcontractor_name="Body Gym")]},
+        "rejected_routing_inconsistent")
+    chk({**_BASE, "routing_rule": "A0", "recommended_tasks": [_task(subcontractor_name="Éric")]},
+        "rejected_routing_inconsistent")
+    chk({**_BASE, "routing_rule": "A3", "subcontractor_name": "Duclos",
+         "recommended_tasks": [_task(subcontractor_name="Duclos")]}, "accepted")
+    chk({**_BASE, "routing_rule": "A0", "recommended_tasks": [_task(subcontractor_name="Fortin")]}, "accepted")
+
+
+def test_task_assignee_field_rejected():
+    chk({**_BASE, "recommended_tasks": [_task(assignee="Jean")]}, "rejected_no_assignee_field")
+    chk({**_BASE, "recommended_tasks": [_task(assigned_employee_id=4)]}, "rejected_no_assignee_field")
+
+
+def test_task_description_required():
+    chk({**_BASE, "recommended_tasks": [_task(description="  ")]}, "rejected_invalid_recommended_tasks")
+    chk({**_BASE, "recommended_tasks": [{"suggested_trade": "plomberie"}]}, "rejected_invalid_recommended_tasks")
+
+
+def test_task_shape_rejected():
+    chk({**_BASE, "recommended_tasks": "Plomberie"}, "rejected_invalid_recommended_tasks")
+    chk({**_BASE, "recommended_tasks": ["Plomberie"]}, "rejected_invalid_recommended_tasks")
+    chk({**_BASE, "recommended_tasks": [_task(vendor_id="x")]}, "rejected_invalid_recommended_tasks")
+    chk({**_BASE, "recommended_tasks": [_task(notes=5)]}, "rejected_invalid_recommended_tasks")
+
+
+def test_task_invalid_urgency_rejected():
+    chk({**_BASE, "recommended_tasks": [_task(urgency_tier="HIGH")]}, "rejected_invalid_urgency")
+
+
+def test_task_financial_content_rejected():
+    chk({**_BASE, "recommended_tasks": [_task(description="Réclamer le loyer")]}, "rejected_financial_content")
+    chk({**_BASE, "recommended_tasks": [_task(notes="Dépôt de 500$ requis")]}, "rejected_financial_content")
+
+
+def test_task_access_code_rejected():
+    chk({**_BASE, "recommended_tasks": [_task(notes="clavier code 4821")]}, "rejected_access_code_content")
+
+
+def test_task_internal_vocab_and_initials_rejected():
+    chk({**_BASE, "recommended_tasks": [_task(description="Appliquer règle 6")]}, "rejected_internal_vocabulary")
+    chk({**_BASE, "recommended_tasks": [_task(notes="À voir avec CHGE")]}, "rejected_assignee_initials")

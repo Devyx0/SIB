@@ -28,10 +28,11 @@ function wrap(ui: React.ReactElement, initial = '/board') {
 }
 
 const CASES: [string, string][] = [
-  ['coordinator', 'Coordonnateur'],
-  ['director',    'Directeur'],
-  ['technician',  'Technicien'],
-  ['contractor',  'Sous-traitant'],
+  ['coordinator',  'Coordonnateur'],
+  ['director',     'Directeur'],
+  ['technician',   'Technicien'],
+  ['contractor',   'Sous-traitant'],
+  ['receptionist', 'Réceptionniste'],
 ];
 
 describe('AppShell sidebar role labels (lang=fr)', () => {
@@ -52,19 +53,18 @@ describe('AppShell side menu', () => {
 
   it('renders the menu items with French labels', () => {
     wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
-    expect(screen.getByTestId('nav-board')).toHaveTextContent('Répartition');
+    expect(screen.getByTestId('nav-triage')).toHaveTextContent('Triage');
+    expect(screen.getByTestId('nav-tasks')).toHaveTextContent('Tâches');
     expect(screen.getByTestId('nav-nouvel-appel')).toHaveTextContent('Nouvel appel');
-    expect(screen.getByTestId('nav-dossiers')).toHaveTextContent('Dossiers');
-    expect(screen.getByTestId('nav-apres-heures')).toHaveTextContent('Après les heures');
     expect(screen.getByText("Vue d'ensemble")).toBeTruthy();
     expect(screen.getByTestId('nav-tableau-bord')).toHaveTextContent('Tableau de bord');
     expect(screen.getByTestId('nav-utilisation')).toHaveTextContent('Utilisation');
   });
 
-  it('greys only Après les heures with a Bientôt chip', () => {
+  it('has no Après les heures item (not built yet)', () => {
     wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
-    expect(screen.getAllByText('Bientôt')).toHaveLength(1);
-    expect(screen.getByTestId('nav-apres-heures').closest('a')).toBeNull(); // not a link
+    expect(screen.queryByTestId('nav-apres-heures')).toBeNull();
+    expect(screen.queryByText('Après les heures')).toBeNull();
   });
 
   it('overview items are in-app nav links', () => {
@@ -75,12 +75,12 @@ describe('AppShell side menu', () => {
       .toBe('/utilisation');
   });
 
-  it('routes: Répartition → /board, Dossiers → /dossiers, Nouvel appel → /board?nouvel-appel=1', () => {
+  it('routes: Triage → /triage, Tasks → /tasks, Nouvel appel → /triage?nouvel-appel=1', () => {
     wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
-    expect((screen.getByTestId('nav-board') as HTMLAnchorElement).getAttribute('href')).toBe('/board');
-    expect((screen.getByTestId('nav-dossiers') as HTMLAnchorElement).getAttribute('href')).toBe('/dossiers');
+    expect((screen.getByTestId('nav-triage') as HTMLAnchorElement).getAttribute('href')).toBe('/triage');
+    expect((screen.getByTestId('nav-tasks') as HTMLAnchorElement).getAttribute('href')).toBe('/tasks');
     expect((screen.getByTestId('nav-nouvel-appel') as HTMLAnchorElement).getAttribute('href'))
-      .toBe('/board?nouvel-appel=1');
+      .toBe('/triage?nouvel-appel=1');
   });
 
   it('Escape closes the mobile slide-over', async () => {
@@ -93,8 +93,48 @@ describe('AppShell side menu', () => {
     expect(burger.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('the open drawer has its own close button that hands focus back to the menu button', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
+    const burger = screen.getByTestId('burger');
+    await userEvent.click(burger);
+    const close = screen.getByTestId('drawer-close');
+    expect(document.activeElement).toBe(close);
+    await userEvent.click(close);
+    expect(burger.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(burger);
+  });
+
+  it('opening another page starts it at the top', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
+    const main = document.querySelector('main')!;
+    main.scrollTop = 500;
+    scrollTo.mockClear();
+    await userEvent.click(screen.getByTestId('nav-portfolio'));
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0, behavior: 'instant' }));
+    expect(main.scrollTop).toBe(0);
+    scrollTo.mockRestore();
+  });
+
   it('never shows a Milestone label', () => {
     wrap(<AppShell lang="fr" onToggleLang={vi.fn()} me={coord} onSignOut={vi.fn()}>x</AppShell>);
     expect(screen.queryByText(/milestone|jalon/i)).toBeNull();
+  });
+
+  it('receptionist only sees Nouvel appel → /intake', () => {
+    wrap(
+      <AppShell lang="fr" onToggleLang={vi.fn()} me={me('receptionist')} onSignOut={vi.fn()}>
+        x
+      </AppShell>,
+      '/intake',
+    );
+    expect(screen.getByTestId('nav-nouvel-appel')).toHaveTextContent('Nouvel appel');
+    expect((screen.getByTestId('nav-nouvel-appel') as HTMLAnchorElement).getAttribute('href'))
+      .toBe('/intake');
+    expect(screen.queryByTestId('nav-triage')).toBeNull();
+    expect(screen.queryByTestId('nav-tasks')).toBeNull();
+    expect(screen.queryByTestId('nav-tableau-bord')).toBeNull();
   });
 });

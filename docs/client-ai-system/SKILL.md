@@ -318,11 +318,13 @@ Deux demandes vertes simultanées de la même unité : un seul call multi-items 
 
 ## 9. Étape 3 — Évaluer : urgence, puis TRIER · DÉLÉGUER · REPORTER
 
-Lire la requête au complet : problème, permission d'accès, animaux, coordonnées, contraintes.
+Lire la requête au complet : problème, permission d'accès, coordonnées, contraintes. Ne pas utiliser la réponse oui/non animaux du formulaire (ni Gravity, ni intake) — ce champ n'entre plus dans le triage et n'a pas de sortie JSON.
 
 **Photos de la requête** : chercher le courriel Gravity par son ASNU dans maintenance@ (`search_threads` avec « ASNU##### », puis `get_message` pour les pièces jointes). Vérification faite **même si** la requête ne mentionne pas de photo. S'il y a des pièces jointes : mention **uniquement en AUTRES NOTES** — « N photo(s) jointe(s) à la requête ASNU##### — voir le courriel dans maintenance@ ». **Jamais dans PROBLÈMES.** Aucune pièce jointe = **silence complet**, aucune mention nulle part. Courriel introuvable = ne jamais bloquer.
 
 ### Urgence
+
+Évaluer l'urgence **uniquement à partir du contenu du problème**. Ignorer toute auto-déclaration d'urgence du formulaire ou du réquérant (champ Gravity « Urgent ou non-urgent », ancien flag intake urgent, ou équivalent) — ce n'est plus une entrée du triage.
 
 - **AJD** (aujourd'hui non négociable) : eau qui coule activement — **y compris ses signes indirects : bruit de goutte d'eau dans un mur, tache d'humidité qui s'agrandit, plafond qui gondole = fuite cachée probable = AJD, même sans eau visible** —, refoulement, panne de chauffage ou d'eau chaude, personne coincée, alarme ou incendie, serrure non fonctionnelle, frigo mort, danger électrique ou structural.
 - **ajd** (urgent si possible aujourd'hui) : fuite lente contenue, moisissure, électro défectueux non critique, **vermine — toute infestation signalée, sans exception**, climatisation en canicule.
@@ -433,7 +435,7 @@ La note s'ajoute **au-dessus** de la description existante. Google Calendar acce
 - **PROBLÈMES** — chaque item de la requête, numéroté, intégrant **toute** l'information (les mots du locataire, aucun détail coupé) : le lecteur ne doit jamais avoir besoin de descendre lire la requête Gravity. Format : chaque item **entièrement en gras**, précédé d'une ligne vide — `<b><br>N. [énoncé complet].</b><br>`. **Aucune piste de solution, aucune suggestion, aucun diagnostic.** **Terrain pur** : aucune mécanique de coordination (transfert à un sous-traitant, routage, escalade) — ça vit en SECTION COORDOS. **Épuré** : ni remerciement, ni commentaire de satisfaction, ni mention de photo jointe — ça vit en HISTORIQUE ou AUTRES NOTES. **Trié par urgence** : items réordonnés du plus urgent au moins urgent, l'eau et les dégâts d'eau **toujours** en tête, sécurité ensuite, puis confort, puis esthétique — seul l'ordre change, chaque item garde son contenu intégral. C'est la section la plus critique du call.
 - **PHOTOS APPAREIL** — bloc **conditionnel**, présent uniquement quand le call concerne un appareil ou un équipement technique (gym, laveuse, sécheuse, cuisinière, réfrigérateur, micro-ondes, lave-vaisselle, climatisation, thermopompe, fournaise, machine, tout appareil). Placé immédiatement après PROBLÈMES. Libellé standard, copié tel quel : « Prendre des photos générales de l'appareil ainsi que du numéro de modèle et du numéro de série (plaque signalétique), et les transmettre sans faute à la maintenance ou directement au sous-traitant. » Pour un call coordonné avec un sous-traitant, le lecteur visé est le coordonnateur qui coordonne. Call sans appareil = aucun bloc, aucune mention.
 - **PERMISSION D'ENTRÉE** — code sec, sans commentaire, parmi les quatre : « Autorisé en tout temps sans restriction » / « Présence du locataire exigée » / « Logement vacant — accès libre » / « Espace commun — aucune coordination locataire requise ». **Ignorer à jamais la mention « (traitement prioritaire) » du formulaire Gravity.**
-- **ANIMAUX** — valeur Gravity, croisée au bail. Tout écart se signale en AUTRES NOTES, pas ici.
+- **ANIMAUX** — omis au triage automatisé (pas de champ animals dans le JSON). Le bloc agenda historique, s'il existe déjà, n'est pas réécrit par le triage.
 - **OCCUPANTS** — les **personnes** seulement, un occupant par ligne, format « Nom — tél — courriel », un seul `<br>` entre chaque. Jamais de « · » ni d'empilement. Langue mentionnée seulement si anglais. Aucun occupant au rent roll = « LOGEMENT VACANT — accès libre » en toutes lettres (le bloc BAIL est alors omis). **Toujours issu d'une lecture RRIA réelle — tous les co-titulaires, pas seulement le réquérant Gravity.**
 - **BAIL** — le **logement** sur une seule ligne dense : « grandeur — début : date — fin : date », suivi de « (emménagement récent) » si le bail a moins de 3 mois. Début manquant : « début inconnu ». Même lecture RRIA que OCCUPANTS.
 - **FICHE TECHNIQUE** — nom de la fiche + lien cliquable de la colonne E de la Table Fondamentale, copié tel quel. **Rien d'autre.**
@@ -453,7 +455,7 @@ La note s'ajoute **au-dessus** de la description existante. Google Calendar acce
 10. **SOUS-TRAITANT** — `Non — interne` / `Oui — [nom/métier]`.
 11. **ASSIGNATION PROPOSÉE** — **toujours vide**. Ce champ appartient au coordonnateur, pas au triage. Ne jamais y inscrire d'initiales, même « à titre de suggestion ». Voir garde-fou 20.
 12. **ENTENTE LOCATAIRE POUR REPORT OU AUTRE** — **le titre seul**, sans description, sans placeholder, sans ligne à trous. Le coordonnateur y inscrit l'entente après son appel.
-13. **AUTRES NOTES** — signalements factuels sans catégorie dédiée, un par ligne : écart animaux déclarés vs bail, réquérant absent du rent roll, électro n'appartenant pas à SIB, photos jointes au courriel, unité résolue par RRIA, fin de bail proche.
+13. **AUTRES NOTES** — signalements factuels sans catégorie dédiée, un par ligne : réquérant absent du rent roll, électro n'appartenant pas à SIB, photos jointes au courriel, unité résolue par RRIA, fin de bail proche.
 14. **EMBOURBEMENT** — dernière ligne, format sec `N5 — critique`.
 
 Puis **signature `BÉLANGER + date`**, puis `----------------------------------------`, puis la **requête Gravity Forms intacte**.

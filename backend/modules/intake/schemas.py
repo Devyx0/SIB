@@ -46,7 +46,6 @@ class ManualCreateBody(BaseModel):
     symptome: str = Field(..., min_length=1)
     composante: str = Field(..., min_length=1)
     emplacement: str = Field(..., min_length=1)
-    intake_urgent: bool = False
     secondary_name: Optional[str] = None
     secondary_email: Optional[str] = None
     attention: Optional[str] = None
@@ -81,6 +80,7 @@ class ManualCreateResponse(BaseModel):
     building_id: Optional[int] = None
     unit_id: Optional[int] = None
     match_status: str
+    asnu: Optional[str] = None
 
 
 # ── Match-only endpoint ───────────────────────────────────────────────────────
@@ -103,3 +103,48 @@ class MatchResponse(BaseModel):
     building_adresse: Optional[str] = None  # human-readable label for exact / building_only
     candidate_building_ids: list[int] = Field(default_factory=list)
     candidate_buildings: list[CandidateBuilding] = Field(default_factory=list)
+
+
+# ── Public tenant intake (WordPress iframe) ───────────────────────────────────
+
+class PublicLookupBody(BaseModel):
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    # Optional — backend verification disabled (see core/turnstile.py).
+    turnstile_token: Optional[str] = Field(default=None, max_length=2048)
+
+
+class PublicLookupResponse(BaseModel):
+    session_token: str
+    caller_name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address_label: str
+    unit_label: Optional[str] = None
+    pets_allowed: bool = False
+
+
+class PublicSubmitBody(BaseModel):
+    session_token: str = Field(..., min_length=1)
+    # Optional — backend verification disabled (see core/turnstile.py).
+    turnstile_token: Optional[str] = Field(default=None, max_length=2048)
+    access: AccessChoice
+    access_details: Optional[str] = None
+    animals: Optional[AnimalsChoice] = None
+    animal_details: Optional[str] = None
+    problem: str = Field(..., min_length=1)
+    category: Optional[str] = None
+    element: str = Field(..., min_length=1)
+    symptome: str = Field(..., min_length=1)
+    composante: str = Field(..., min_length=1)
+    emplacement: str = Field(..., min_length=1)
+    secondary_name: Optional[str] = None
+    secondary_email: Optional[str] = None
+    attention: Optional[str] = None
+    photos: list[IntakePhoto] = Field(default_factory=list, max_length=MAX_INTAKE_PHOTOS)
+    ui_lang: Literal["fr", "en"] = "fr"
+
+
+class PublicSubmitResponse(BaseModel):
+    request_id: int
+    asnu: Optional[str] = None

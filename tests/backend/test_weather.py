@@ -55,7 +55,7 @@ def mkreq(db_conn):
             )
         row = db_conn.execute(
             "INSERT INTO maintenance_request (status, building_id, sector_id, start_date, urgency_tier, problem_summary)"
-            " VALUES ('triaged', %s, %s, CURRENT_DATE, %s::public.urgency_tier, %s) RETURNING request_id",
+            " VALUES ('triaged', %s, %s, CURRENT_DATE, %s, %s) RETURNING request_id",
             [building_id, _SECTOR, urgency, problem],
         ).fetchone()
         return row["request_id"]
@@ -117,17 +117,17 @@ def test_band_below_minus15_is_critical(db_conn):
 
 
 def test_direction_higher():
-    assert service.suggestion_direction(None, "AJD") == "higher"
-    assert service.suggestion_direction("ajd", "AJD") == "higher"
+    assert service.suggestion_direction(None, "URGENT") == "higher"
+    assert service.suggestion_direction("Intermédiaire", "URGENT") == "higher"
 
 
 def test_direction_lower():
-    assert service.suggestion_direction("AJD", "ajd") == "lower"
-    assert service.suggestion_direction("AJD", None) == "lower"
+    assert service.suggestion_direction("URGENT", "Intermédiaire") == "lower"
+    assert service.suggestion_direction("URGENT", None) == "lower"
 
 
 def test_direction_equal():
-    assert service.suggestion_direction("ajd", "ajd") == "equal"
+    assert service.suggestion_direction("Intermédiaire", "Intermédiaire") == "equal"
     assert service.suggestion_direction(None, None) == "equal"
 
 
@@ -198,18 +198,18 @@ def test_source_failure_does_not_block(ac, db_conn, mkreq, weather_on, monkeypat
 
 def test_suggestion_higher(ac, mkreq, weather_on, monkeypatch):
     monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-20)))
-    rid = mkreq(urgency="ajd")
+    rid = mkreq(urgency="Intermédiaire")
     r = ac(_user(_COORD, "coordinator")).post(f"/api/v1/requests/{rid}/weather-check").json()
     assert r["status"] == "ok"
     assert r["band_name"] == "critical"
-    assert r["suggested_tier"] == "AJD"
+    assert r["suggested_tier"] == "URGENT"
     assert r["direction"] == "higher"
     assert r["is_critical"] is True
 
 
 def test_suggestion_lower_is_neutral(ac, mkreq, weather_on, monkeypatch):
     monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(15)))
-    rid = mkreq(urgency="AJD")
+    rid = mkreq(urgency="URGENT")
     r = ac(_user(_COORD, "coordinator")).post(f"/api/v1/requests/{rid}/weather-check").json()
     assert r["band_name"] == "normal"
     assert r["suggested_tier"] is None
@@ -218,7 +218,7 @@ def test_suggestion_lower_is_neutral(ac, mkreq, weather_on, monkeypatch):
 
 def test_suggestion_equal_context_only(ac, mkreq, weather_on, monkeypatch):
     monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-20)))
-    rid = mkreq(urgency="AJD")
+    rid = mkreq(urgency="URGENT")
     r = ac(_user(_COORD, "coordinator")).post(f"/api/v1/requests/{rid}/weather-check").json()
     assert r["band_name"] == "critical"
     assert r["direction"] == "equal"
@@ -227,7 +227,7 @@ def test_suggestion_equal_context_only(ac, mkreq, weather_on, monkeypatch):
 def test_cache_reuse_no_second_fetch(ac, mkreq, weather_on, monkeypatch):
     counter = {"n": 0}
     monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-20), counter))
-    rid = mkreq(urgency="ajd")
+    rid = mkreq(urgency="Intermédiaire")
     c = ac(_user(_COORD, "coordinator"))
     c.post(f"/api/v1/requests/{rid}/weather-check")
     c.post(f"/api/v1/requests/{rid}/weather-check")
@@ -271,7 +271,7 @@ def test_detail_hides_weather_evaluation_from_technician(ac, db_conn, mkreq, wea
 
 def test_accept_records_justification_and_app_provenance(ac, db_conn, mkreq, weather_on, monkeypatch):
     monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-22)))
-    rid = mkreq(urgency="ajd")
+    rid = mkreq(urgency="Intermédiaire")
     c = ac(_user(_COORD, "coordinator"))
     ev = c.post(f"/api/v1/requests/{rid}/weather-check").json()
     eval_id = ev["evaluation_id"]
@@ -280,7 +280,7 @@ def test_accept_records_justification_and_app_provenance(ac, db_conn, mkreq, wea
     ).fetchone()["d"]
 
     r = c.post(f"/api/v1/requests/{rid}/urgency", json={
-        "urgency_tier": "AJD", "current_urgency_tier": "ajd",
+        "urgency_tier": "URGENT", "current_urgency_tier": "Intermédiaire",
         "current_assigned_employee_id": None, "current_start_date": start,
         "justification": _JUST, "weather_evaluation_id": eval_id,
     })
@@ -290,7 +290,7 @@ def test_accept_records_justification_and_app_provenance(ac, db_conn, mkreq, wea
         "SELECT after_value FROM decision_justification_log"
         " WHERE request_id=%s AND decision_type='urgency' ORDER BY id DESC LIMIT 1", [rid]
     ).fetchone()["after_value"]
-    assert av["urgency_tier"] == "AJD"
+    assert av["urgency_tier"] == "URGENT"
     assert av["weather"]["evaluation_id"] == eval_id
     assert "min_forecast_temp_24h_c" in av["weather"]
     assert av["weather"]["band"] == "critical"
@@ -306,9 +306,9 @@ def test_accept_records_justification_and_app_provenance(ac, db_conn, mkreq, wea
 
 def test_eval_stores_current_tier_and_forecast_time(ac, mkreq, weather_on, monkeypatch):
     monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-20)))
-    rid = mkreq(urgency="ajd")
+    rid = mkreq(urgency="Intermédiaire")
     r = ac(_user(_COORD, "coordinator")).post(f"/api/v1/requests/{rid}/weather-check").json()
-    assert r["current_tier_at_eval"] == "ajd"
+    assert r["current_tier_at_eval"] == "Intermédiaire"
     assert r["forecast_time_local"]  # non-empty HH:MM
 
 
@@ -317,18 +317,18 @@ _STALE_MSG = "Suggestion périmée — revérifiez la météo"
 
 def test_accept_stale_after_urgency_change_409(ac, db_conn, mkreq, weather_on, monkeypatch):
     monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-22)))
-    rid = mkreq(urgency="ajd")
+    rid = mkreq(urgency="Intermédiaire")
     c = ac(_user(_COORD, "coordinator"))
     ev = c.post(f"/api/v1/requests/{rid}/weather-check").json()
     # urgency changes after the evaluation was computed
     db_conn.execute(
-        "UPDATE maintenance_request SET urgency_tier='AJD'::public.urgency_tier WHERE request_id=%s", [rid]
+        "UPDATE maintenance_request SET urgency_tier='URGENT' WHERE request_id=%s", [rid]
     )
     start = db_conn.execute(
         "SELECT start_date::text AS d FROM maintenance_request WHERE request_id=%s", [rid]
     ).fetchone()["d"]
     r = c.post(f"/api/v1/requests/{rid}/urgency", json={
-        "urgency_tier": "AJD", "current_urgency_tier": "AJD",  # live tier → generic stale passes
+        "urgency_tier": "URGENT", "current_urgency_tier": "URGENT",  # live tier → generic stale passes
         "current_assigned_employee_id": None, "current_start_date": start,
         "justification": _JUST, "weather_evaluation_id": ev["evaluation_id"],
     })
@@ -338,31 +338,31 @@ def test_accept_stale_after_urgency_change_409(ac, db_conn, mkreq, weather_on, m
 
 def test_accept_twice_second_409(ac, db_conn, mkreq, weather_on, monkeypatch):
     monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-22)))
-    rid = mkreq(urgency="ajd")
+    rid = mkreq(urgency="Intermédiaire")
     c = ac(_user(_COORD, "coordinator"))
     ev = c.post(f"/api/v1/requests/{rid}/weather-check").json()
     start = db_conn.execute(
         "SELECT start_date::text AS d FROM maintenance_request WHERE request_id=%s", [rid]
     ).fetchone()["d"]
     base = {
-        "urgency_tier": "AJD", "current_assigned_employee_id": None,
+        "urgency_tier": "URGENT", "current_assigned_employee_id": None,
         "current_start_date": start, "justification": _JUST,
         "weather_evaluation_id": ev["evaluation_id"],
     }
-    r1 = c.post(f"/api/v1/requests/{rid}/urgency", json={**base, "current_urgency_tier": "ajd"})
+    r1 = c.post(f"/api/v1/requests/{rid}/urgency", json={**base, "current_urgency_tier": "Intermédiaire"})
     assert r1.status_code == 200
-    r2 = c.post(f"/api/v1/requests/{rid}/urgency", json={**base, "current_urgency_tier": "AJD"})
+    r2 = c.post(f"/api/v1/requests/{rid}/urgency", json={**base, "current_urgency_tier": "URGENT"})
     assert r2.status_code == 409
     assert r2.json()["error"]["message"] == _STALE_MSG
 
 
 def test_accept_stale_current_tier_409(ac, db_conn, mkreq, weather_on):
-    rid = mkreq(urgency="ajd")
+    rid = mkreq(urgency="Intermédiaire")
     start = db_conn.execute(
         "SELECT start_date::text AS d FROM maintenance_request WHERE request_id=%s", [rid]
     ).fetchone()["d"]
     r = ac(_user(_COORD, "coordinator")).post(f"/api/v1/requests/{rid}/urgency", json={
-        "urgency_tier": "AJD", "current_urgency_tier": "AJD",  # wrong: actual is 'ajd'
+        "urgency_tier": "URGENT", "current_urgency_tier": "URGENT",  # wrong: actual is 'Intermédiaire'
         "current_assigned_employee_id": None, "current_start_date": start,
         "justification": _JUST, "weather_evaluation_id": None,
     })
@@ -398,8 +398,9 @@ def test_escalation_floors_urgency_and_cites_civil_code(db_conn, mkreq, weather_
     monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-18.0)))
     parsed = _parsed(urgency=None)
     service.apply_triage_escalation(parsed, rid)
-    assert parsed["urgency_tier"] == "AJD"
+    assert parsed["urgency_tier"] == "URGENT"
     assert "1864" in parsed["other_notes"] and "1865" in parsed["other_notes"]
+    assert any("1864" in n for n in (parsed.get("ai_important_notes") or []))
     rows = _eval_rows(db_conn, rid)
     assert len(rows) == 1
     ev = rows[0]
@@ -419,19 +420,19 @@ def test_escalation_appends_note_after_existing_notes(mkreq, weather_on, esc_con
 def test_escalation_never_lowers(db_conn, mkreq, weather_on, esc_conn, monkeypatch):
     rid = mkreq()
     monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(15.0)))  # normal band
-    parsed = _parsed(urgency="AJD")
+    parsed = _parsed(urgency="URGENT")
     service.apply_triage_escalation(parsed, rid)
-    assert parsed["urgency_tier"] == "AJD"
+    assert parsed["urgency_tier"] == "URGENT"
     assert parsed["other_notes"] is None
     assert len(_eval_rows(db_conn, rid)) == 1  # audit trail still recorded
 
 
 def test_escalation_equal_tier_no_note(db_conn, mkreq, weather_on, esc_conn, monkeypatch):
     rid = mkreq()
-    monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-18.0)))  # suggests AJD
-    parsed = _parsed(urgency="AJD")
+    monkeypatch.setattr(service, "fetch_forecast", _fetcher(_reading(-18.0)))  # suggests URGENT
+    parsed = _parsed(urgency="URGENT")
     service.apply_triage_escalation(parsed, rid)
-    assert parsed["urgency_tier"] == "AJD"
+    assert parsed["urgency_tier"] == "URGENT"
     assert parsed["other_notes"] is None
 
 
@@ -489,6 +490,7 @@ _MODEL_JSON = {
     "time_estimate_bucket": "H1_TO_2H", "delegable_status": "NO",
     "report_status": "CANNOT_WAIT", "routing_rule": "A0", "subcontractor_name": None,
     "vendor_id": None, "synergy_request_ids": [], "other_notes": None,
+    "recommended_tasks": [{"description": "Diagnostiquer le chauffage"}],
 }
 
 
@@ -544,14 +546,15 @@ def test_triage_run_applies_weather_escalation(db_conn, mkreq, weather_on, esc_c
                 [rid],
             )
             status, urgency, notes = cur.fetchone()
-        assert status == "triaged"
-        assert urgency == "AJD"
+        assert status == "triage_proposal"
+        assert urgency == "URGENT"
         assert "1864" in notes
         assert len(_eval_rows(db_conn, rid)) == 1
     finally:
         db_conn.rollback()  # drop uncommitted weather rows before deleting the request
         if rid is not None:
             with c2.cursor() as cur:
+                cur.execute("DELETE FROM dispatch_task WHERE request_id = %s", [rid])
                 cur.execute("DELETE FROM triage_log WHERE request_id = %s", [rid])
                 cur.execute("DELETE FROM data_provenance WHERE target_table = 'maintenance_request' AND target_pk = %s", [str(rid)])
                 cur.execute("DELETE FROM maintenance_request WHERE request_id = %s", [rid])

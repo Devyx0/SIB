@@ -16,6 +16,7 @@ wheels/
 !.env.example
 credentials.json
 token.json
+token_sheets.json
 
 # ── Client source data (xlsx, csv, docx originals) ───────
 work/
@@ -48,3 +49,7 @@ Thumbs.db
 *.log
 *.dump
 docs/mockups/
+
+# ── Git worktrees / SDD scratch ───────────────────────
+.worktrees/
+.superpowers/

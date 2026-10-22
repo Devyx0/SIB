@@ -83,6 +83,7 @@ def test_gate_rejects_synergy_citing_excluded(db_conn):
         "time_estimate_bucket": "UNDER_30_MIN", "delegable_status": "YES",
         "report_status": "CAN_WAIT", "routing_rule": "A1", "subcontractor_name": None,
         "vendor_id": None, "synergy_request_ids": [excluded], "other_notes": None,
+        "recommended_tasks": [{"description": "Réparer le robinet"}],
     }
     result, detail = validate(parsed, db_conn, incoming)
     assert result == "rejected_excluded_candidate"

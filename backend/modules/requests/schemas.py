@@ -7,6 +7,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from backend.modules.tasks.schemas import JustificationBody, TaskOut
 from backend.modules.weather.schemas import WeatherEvaluation
 
 SOURCE_CALENDAR_LABELS: dict[str, str] = {
@@ -24,13 +25,14 @@ TIME_ESTIMATE_LABELS: dict[str, str] = {
 }
 
 # Whitelisted sort-key → SQL expression (injected structurally, never as a value).
-# urgency_tier ranks: AJD (most urgent) > ajd > none.
+# urgency_tier ranks: URGENT > Intermédiaire > Faible > null.
 SORT_SQL: dict[str, str] = {
     "start_date":             "mr.start_date",
     "asnu":                   "mr.asnu",
     "urgency_tier":           (
-        "CASE mr.urgency_tier::text"
-        " WHEN 'AJD' THEN 1 WHEN 'ajd' THEN 2 WHEN 'none' THEN 3 ELSE 4 END"
+        "CASE mr.urgency_tier"
+        " WHEN 'URGENT' THEN 1 WHEN 'Intermédiaire' THEN 2"
+        " WHEN 'Faible' THEN 3 ELSE 4 END"
     ),
     "raw_title":              "mr.raw_title",
     "territoire":             "s.territoire",
@@ -55,15 +57,10 @@ SortKey = Literal[
 ]
 
 StatusValue = Literal[
-    "intake_received", "triage_pending", "triaged",
-    "triage_clarify", "triage_proposal", "triage_failed",
-    "en_route", "closed",
+    "intake_received", "triage_pending", "triaged", "scheduled",
+    "awaiting_redispatch", "triage_clarify", "triage_proposal", "triage_failed",
+    "en_route", "arrived", "open", "closed",
 ]
-
-
-class JustificationBody(BaseModel):
-    text: str = Field(..., min_length=10)
-    input_method: Literal["voice", "typed"]
 
 
 class AssignBody(BaseModel):
@@ -82,32 +79,16 @@ class RescheduleBody(BaseModel):
     justification: JustificationBody
 
 
-class EnRouteBody(BaseModel):
-    current_status: str
-    current_start_date: Optional[date] = None
-    # Location point only if the browser granted it — null otherwise.
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-
-
-class CloseoutBody(BaseModel):
-    outcome: Literal["complete", "partial_reschedule", "partial_expertise", "failed"]
-    comment: str = Field(..., min_length=10)
-    input_method: Literal["voice", "typed"] = "typed"
-    attachment_ids: list[int] = Field(..., min_length=1)
-    next_date: Optional[date] = None   # outcome 2 only
-    urgent: bool = False               # outcomes 3/4 only
-    current_status: str                # stale check — must match, and be en_route
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-
-
 class VisitEntry(BaseModel):
     visit_id: int
+    task_id: Optional[int] = None
     employee_id: int
     employee_name: Optional[str] = None
     en_route_at: datetime
+    arrived_at: Optional[datetime] = None
     closeout_at: Optional[datetime] = None
+    travel_minutes: Optional[int] = None
+    on_site_minutes: Optional[int] = None
     duration_minutes: Optional[int] = None
     outcome: Optional[str] = None
     closeout_comment: Optional[str] = None
@@ -123,7 +104,7 @@ class PhotoUrlResponse(BaseModel):
 
 
 class SetUrgencyBody(BaseModel):
-    urgency_tier: Optional[Literal["AJD", "ajd"]] = None
+    urgency_tier: Optional[Literal["URGENT", "Intermédiaire", "Faible"]] = None
     current_urgency_tier: Optional[str] = None
     current_assigned_employee_id: Optional[int] = None
     current_start_date: Optional[date] = None
@@ -165,7 +146,7 @@ class DispatchChanges(BaseModel):
     """Only the fields present are changed (an explicit null clears it)."""
     assigned_employee_id: Optional[int] = None
     start_date: Optional[date] = None
-    urgency_tier: Optional[Literal["AJD", "ajd"]] = None
+    urgency_tier: Optional[Literal["URGENT", "Intermédiaire", "Faible"]] = None
     next_follow_up_date: Optional[date] = None
     next_steps: Optional[str] = None
     estimated_cost: Optional[Decimal] = Field(None, ge=0)
@@ -197,12 +178,25 @@ class RouteBody(BaseModel):
 class JustificationEntry(BaseModel):
     id: int
     decision_type: str
+    # assigned_employee_id values come with an assigned_employee_name next to them.
     before_value: Optional[dict] = None
     after_value: Optional[dict] = None
     justification_text: str
     input_method: Optional[str] = None
     created_at: str
     employee_id: int
+    # Who made the decision.
+    employee_name: Optional[str] = None
+
+
+class StatusChange(BaseModel):
+    """A status transition made in the app (assignment, en route, arrival, closeout…)."""
+    id: int
+    status_from: Optional[str] = None
+    status_to: Optional[str] = None
+    changed_at: datetime
+    employee_id: Optional[int] = None
+    employee_name: Optional[str] = None
 
 
 class FollowupEntry(BaseModel):
@@ -221,6 +215,7 @@ class ListRow(BaseModel):
     raw_title: Optional[str] = None
     building_id: Optional[int] = None
     building_address: Optional[str] = None
+    building_full_address: Optional[str] = None
     building_name: Optional[str] = None
     sector_id: Optional[int] = None
     territoire: Optional[str] = None
@@ -242,6 +237,7 @@ class ListRow(BaseModel):
     unit_label: Optional[str] = None
     unique_unit_number: Optional[str] = None
     en_route_at: Optional[datetime] = None
+    arrived_at: Optional[datetime] = None
     closeout_outcome: Optional[str] = None
     closeout_urgent: Optional[bool] = None
     duplicate_of_request_id: Optional[int] = None
@@ -253,6 +249,9 @@ class RequestDetail(ListRow):
     triage_summary: Optional[str] = None
     work_performed: Optional[str] = None
     other_notes: Optional[str] = None
+    ai_important_notes: Optional[list[str]] = None
+    ai_next_steps: Optional[list[str]] = None
+    ai_reasoning: Optional[str] = None
     delegable_notes: Optional[str] = None
     report_notes: Optional[str] = None
     tenant_agreement_notes: Optional[str] = None
@@ -268,7 +267,10 @@ class RequestDetail(ListRow):
     caller_type: Optional[str] = None
     followup_log: list[FollowupEntry] = Field(default_factory=list)
     justification_log: list[JustificationEntry] = Field(default_factory=list)
+    # Coordinator / director only, like justification_log.
+    status_history: list[StatusChange] = Field(default_factory=list)
     visits: list[VisitEntry] = Field(default_factory=list)
+    tasks: list[TaskOut] = Field(default_factory=list)
     # Photos attached at intake (new call form).
     intake_photo_ids: list[int] = Field(default_factory=list)
     # PII — null for tech/contractor unless they are the case-assigned employee
@@ -280,6 +282,12 @@ class RequestDetail(ListRow):
     caller_tenant_id: Optional[int] = None
     raw_caller_body: Optional[dict] = None
     problems: Optional[str] = None
+    category_raw: Optional[str] = None
+    # 4-axis intake taxonomy — always visible to assigned tech/contractor.
+    element: Optional[str] = None
+    symptome: Optional[str] = None
+    composante: Optional[str] = None
+    emplacement: Optional[str] = None
     triage_model_version: Optional[str] = None
     # Fiche technique link — in the always-visible set for tech/contractor
     ft_link: Optional[str] = None
@@ -293,27 +301,6 @@ class ListResponse(BaseModel):
     total: int
     items: list[ListRow]
     unscheduled_items: list[ListRow] = Field(default_factory=list)
-
-
-class DossierRow(BaseModel):
-    request_id: int
-    last_en_route_at: datetime
-    last_closeout_at: Optional[datetime] = None
-    unit_label: Optional[str] = None
-    raw_title: Optional[str] = None
-    territoire: Optional[str] = None
-    color_code: Optional[str] = None
-    employee_name: Optional[str] = None     # last visit's employee
-    last_outcome: Optional[str] = None      # null = visit still open
-    photo_count: int = 0
-    visit_count: int = 0
-    closeout_urgent: Optional[bool] = None
-    status: str
-
-
-class DossierListResponse(BaseModel):
-    total: int
-    items: list[DossierRow]
 
 
 class SectorLookup(BaseModel):
@@ -367,3 +354,17 @@ class UnitByNumberLookup(BaseModel):
     building_adresse: Optional[str] = None
     pets_allowed: bool = False
     tenants: list[LeaseTenantOut] = Field(default_factory=list)
+
+
+class TechnicianSuggestion(BaseModel):
+    employee_id: int
+    initials: Optional[str] = None
+    name: str
+    why: str
+    is_en_route: bool = False
+    today_load: int = 0
+
+
+class TechnicianSuggestionsResponse(BaseModel):
+    request_id: int
+    suggestions: list[TechnicianSuggestion]

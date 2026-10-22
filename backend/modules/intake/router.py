@@ -12,7 +12,7 @@ from .schemas import ManualCreateBody, ManualCreateResponse, MatchRequest, Match
 
 router = APIRouter(prefix="/intake", tags=["intake"])
 
-_COORD_DIR = require_role("coordinator", "director")
+_INTAKE = require_role("coordinator", "director", "receptionist")
 
 
 @router.post(
@@ -22,7 +22,7 @@ _COORD_DIR = require_role("coordinator", "director")
 )
 def intake_match_address(
     body: MatchRequest,
-    user: CurrentUser = _COORD_DIR,
+    user: CurrentUser = _INTAKE,
     conn=Depends(get_db_conn),
 ) -> MatchResponse:
     """Match an address against buildings/units without writing anything."""
@@ -38,7 +38,7 @@ def intake_match_address(
 def intake_manual_create(
     body: ManualCreateBody,
     background_tasks: BackgroundTasks,
-    user: CurrentUser = _COORD_DIR,
+    user: CurrentUser = _INTAKE,
     conn=Depends(get_db_conn),
 ) -> ManualCreateResponse:
     result = service.create_manual(conn, body, user)

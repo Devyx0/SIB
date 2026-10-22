@@ -25,6 +25,9 @@ const body: UtilizationResponse = {
       outcome_mix: { complete: 0, partial_reschedule: 0, partial_expertise: 0, failed: 0 },
       capacity_minutes: null,
       utilization_pct: null,
+      avg_rating: null,
+      rating_count: 0,
+      reviews: [],
     },
   ],
 };
@@ -64,6 +67,31 @@ describe('Utilization', () => {
     expect(screen.queryByText(/8\s*[-–àa]\s*14|utilisation %|capacity/i)).toBeNull();
   });
 
+  it('phone sort menu picks the sort and the order', async () => {
+    vi.mocked(fetchUtilization).mockResolvedValue({
+      ...body,
+      rows: [body.rows[0], { ...body.rows[0], employee_id: 25, nom_employe: 'Alice Roy', calls_assigned: 9 }],
+    });
+    wrap(<Utilization lang="fr" />);
+    await screen.findByTestId('util-row-25');
+    fireEvent.click(screen.getByTestId('util-sort-btn'));
+    const menu = screen.getByTestId('util-sort-menu');
+    fireEvent.click(within(menu).getByRole('menuitemradio', { name: /Nom/ }));
+    expect(screen.queryByTestId('util-sort-menu')).toBeNull();
+    const names = () => screen.getAllByTestId(/^util-row-/).map((r) => r.getAttribute('data-testid'));
+    expect(names()).toEqual(['util-row-25', 'util-row-24']); // Alice before Test, A→Z
+    fireEvent.click(screen.getByTestId('util-sort-btn'));
+    fireEvent.click(within(screen.getByTestId('util-sort-menu')).getByRole('menuitemradio', { name: /Décroissant/ }));
+    expect(names()).toEqual(['util-row-24', 'util-row-25']);
+  });
+
+  it('phone period: the calendar button opens a range calendar', async () => {
+    wrap(<Utilization lang="fr" />);
+    await screen.findByTestId('util-table');
+    fireEvent.click(screen.getByTestId('util-cal-btn'));
+    expect(screen.getByTestId('range-calendar')).toBeTruthy();
+  });
+
   it('filters rows by employee name and sorts by a column', async () => {
     vi.mocked(fetchUtilization).mockResolvedValue({
       ...body,
@@ -85,5 +113,87 @@ describe('Utilization', () => {
     fireEvent.change(screen.getByLabelText('Filtrer'), { target: { value: 'test' } });
     expect(screen.queryByTestId('util-row-25')).toBeNull();
     expect(screen.getByTestId('util-row-24')).toBeTruthy();
+  });
+
+  it('shows customer star rating and opens the reviews modal', async () => {
+    vi.mocked(fetchUtilization).mockResolvedValue({
+      ...body,
+      rows: [{
+        ...body.rows[0],
+        avg_rating: 4.5,
+        rating_count: 2,
+        reviews: [
+          {
+            survey_id: 1, request_id: 101, submitted_at: '2026-10-18T14:00:00Z',
+            rating: 5, polite: true, problem_solved: true,
+            comments: 'Très professionnel', building_address: '12 rue Test',
+          },
+          {
+            survey_id: 2, request_id: 102, submitted_at: '2026-10-17T14:00:00Z',
+            rating: 4, polite: true, problem_solved: false,
+            comments: null, building_address: null,
+          },
+        ],
+      }],
+    });
+    wrap(<Utilization lang="fr" />);
+    const btn = await screen.findByTestId('util-rating-24');
+    expect(btn).toHaveTextContent('4,5');
+    expect(btn).toHaveTextContent('2 avis');
+    expect(screen.getByTestId('kpi-rating')).toHaveTextContent('4,5');
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    fireEvent.click(btn);
+    const reviews = screen.getByRole('dialog');
+    expect(reviews).toHaveTextContent('Test Tech');
+    expect(reviews).toHaveTextContent('2 avis');
+    expect(reviews).toHaveTextContent('Très professionnel');
+    expect(reviews).toHaveTextContent('Résolu : non');
+    expect(within(reviews).getAllByRole('listitem')).toHaveLength(2);
+
+    fireEvent.click(within(reviews).getByLabelText('Fermer'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    // Team-wide panel from the KPI tile, with technician names.
+    fireEvent.click(screen.getByTestId('kpi-rating'));
+    const all = screen.getByTestId('util-all-reviews');
+    expect(within(all).getAllByRole('listitem')).toHaveLength(2);
+    expect(all).toHaveTextContent('Test Tech');
+    expect(all).toHaveTextContent('Très professionnel');
+    fireEvent.click(screen.getByTestId('kpi-rating'));
+    expect(screen.queryByTestId('util-all-reviews')).toBeNull();
+  });
+
+  it('opens every review in the modal, newest first, without an inline list', async () => {
+    const reviews = [1, 2, 3, 4, 5].map((n) => ({
+      survey_id: n, request_id: 100 + n, submitted_at: `2026-10-1${n}T14:00:00Z`,
+      rating: 4, polite: true, problem_solved: true,
+      comments: `Avis ${n}`, building_address: null,
+    }));
+    vi.mocked(fetchUtilization).mockResolvedValue({
+      ...body,
+      rows: [{ ...body.rows[0], avg_rating: 4, rating_count: 5, reviews }],
+    });
+    wrap(<Utilization lang="fr" />);
+    const btn = await screen.findByTestId('util-rating-24');
+    fireEvent.click(btn);
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('5 avis');
+    const all = within(dialog).getAllByRole('listitem');
+    expect(all).toHaveLength(5);
+    expect(all[0]).toHaveTextContent('Avis 5');
+    expect(all[4]).toHaveTextContent('Avis 1');
+    // Nothing is listed in the table itself.
+    expect(within(screen.getByTestId('util-table')).queryByText('Avis 5')).toBeNull();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('shows "Aucun avis" when a technician has no reviews', async () => {
+    wrap(<Utilization lang="fr" />);
+    const row = await screen.findByTestId('util-row-24');
+    expect(row).toHaveTextContent('Aucun avis');
   });
 });

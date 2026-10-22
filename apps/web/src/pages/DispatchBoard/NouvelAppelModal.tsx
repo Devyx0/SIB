@@ -8,13 +8,17 @@ import type { SectorLookup } from '../../api/schema.d.ts';
 import { t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import { shrinkImage } from '../../lib/shrinkImage';
+import { taxonomyElementOptions } from '../../lib/taxonomyElements';
 import styles from './NouvelAppelModal.module.css';
+import PhotoPicker, { type PickedPhoto } from '../../components/PhotoPicker';
 import Select from '../../components/Select';
 
 interface Props {
   open: boolean;
   onClose: () => void;
   lang?: Lang;
+  /** Full page (receptionist) — no overlay / dismiss chrome. */
+  asPage?: boolean;
 }
 
 function accessOptions(lang: Lang): { value: AccessChoice; label: string }[] {
@@ -26,7 +30,7 @@ function accessOptions(lang: Lang): { value: AccessChoice; label: string }[] {
   ];
 }
 
-export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) {
+export default function NouvelAppelModal({ open, onClose, lang = 'fr', asPage = false }: Props) {
   const qc = useQueryClient();
 
   const [callerName, setCallerName] = useState('');
@@ -67,8 +71,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
   const [problem, setProblem] = useState('');
   const [attention, setAttention] = useState('');
   // Photos of the problem (recommended): files + local previews.
-  const [photos, setPhotos] = useState<Array<{ file: File; url: string }>>([]);
-  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [photos, setPhotos] = useState<PickedPhoto[]>([]);
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -160,7 +163,10 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
     setSubmitting(false); setErrorMsg(null);
   }
 
-  function handleClose() { reset(); onClose(); }
+  function handleClose() {
+    reset();
+    if (!asPage) onClose();
+  }
 
   function clearCallerFields() {
     setCallerName('');
@@ -401,23 +407,6 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
 
   if (!open) return null;
 
-  const MAX_PHOTOS = 5;
-  function addPhotos(list: FileList | null) {
-    if (!list) return;
-    const picked = Array.from(list).filter((f) => f.type.startsWith('image/'));
-    setPhotos((prev) => [
-      ...prev,
-      ...picked.slice(0, MAX_PHOTOS - prev.length).map((file) => ({ file, url: URL.createObjectURL(file) })),
-    ]);
-    if (photoInputRef.current) photoInputRef.current.value = '';
-  }
-  function removePhoto(i: number) {
-    setPhotos((prev) => {
-      URL.revokeObjectURL(prev[i].url);
-      return prev.filter((_, j) => j !== i);
-    });
-  }
-
   // The unique number was picked from the list and filled in the address.
   const autoFilled = unitId != null && uniqueUnitNumber.trim() !== ''
     && uniqueUnitNumber.trim() === unitPickedRef.current;
@@ -433,8 +422,14 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
   }
 
   return (
-    <div className={styles.overlay} role="dialog" aria-modal aria-label={t(lang, 'Nouvel appel', 'New call')}>
-      <div className={styles.modal}>
+    <div
+      className={asPage ? styles.page : styles.overlay}
+      role={asPage ? undefined : 'dialog'}
+      aria-modal={asPage ? undefined : true}
+      aria-label={t(lang, 'Nouvel appel', 'New call')}
+      data-testid={asPage ? 'nouvel-appel-page' : undefined}
+    >
+      <div className={asPage ? styles.pagePanel : styles.modal}>
         <div className={styles.headRow}>
           <div>
             <h2 className={styles.heading}>{t(lang, 'Nouvel appel', 'New call')}</h2>
@@ -442,17 +437,19 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
               {t(lang, 'Saisissez la demande du locataire — les champs * sont requis.', 'Enter the tenant’s request — fields marked * are required.')}
             </p>
           </div>
-          <button
-            type="button"
-            className={styles.closeBtn}
-            onClick={handleClose}
-            aria-label={t(lang, 'Fermer', 'Close')}
-            data-testid="nouvel-appel-close"
-          >
-            <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M5 5l10 10M15 5L5 15" />
-            </svg>
-          </button>
+          {!asPage && (
+            <button
+              type="button"
+              className={styles.closeBtn}
+              onClick={handleClose}
+              aria-label={t(lang, 'Fermer', 'Close')}
+              data-testid="nouvel-appel-close"
+            >
+              <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M5 5l10 10M15 5L5 15" />
+              </svg>
+            </button>
+          )}
         </div>
 
         <form className={styles.modalForm} onSubmit={handleSubmit} noValidate>
@@ -797,8 +794,18 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
             <div className={styles.row}>
               <div className={styles.field}>
                 <label htmlFor="element" className={styles.label}>{t(lang, 'Élément', 'Element')}</label>
-                <input id="element" className={styles.input} value={element}
-                  onChange={(e) => setElement(e.target.value)} data-testid="element" />
+                <Select
+                  id="element"
+                  className={styles.select}
+                  value={element}
+                  onChange={(e) => setElement(e.target.value)}
+                  data-testid="element"
+                >
+                  <option value="">{t(lang, 'Choisir…', 'Choose…')}</option>
+                  {taxonomyElementOptions(lang).map(({ value, label }) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </Select>
               </div>
               <div className={styles.field}>
                 <label htmlFor="symptome" className={styles.label}>{t(lang, 'Symptôme', 'Symptom')}</label>
@@ -836,45 +843,7 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
                   'Aide le technicien à préparer sa visite. Jusqu’à 5 photos.',
                   'Helps the technician prepare. Up to 5 photos.')}
               </p>
-              <div className={styles.photoGrid} aria-labelledby="intake-photos-label">
-                {photos.map((p, i) => (
-                  <div key={p.url} className={styles.photoTile}>
-                    <img src={p.url} alt={t(lang, `Photo ${i + 1}`, `Photo ${i + 1}`)} />
-                    <button
-                      type="button"
-                      className={styles.photoRemove}
-                      onClick={() => removePhoto(i)}
-                      aria-label={t(lang, `Retirer la photo ${i + 1}`, `Remove photo ${i + 1}`)}
-                    >
-                      <svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                        <path d="M5 5l10 10M15 5L5 15" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-                {photos.length < MAX_PHOTOS && (
-                  <button
-                    type="button"
-                    className={styles.photoAdd}
-                    onClick={() => photoInputRef.current?.click()}
-                    data-testid="add-photo"
-                  >
-                    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" />
-                    </svg>
-                    <span>{photos.length ? t(lang, 'Ajouter', 'Add') : t(lang, 'Ajouter des photos', 'Add photos')}</span>
-                  </button>
-                )}
-              </div>
-              <input
-                ref={photoInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/*"
-                multiple
-                hidden
-                onChange={(e) => addPhotos(e.target.files)}
-                data-testid="photo-input"
-              />
+              <PhotoPicker lang={lang} photos={photos} onChange={setPhotos} labelledBy="intake-photos-label" />
             </div>
             <div className={`${styles.field} ${styles.attentionField}`}>
               <label htmlFor="attention" className={styles.label}>
@@ -909,7 +878,9 @@ export default function NouvelAppelModal({ open, onClose, lang = 'fr' }: Props) 
 
           <div className={styles.actions}>
             <button type="button" className={styles.cancelBtn} onClick={handleClose}>
-              {t(lang, 'Annuler', 'Cancel')}
+              {asPage
+                ? t(lang, 'Effacer', 'Clear')
+                : t(lang, 'Annuler', 'Cancel')}
             </button>
             <button type="submit" className={styles.submitBtn}
               disabled={submitting || blockReasons.length > 0}

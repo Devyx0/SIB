@@ -35,6 +35,8 @@ def get_triage_snapshot(conn, request_id: int) -> Optional[dict]:
                   complexity_tier::text      AS complexity_tier,
                   time_estimate_bucket::text AS time_estimate_bucket,
                   other_notes,
+                  ai_important_notes,
+                  ai_next_steps,
                   triage_model_version
            FROM maintenance_request
            WHERE request_id = %s""",

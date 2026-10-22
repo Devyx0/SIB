@@ -42,7 +42,7 @@ async function selectBuilding(buildingId = '10') {
 }
 
 async function fillTaxonomy() {
-  await userEvent.type(screen.getByTestId('element'), 'Plomberie');
+  await userEvent.selectOptions(screen.getByTestId('element'), "Infiltration d'eau");
   await userEvent.type(screen.getByTestId('symptome'), 'Fuite');
   await userEvent.type(screen.getByTestId('composante'), 'Robinet');
   await userEvent.type(screen.getByTestId('emplacement'), 'Cuisine');
@@ -138,7 +138,7 @@ describe('NouvelAppelModal', () => {
     expect(screen.getByTestId('block-reasons').textContent).toMatch(/unité|unit/i);
     await waitFor(() => expect(screen.getByTestId('unit-select')).toBeTruthy());
     await userEvent.selectOptions(screen.getByTestId('unit-select'), '100');
-    await userEvent.type(screen.getByTestId('element'), 'Plomberie');
+    await userEvent.selectOptions(screen.getByTestId('element'), "Infiltration d'eau");
     await userEvent.type(screen.getByTestId('symptome'), 'Fuite');
     await userEvent.type(screen.getByTestId('composante'), 'Robinet');
     expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(true);
@@ -353,7 +353,7 @@ describe('NouvelAppelModal', () => {
     expect(body.caller_email).toBe('a@example.com');
     expect(body.secondary_name).toBe('Marie');
     expect(body.secondary_email).toBe('marie@example.com');
-    expect(body.element).toBe('Plomberie');
+    expect(body.element).toBe("Infiltration d'eau");
     expect(body.symptome).toBe('Fuite');
     expect(body.composante).toBe('Robinet');
     expect(body.emplacement).toBe('Cuisine');

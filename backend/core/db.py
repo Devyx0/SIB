@@ -106,13 +106,20 @@ class DBTransactionMiddleware(BaseHTTPMiddleware):
                     status_code=500,
                     content={"error": {
                         "code":       "INTERNAL_ERROR",
-                        "message":    "Une erreur est survenue — réessayez",
+                        "message":    "Something went wrong — try again",
                         "request_id": rid,
                         "details":    None,
                     }},
                 )
             return response
         finally:
+            # Always clear txn state before reuse — a prior abort (or an
+            # ExceptionGroup that bypassed the inner except) must not poison
+            # the next request that draws this connection.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             pool.putconn(conn)
 
 

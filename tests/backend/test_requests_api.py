@@ -167,10 +167,10 @@ def test_list_filter_assigned_employee_id(ac):
 
 def test_list_filter_urgency(ac):
     c = ac(_user(_COORD_EMP, "coordinator"))
-    r = c.get(f"/api/v1/requests?{_BASE}&urgency=AJD")
+    r = c.get(f"/api/v1/requests?{_BASE}&urgency=URGENT")
     assert r.status_code == 200
     for item in r.json()["items"]:
-        assert item["urgency_tier"] == "AJD"
+        assert item["urgency_tier"] == "URGENT"
 
 
 def test_list_filter_source_calendar(ac):
@@ -401,6 +401,12 @@ def test_detail_includes_missing_fields_as_null(ac):
     assert body["estimated_cost"]      is None
     assert body["next_follow_up_date"] is None
     assert body["next_steps"]          is None
+    # Taxonomy axes are on the detail payload (null when unset).
+    assert "element" in body and body["element"] is None
+    assert "symptome" in body
+    assert "composante" in body
+    assert "emplacement" in body
+    assert "category_raw" in body
 
 
 # ── Follow-up log ──────────────────────────────────────────────────────────────
@@ -526,6 +532,47 @@ def test_detail_technician_strips_internal_fields(ac, db_conn):
     assert body["delegable_notes"] is None
     assert body["report_notes"]    is None
     assert body["other_notes"]     is None
+
+
+def test_detail_technician_receives_ai_notes_from_other_notes(ac, db_conn):
+    """Tech must get ai_* (hydrated from other_notes) even though other_notes is stripped."""
+    db_conn.execute(
+        """
+        UPDATE maintenance_request
+           SET other_notes = %s,
+               ai_important_notes = NULL,
+               ai_next_steps = NULL
+         WHERE request_id = %s
+        """,
+        (
+            "IMPORTANT:\n- Accès keybox H\nNEXT:\n- Couper l'eau",
+            _REQ_WITH_PII,
+        ),
+    )
+    tech_r = ac(_user(_TECH_ASSIGNED, "technician")).get(f"/api/v1/requests/{_REQ_WITH_PII}")
+    assert tech_r.status_code == 200
+    body = tech_r.json()
+    assert body["other_notes"] is None
+    assert body["ai_important_notes"] == ["Accès keybox H"]
+    assert body["ai_next_steps"] == ["Couper l'eau"]
+
+
+def test_detail_technician_receives_stored_ai_note_arrays(ac, db_conn):
+    db_conn.execute(
+        """
+        UPDATE maintenance_request
+           SET other_notes = NULL,
+               ai_important_notes = %s,
+               ai_next_steps = %s
+         WHERE request_id = %s
+        """,
+        (["RÉQUÉRANT ABSENT"], ["Vérifier joint"], _REQ_WITH_PII),
+    )
+    tech_r = ac(_user(_TECH_ASSIGNED, "technician")).get(f"/api/v1/requests/{_REQ_WITH_PII}")
+    assert tech_r.status_code == 200
+    body = tech_r.json()
+    assert body["ai_important_notes"] == ["RÉQUÉRANT ABSENT"]
+    assert body["ai_next_steps"] == ["Vérifier joint"]
 
 
 # ── Extended PII case-scoping (occupants_raw / tenant_agreement_notes) ─────────

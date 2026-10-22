@@ -7,6 +7,10 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from backend.core.config import settings
+from backend.core.provenance import write_provenance  # noqa: F401  (re-exported for callers)
+from backend.modules.analytics.constants import A_REDISPATCHER_SQL
+
 from .schemas import SORT_SQL, SOURCE_CALENDAR_LABELS
 
 _SENTINEL_EMAIL = 'info@sibelanger.com'
@@ -15,12 +19,13 @@ _SENTINEL_PHONE = '(000) 000-0000'
 _UPDATABLE_FIELDS: dict[str, str] = {
     "assigned_employee_id": "assigned_employee_id = %(v)s",
     "start_date":            "start_date = %(v)s",
-    "urgency_tier":          "urgency_tier = %(v)s::urgency_tier",
+    "urgency_tier":          "urgency_tier = %(v)s",
     "next_follow_up_date":   "next_follow_up_date = %(v)s",
     "next_steps":            "next_steps = %(v)s",
     "estimated_cost":        "estimated_cost = %(v)s",
     "status":                "status = %(v)s::request_status",
     "en_route_at":           "en_route_at = %(v)s",
+    "arrived_at":            "arrived_at = %(v)s",
     "closed_at":             "closed_at = %(v)s",
     "closeout_outcome":      "closeout_outcome = %(v)s::closeout_outcome",
     "closeout_urgent":       "closeout_urgent = %(v)s",
@@ -37,6 +42,7 @@ _LIST_SELECT = """
         mr.raw_title,
         mr.building_id,
         b.adresse                        AS building_address,
+        NULLIF(concat_ws(', ', b.adresse, b.ville, b.code_postal), '') AS building_full_address,
         b.web_building_name              AS building_name,
         mr.sector_id,
         s.territoire,
@@ -57,6 +63,7 @@ _LIST_SELECT = """
         COALESCE(mr.unit_label, u.numero_appartement) AS unit_label,
         u.unique_unit_number,
         mr.en_route_at,
+        mr.arrived_at,
         mr.closeout_outcome::text        AS closeout_outcome,
         mr.closeout_urgent,
         mr.duplicate_of_request_id,
@@ -128,7 +135,7 @@ def list_requests(
         # so any date range is ignored here.
         conditions.append(
             "mr.source_calendar IS NULL"
-            " AND mr.status::text NOT IN ('closed', 'en_route')"
+            " AND mr.status::text NOT IN ('closed', 'en_route', 'arrived')"
             " AND (mr.submission_date >= NOW() - INTERVAL '90 days' OR mr.submission_date IS NULL)"
         )
     elif start_date is not None:
@@ -155,12 +162,9 @@ def list_requests(
         conditions.append("mr.source_calendar = %(source_calendar)s")
         params["source_calendar"] = source_calendar
     if redispatch:
-        # « À redispatcher »: returned by closeout outcomes 3/4, awaiting the
-        # coordinator — triaged, unassigned, last outcome expertise/failed.
-        conditions.append(
-            "mr.status::text = 'triaged' AND mr.assigned_employee_id IS NULL"
-            " AND mr.closeout_outcome::text IN ('partial_expertise', 'failed')"
-        )
+        # « À redispatcher »: accepted task in needs_expertise / return_visit
+        # with no accepted follow-up (same predicate as the dashboard chip).
+        conditions.append(A_REDISPATCHER_SQL)
     if has_subcontractor is True:
         conditions.append(
             "mr.subcontractor_name IS NOT NULL AND btrim(mr.subcontractor_name) <> ''"
@@ -211,104 +215,6 @@ def list_requests(
     return total, [_add_label(dict(r)) for r in rows]
 
 
-def list_dossiers(
-    conn,
-    *,
-    outcome: str | None,
-    employee_id: int | None,
-    start_date: date | None,
-    end_date: date | None,
-    q: str | None,
-    limit: int,
-    offset: int,
-) -> tuple[int, list[dict]]:
-    """Calls with at least one visit (any status), newest last-visit first.
-    Driven from request_visit (DISTINCT ON picks the latest visit per
-    request) so only visited requests are scanned, not every call.
-    photo_count counts rows exactly as action_upload_photo writes them
-    (file_type='photo', photo_context='closeout')."""
-    conditions: list[str] = []
-    params: dict[str, Any] = {}
-
-    if outcome is not None:
-        conditions.append("lv.outcome::text = %(outcome)s")
-        params["outcome"] = outcome
-    if employee_id is not None:
-        # « A fait une visite » — matches ANY visit, not just the latest.
-        conditions.append(
-            "EXISTS (SELECT 1 FROM request_visit ve"
-            " WHERE ve.request_id = lv.request_id AND ve.employee_id = %(employee_id)s)"
-        )
-        params["employee_id"] = employee_id
-    if start_date is not None:
-        conditions.append(
-            "(lv.en_route_at AT TIME ZONE 'America/Toronto')::date"
-            " BETWEEN %(start_date)s AND %(end_date)s"
-        )
-        params["start_date"] = start_date
-        params["end_date"] = end_date
-    if q is not None:
-        conditions.append("""(
-            unaccent(mr.asnu) ILIKE unaccent(%(q_pat)s)
-            OR unaccent(mr.raw_title) ILIKE unaccent(%(q_pat)s)
-            OR unaccent(b.adresse) ILIKE unaccent(%(q_pat)s)
-            OR unaccent(b.web_building_name) ILIKE unaccent(%(q_pat)s)
-            OR unaccent(e.nom_employe) ILIKE unaccent(%(q_pat)s)
-            OR unaccent(COALESCE(mr.unit_label, u.numero_appartement)) ILIKE unaccent(%(q_pat)s)
-        )""")
-        params["q_pat"] = f"%{q}%"
-
-    where = " AND ".join(conditions) if conditions else "TRUE"
-    base = """
-        FROM (
-            SELECT DISTINCT ON (v.request_id)
-                   v.request_id, v.en_route_at, v.closeout_at, v.outcome, v.employee_id
-            FROM request_visit v
-            ORDER BY v.request_id, v.en_route_at DESC, v.visit_id DESC
-        ) lv
-        JOIN maintenance_request mr ON mr.request_id = lv.request_id
-        LEFT JOIN building  b ON b.building_id = mr.building_id
-        LEFT JOIN sector    s ON s.sector_id   = mr.sector_id
-        LEFT JOIN employee  e ON e.employee_id = lv.employee_id
-        LEFT JOIN unit      u ON u.unit_id     = mr.unit_id
-    """
-
-    total = conn.execute(
-        f"SELECT count(*) AS n {base} WHERE {where}", params
-    ).fetchone()["n"]
-
-    params["_limit"] = limit
-    params["_offset"] = offset
-    rows = conn.execute(
-        f"""
-        SELECT
-            mr.request_id,
-            lv.en_route_at                   AS last_en_route_at,
-            lv.closeout_at                   AS last_closeout_at,
-            COALESCE(mr.unit_label, u.numero_appartement) AS unit_label,
-            mr.raw_title,
-            s.territoire,
-            s.color_code,
-            e.nom_employe                    AS employee_name,
-            lv.outcome::text                 AS last_outcome,
-            (SELECT count(*) FROM maintenance_attachment a
-              WHERE a.request_id = mr.request_id
-                AND a.file_type = 'photo'
-                AND a.photo_context = 'closeout')                           AS photo_count,
-            (SELECT count(*) FROM request_visit vc
-              WHERE vc.request_id = mr.request_id)                          AS visit_count,
-            mr.closeout_urgent,
-            mr.status::text                  AS status
-        {base}
-        WHERE {where}
-        ORDER BY lv.en_route_at DESC, mr.request_id DESC
-        LIMIT %(_limit)s OFFSET %(_offset)s
-        """,
-        params,
-    ).fetchall()
-    return total, [dict(r) for r in rows]
-
-
 def get_request(
     conn,
     request_id: int,
@@ -332,6 +238,7 @@ def get_request(
             mr.raw_title,
             mr.building_id,
             b.adresse                        AS building_address,
+            NULLIF(concat_ws(', ', b.adresse, b.ville, b.code_postal), '') AS building_full_address,
             b.web_building_name              AS building_name,
             mr.sector_id,
             s.territoire,
@@ -351,6 +258,9 @@ def get_request(
             mr.triage_summary,
             mr.work_performed,
             mr.other_notes,
+            mr.ai_important_notes,
+            mr.ai_next_steps,
+            mr.ai_reasoning,
             mr.delegable_notes,
             mr.report_notes,
             mr.tenant_agreement_notes,
@@ -371,12 +281,18 @@ def get_request(
             mr.caller_tenant_id,
             mr.raw_caller_body,
             mr.problems,
+            mr.category_raw,
+            mr.element,
+            mr.symptome,
+            mr.composante,
+            mr.emplacement,
             mr.triage_model_version,
             mr.duplicate_of_request_id,
             mr.addition_to_request_id,
             mr.ft_link,
             mr.ft_name,
             mr.en_route_at,
+            mr.arrived_at,
             mr.closeout_outcome::text        AS closeout_outcome,
             mr.closeout_urgent
         FROM maintenance_request mr
@@ -415,7 +331,7 @@ def lock_request(conn, request_id: int) -> dict | None:
         SELECT request_id, status::text, assigned_employee_id, start_date,
                urgency_tier::text AS urgency_tier, next_follow_up_date,
                next_steps, estimated_cost, source_calendar, en_route_at,
-               closed_at, closeout_outcome::text AS closeout_outcome,
+               arrived_at, closed_at, closeout_outcome::text AS closeout_outcome,
                closeout_urgent, work_performed, raw_title
         FROM maintenance_request
         WHERE request_id = %(request_id)s
@@ -441,10 +357,11 @@ def is_valid_assignee(conn, employee_id: int) -> bool:
 
 
 def employee_has_open_en_route(conn, employee_id: int) -> bool:
+    """True if the employee has an open visit (en route or on site, not closed out)."""
     row = conn.execute(
         """
-        SELECT 1 FROM maintenance_request
-        WHERE assigned_employee_id = %(emp_id)s AND status = 'en_route'
+        SELECT 1 FROM request_visit
+        WHERE employee_id = %(emp_id)s AND closeout_at IS NULL
         LIMIT 1
         """,
         {"emp_id": employee_id},
@@ -501,7 +418,7 @@ def get_open_visit(conn, employee_id: int) -> dict | None:
     """The employee's open visit (closeout_at IS NULL) with its call title, if any."""
     row = conn.execute(
         """
-        SELECT v.visit_id, v.request_id, v.en_route_at, mr.raw_title
+        SELECT v.visit_id, v.request_id, v.task_id, v.en_route_at, mr.raw_title
         FROM request_visit v
         JOIN maintenance_request mr ON mr.request_id = v.request_id
         WHERE v.employee_id = %(employee_id)s AND v.closeout_at IS NULL
@@ -512,16 +429,17 @@ def get_open_visit(conn, employee_id: int) -> dict | None:
 
 
 def insert_visit(
-    conn, *, request_id: int, employee_id: int,
+    conn, *, request_id: int, task_id: int, employee_id: int,
     lat: float | None, lng: float | None,
 ) -> int:
     row = conn.execute(
         """
-        INSERT INTO request_visit (request_id, employee_id, en_route_lat, en_route_lng)
-        VALUES (%(request_id)s, %(employee_id)s, %(lat)s, %(lng)s)
+        INSERT INTO request_visit (request_id, task_id, employee_id, en_route_lat, en_route_lng)
+        VALUES (%(request_id)s, %(task_id)s, %(employee_id)s, %(lat)s, %(lng)s)
         RETURNING visit_id
         """,
-        {"request_id": request_id, "employee_id": employee_id, "lat": lat, "lng": lng},
+        {"request_id": request_id, "task_id": task_id, "employee_id": employee_id,
+         "lat": lat, "lng": lng},
     ).fetchone()
     return row["visit_id"]
 
@@ -552,8 +470,8 @@ def next_attachment_id(conn) -> int:
 
 
 def insert_photo(
-    conn, *, attachment_id: int, request_id: int, employee_id: int, storage_path: str,
-    photo_context: str = "closeout",
+    conn, *, attachment_id: int, request_id: int, employee_id: int | None,
+    storage_path: str, photo_context: str = "closeout",
 ) -> None:
     """Insert the attachment row for an already-uploaded file. The explicit id
     comes from next_attachment_id (same sequence — no drift)."""
@@ -574,10 +492,8 @@ def insert_photo(
 def get_photo(conn, request_id: int, attachment_id: int) -> dict | None:
     row = conn.execute(
         """
-        SELECT a.attachment_id, a.storage_path, a.uploaded_by_employee_id,
-               a.visit_id, mr.assigned_employee_id
+        SELECT a.attachment_id, a.storage_path, a.uploaded_by_employee_id, a.visit_id
         FROM maintenance_attachment a
-        JOIN maintenance_request mr ON mr.request_id = a.request_id
         WHERE a.attachment_id = %(aid)s AND a.request_id = %(rid)s
         """,
         {"aid": attachment_id, "rid": request_id},
@@ -601,6 +517,19 @@ def count_usable_photos(conn, request_id: int, employee_id: int, attachment_ids:
     ).fetchone()["n"]
 
 
+def mark_visit_arrived(
+    conn, *, visit_id: int, lat: float | None, lng: float | None,
+) -> None:
+    conn.execute(
+        """
+        UPDATE request_visit
+        SET arrived_at = NOW(), arrived_lat = %(lat)s, arrived_lng = %(lng)s
+        WHERE visit_id = %(visit_id)s AND arrived_at IS NULL
+        """,
+        {"visit_id": visit_id, "lat": lat, "lng": lng},
+    )
+
+
 def close_visit(
     conn, *, visit_id: int, outcome: str, comment: str,
     lat: float | None, lng: float | None,
@@ -609,6 +538,12 @@ def close_visit(
         """
         UPDATE request_visit
         SET closeout_at = NOW(),
+            travel_minutes = CASE WHEN arrived_at IS NULL THEN NULL ELSE GREATEST(
+                0, ROUND(EXTRACT(EPOCH FROM (arrived_at - en_route_at)) / 60.0)::integer
+            ) END,
+            on_site_minutes = CASE WHEN arrived_at IS NULL THEN NULL ELSE GREATEST(
+                0, ROUND(EXTRACT(EPOCH FROM (NOW() - arrived_at)) / 60.0)::integer
+            ) END,
             duration_minutes = GREATEST(
                 0,
                 ROUND(EXTRACT(EPOCH FROM (NOW() - en_route_at)) / 60.0)::integer
@@ -646,8 +581,9 @@ def list_intake_photo_ids(conn, request_id: int) -> list[int]:
 def list_visits(conn, request_id: int) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT v.visit_id, v.employee_id, e.nom_employe AS employee_name,
-               v.en_route_at, v.closeout_at, v.duration_minutes,
+        SELECT v.visit_id, v.task_id, v.employee_id, e.nom_employe AS employee_name,
+               v.en_route_at, v.arrived_at, v.closeout_at,
+               v.travel_minutes, v.on_site_minutes, v.duration_minutes,
                v.outcome::text AS outcome,
                v.closeout_comment,
                COALESCE(array_agg(a.attachment_id) FILTER (WHERE a.attachment_id IS NOT NULL),
@@ -681,38 +617,53 @@ def get_message_context(conn, request_id: int) -> dict:
     return _normalise_contacts(dict(row))
 
 
-def write_provenance(
-    conn, *, target_table: str, target_pk: str, target_column: str,
-    employee_id: int, previous_value: str | None, new_value: str | None,
-) -> None:
-    conn.execute(
-        """
-        INSERT INTO data_provenance
-            (target_table, target_pk, target_column, source_type, employee_id,
-             previous_value, raw_value, ingested_value, ingested_at)
-        VALUES (%(target_table)s, %(target_pk)s, %(target_column)s, 'app', %(employee_id)s,
-                %(previous_value)s, %(new_value)s, %(new_value)s, NOW())
-        """,
-        {
-            "target_table": target_table, "target_pk": target_pk,
-            "target_column": target_column, "employee_id": employee_id,
-            "previous_value": previous_value, "new_value": new_value,
-        },
-    )
-
-
 def list_justification_entries(conn, request_id: int) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT id, decision_type, before_value, after_value, justification_text,
-               input_method, created_at::text AS created_at, employee_id
-        FROM decision_justification_log
-        WHERE request_id = %(request_id)s
-        ORDER BY created_at ASC, id ASC
+        SELECT j.id, j.decision_type, j.before_value, j.after_value, j.justification_text,
+               j.input_method, j.created_at::text AS created_at, j.employee_id,
+               e.nom_employe AS employee_name
+        FROM decision_justification_log j
+        LEFT JOIN employee e ON e.employee_id = j.employee_id
+        WHERE j.request_id = %(request_id)s
+        ORDER BY j.created_at ASC, j.id ASC
         """,
         {"request_id": request_id},
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def list_status_changes(conn, request_id: int) -> list[dict]:
+    """Status transitions made in the app, oldest first (from data_provenance)."""
+    rows = conn.execute(
+        """
+        SELECT dp.provenance_id AS id,
+               dp.previous_value AS status_from,
+               dp.ingested_value AS status_to,
+               (dp.ingested_at AT TIME ZONE 'UTC') AS changed_at,
+               dp.employee_id,
+               e.nom_employe AS employee_name
+        FROM data_provenance dp
+        LEFT JOIN employee e ON e.employee_id = dp.employee_id
+        WHERE dp.target_table = 'maintenance_request'
+          AND dp.target_pk = %(pk)s
+          AND dp.target_column = 'status'
+          AND dp.source_type = 'app'
+        ORDER BY dp.ingested_at ASC, dp.provenance_id ASC
+        """,
+        {"pk": str(request_id)},
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def employee_names(conn, employee_ids: list[int]) -> dict[int, str]:
+    if not employee_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT employee_id, nom_employe FROM employee WHERE employee_id = ANY(%(ids)s)",
+        {"ids": employee_ids},
+    ).fetchall()
+    return {r["employee_id"]: r["nom_employe"] for r in rows if r["nom_employe"]}
 
 
 def list_units(conn, building_id: int) -> list[dict]:
@@ -913,9 +864,8 @@ def list_buildings(conn, sector_id: int | None) -> list[dict]:
 def list_employees(conn, role: str | None) -> list[dict]:
     en_route_flag = """
             EXISTS (
-                SELECT 1 FROM maintenance_request mr
-                WHERE mr.assigned_employee_id = e.employee_id
-                  AND mr.status = 'en_route'
+                SELECT 1 FROM request_visit v
+                WHERE v.employee_id = e.employee_id AND v.closeout_at IS NULL
             ) AS is_en_route
     """
     if role is not None:
@@ -971,7 +921,7 @@ def list_routed_unscheduled(
     """
     conditions: list[str] = [
         "mr.start_date IS NULL",
-        "mr.status::text NOT IN ('closed', 'en_route')",
+        "mr.status::text NOT IN ('closed', 'en_route', 'arrived')",
     ]
     params: dict[str, Any] = {**scope_params}
     if building_id is not None:
@@ -1036,3 +986,129 @@ def route_request(
         target_column="source_calendar", employee_id=employee_id,
         previous_value=old_source_calendar, new_value=source_calendar,
     )
+
+
+def get_request_location(conn, request_id: int) -> dict | None:
+    row = conn.execute(
+        """
+        SELECT request_id, building_id, sector_id
+        FROM maintenance_request WHERE request_id = %(rid)s
+        """,
+        {"rid": request_id},
+    ).fetchone()
+    return dict(row) if row else None
+
+
+# Open work due today (local calendar day). Accepted non-terminal tasks on
+# due_at, plus legacy call-level assignee with start_date=today and no accepted
+# task yet. Used by suggestion ranking and AI tech prefill.
+# Local "today" must use the app TZ — DB session is often UTC, so CURRENT_DATE
+# alone would disagree with (due_at AT TIME ZONE tz)::date near midnight.
+_TODAY_LOAD_SQL = """
+            COALESCE((
+                SELECT count(*)::int FROM (
+                    SELECT t_d.task_id
+                    FROM dispatch_task t_d
+                    WHERE t_d.assigned_employee_id = e.employee_id
+                      AND t_d.accepted_at IS NOT NULL
+                      AND t_d.status::text NOT IN ('done', 'cancelled')
+                      AND (t_d.due_at AT TIME ZONE {tz})::date
+                          = (CURRENT_TIMESTAMP AT TIME ZONE {tz})::date
+                    UNION ALL
+                    SELECT mr_d.request_id
+                    FROM maintenance_request mr_d
+                    WHERE mr_d.assigned_employee_id = e.employee_id
+                      AND mr_d.start_date = (CURRENT_TIMESTAMP AT TIME ZONE {tz})::date
+                      AND mr_d.status::text NOT IN ('closed')
+                      AND NOT EXISTS (
+                          SELECT 1 FROM dispatch_task t_x
+                          WHERE t_x.request_id = mr_d.request_id
+                            AND t_x.accepted_at IS NOT NULL
+                            AND t_x.assigned_employee_id = e.employee_id
+                      )
+                ) day_load
+            ), 0)
+"""
+
+
+def today_load_sql(*, tz_literal: str = "%(tz)s") -> str:
+    """SQL expression counting today's open assignments for employee alias `e`."""
+    return _TODAY_LOAD_SQL.format(tz=tz_literal)
+
+
+def list_technician_suggestion_candidates(
+    conn, *, building_id: int | None, sector_id: int | None,
+) -> list[dict]:
+    """Active tech/contractor in sector or A5 for this building, with history + load + en_route."""
+    if building_id is None and sector_id is None:
+        return []
+    rows = conn.execute(
+        f"""
+        SELECT
+            e.employee_id,
+            e.initials,
+            e.nom_employe AS name,
+            EXISTS (
+                SELECT 1 FROM employee_building_assignment eba
+                WHERE eba.employee_id = e.employee_id
+                  AND %(building_id)s IS NOT NULL
+                  AND eba.building_id = %(building_id)s
+            ) AS is_a5,
+            EXISTS (
+                SELECT 1 FROM request_visit v_er
+                WHERE v_er.employee_id = e.employee_id AND v_er.closeout_at IS NULL
+            ) AS is_en_route,
+            {today_load_sql()} AS today_load,
+            COALESCE((
+                -- Done tasks at this building in the last 12 months, plus
+                -- pre-task closed calls that never got an accepted task.
+                SELECT count(*)::int FROM (
+                    SELECT t_h.task_id
+                    FROM dispatch_task t_h
+                    JOIN maintenance_request mr_h ON mr_h.request_id = t_h.request_id
+                    WHERE t_h.assigned_employee_id = e.employee_id
+                      AND t_h.accepted_at IS NOT NULL
+                      AND t_h.status::text = 'done'
+                      AND %(building_id)s IS NOT NULL
+                      AND mr_h.building_id = %(building_id)s
+                      AND COALESCE(
+                            (t_h.due_at AT TIME ZONE %(tz)s)::date,
+                            (mr_h.closed_at AT TIME ZONE %(tz)s)::date,
+                            mr_h.start_date
+                          ) >= (CURRENT_DATE - INTERVAL '12 months')
+                    UNION ALL
+                    SELECT mr_h.request_id
+                    FROM maintenance_request mr_h
+                    WHERE mr_h.assigned_employee_id = e.employee_id
+                      AND %(building_id)s IS NOT NULL
+                      AND mr_h.building_id = %(building_id)s
+                      AND mr_h.status = 'closed'
+                      AND mr_h.start_date >= (CURRENT_DATE - INTERVAL '12 months')
+                      AND NOT EXISTS (
+                          SELECT 1 FROM dispatch_task t_x
+                          WHERE t_x.request_id = mr_h.request_id
+                            AND t_x.accepted_at IS NOT NULL
+                            AND t_x.assigned_employee_id = e.employee_id
+                            AND t_x.status::text = 'done'
+                      )
+                ) hist
+            ), 0) AS history_count
+        FROM employee e
+        JOIN employee_role er ON er.employee_id = e.employee_id
+        WHERE e.is_active = true
+          AND er.role IN ('technician', 'contractor')
+          AND (
+            (%(sector_id)s IS NOT NULL AND e.sector_id = %(sector_id)s)
+            OR (
+              %(building_id)s IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM employee_building_assignment eba
+                WHERE eba.employee_id = e.employee_id
+                  AND eba.building_id = %(building_id)s
+              )
+            )
+          )
+        """,
+        {"building_id": building_id, "sector_id": sector_id, "tz": settings.TIMEZONE},
+    ).fetchall()
+    return [dict(r) for r in rows]

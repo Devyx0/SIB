@@ -241,6 +241,60 @@
   margin-top: 0.15rem;
 }
 
+.callFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin: 0 0 0.75rem;
+}
+
+.callFacts div {
+  margin: 0;
+}
+
+.callFacts dt {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-neutral-600);
+}
+
+.callFacts dd {
+  margin: 0.1rem 0 0;
+  font-weight: 600;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.95em;
+}
+
+.taxonomyList {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.taxonomyList div {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.taxonomyList dt {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-neutral-600);
+}
+
+.taxonomyList dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .callViewTitle {
   font-size: 1.25rem;
   margin: 0;
@@ -282,6 +336,17 @@
   color: var(--navy-700);
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+.mapLink {
+  color: var(--color-accent, #0b57d0);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.mapLink:hover {
+  text-decoration-thickness: 2px;
 }
 
 .followupEntry {
@@ -416,6 +481,17 @@
 .addPhotoBtn:hover:not(:disabled) {
   background: var(--navy-100);
   border-color: var(--navy-500);
+}
+
+.commentHint {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-neutral-600, #5c6570);
+}
+
+.commentShort {
+  color: #b42318;
+  font-weight: 600;
 }
 
 .commentRow {

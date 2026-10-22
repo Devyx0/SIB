@@ -1,5 +1,7 @@
 .wrap {
   overflow-x: auto;
+  /* Lets an empty-state message size itself to the visible width (cqw). */
+  container-type: inline-size;
   margin-top: 16px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -7,14 +9,14 @@
   box-shadow: var(--sh-card);
 }
 
-/* Inside a scrolling parent the wrap must not clip, or the sticky header
-   would stick to the wrap instead of the parent's viewport. fit-content
-   lets the card grow with a wide column set, which the parent then
-   scrolls sideways. */
+/* Inside a height-bounded flex column the card is the scroller on both
+   axes: it keeps the parent's width, shrinks to the room left, and the
+   sticky header sticks to the card's own top. */
 .inScroller {
-  overflow: visible;
-  width: fit-content;
-  min-width: 100%;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .inScroller .table thead th:first-child {
@@ -119,6 +121,11 @@
   box-shadow: inset 3px 0 0 var(--color-danger);
 }
 
+/* Tasks: awaiting_redispatch — left rail only (status pill already labels it) */
+.escalatedRow {
+  box-shadow: inset 3px 0 0 #c45c26;
+}
+
 .dupRow {
   background: color-mix(in srgb, #c45c26 10%, transparent);
   box-shadow: inset 3px 0 0 #c45c26;
@@ -211,7 +218,7 @@
 }
 
 .emptyState {
-  padding: 56px 12px;
+  padding: 56px 0;
   text-align: center;
   color: var(--color-neutral-600);
   font-size: 14px;
@@ -228,6 +235,16 @@
 .emptyHint {
   display: block;
   font-size: 13px;
+}
+
+/* The table can be wider than the card (phones scroll it sideways): pin the
+   message to the card's visible width so it stays centred and readable. */
+.emptyInner {
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  width: 100cqw;
+  padding: 0 16px;
 }
 
 .dateCell {
@@ -247,6 +264,17 @@
 .buildingCell {
   min-width: 130px;
   max-width: 190px;
+}
+
+/* Building address → Google Maps (new tab). */
+.mapLink {
+  color: var(--color-accent, #0b57d0);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.mapLink:hover {
+  text-decoration-thickness: 2px;
 }
 
 .nowrap {
@@ -329,12 +357,40 @@
   font-weight: 600;
 }
 
+.tagStatus[data-status='arrived'] {
+  background: #2f6f4e;
+  color: #fff;
+  font-weight: 600;
+}
+
+.tagStatus[data-status='scheduled'] {
+  background: #e4eef6;
+  color: #1a4a6e;
+  font-weight: 600;
+}
+
+/* Expertise / failed closeout awaiting coordinator redispatch */
+.tagStatus[data-status='awaiting_redispatch'] {
+  background: #f3e6d4;
+  color: #8a4b0f;
+  font-weight: 600;
+}
+
 /* Urgent flag from closeout outcomes 3/4 */
 .tagCloseoutUrgent {
   margin-left: 4px;
   background: var(--color-danger);
   color: #fff;
   letter-spacing: 0.02em;
+}
+
+/* Phones and short windows scroll the page instead (see the board's
+   index.module.css): the card only scrolls sideways. */
+@media (max-width: 639px), (max-height: 560px) {
+  .inScroller {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
 }
 
 @media (max-width: 639px) {

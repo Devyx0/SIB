@@ -17,6 +17,8 @@ from backend.core.config import settings
 from backend.core.exceptions import NotFoundError
 from backend.core.security import CurrentUser
 
+from backend.domain.urgency import URGENCY_RANK
+
 from . import repository as repo
 from .location import SITE_CODES, resolve_location
 from .schemas import WeatherEvaluation
@@ -24,7 +26,6 @@ from .source import fetch_forecast  # monkeypatched in tests
 
 logger = logging.getLogger("backend.weather")
 
-_RANK = {None: 0, "none": 0, "ajd": 1, "AJD": 2}
 _BAND_FR = {"critical": "critique", "emergency": "urgence", "priority": "priorité", "normal": "normal"}
 
 
@@ -44,7 +45,7 @@ def pick_band(bands: list[dict], temp: Any) -> Optional[dict]:
 
 
 def suggestion_direction(current: Optional[str], suggested: Optional[str]) -> str:
-    c, s = _RANK.get(current, 0), _RANK.get(suggested, 0)
+    c, s = URGENCY_RANK.get(current, 0), URGENCY_RANK.get(suggested, 0)
     return "higher" if s > c else "lower" if s < c else "equal"
 
 
@@ -139,21 +140,15 @@ def apply_triage_escalation(parsed: dict, request_id: int) -> None:
             ev = evaluate(conn, request_id)
         if ev.status != "ok":
             return
-        if _RANK.get(ev.suggested_tier, 0) <= _RANK.get(parsed.get("urgency_tier"), 0):
+        if URGENCY_RANK.get(ev.suggested_tier, 0) <= URGENCY_RANK.get(parsed.get("urgency_tier"), 0):
             return
         parsed["urgency_tier"] = ev.suggested_tier
-        title = (parsed.get("title") or "").lstrip()
-        if ev.suggested_tier == "AJD" and not title.startswith("AJD"):
-            parsed["title"] = f"AJD {title}".strip()
-        elif ev.suggested_tier == "ajd" and not title.startswith(("AJD", "ajd")):
-            parsed["title"] = f"ajd {title}".strip()
         note = (
             f"Escalade météo automatique : minimum prévu sur 24 h de {ev.min_forecast_temp_24h_c:g} °C"
             f" (palier {_BAND_FR.get(ev.band_name, ev.band_name)}) —"
             f" le chauffage est une obligation du locateur (art. 1864-1865 C.c.Q.)."
         )
-        parsed["other_notes"] = (
-            f"{parsed['other_notes']}\n{note}" if parsed.get("other_notes") else note
-        )
+        from backend.triage.ai_notes import append_important
+        append_important(parsed, note)
     except Exception:
         logger.exception("Weather escalation failed for request %s — triage unaffected", request_id)

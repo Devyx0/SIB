@@ -1,11 +1,13 @@
 import { Link } from 'react-router-dom';
-import { useRequests } from '../../hooks/useRequests';
-import { STATUS_VALUES } from '../../api/statusValues';
-import type { MeResponse, ListRow } from '../../api/schema.d.ts';
+import { useTasks } from '../../hooks/useTasks';
+import type { MeResponse, TaskListItem } from '../../api/schema.d.ts';
 import type { Lang } from '../../i18n';
 import { t, statusLabel } from '../../i18n';
+import { urgencyLabel } from '../../lib/urgencyLevels';
+import { dueDay } from '../../lib/taskDates';
 import TechHeader from './TechHeader';
 import { elapsedLabel } from './elapsed';
+import { IN_PROGRESS_TASK_STATUSES, MY_OPEN_TASK_STATUSES } from './myTask';
 import styles from './TechPortal.module.css';
 
 interface Props {
@@ -15,26 +17,27 @@ interface Props {
   onSignOut: () => void;
 }
 
-// Every open status — the list shows all my non-closed calls, any date.
-const OPEN_STATUSES = STATUS_VALUES.filter((s) => s !== 'closed');
-
 function todayToronto(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
 }
 
-function CallRow({ row, lang }: { row: ListRow; lang: Lang }) {
+const inProgress = (r: TaskListItem) => (IN_PROGRESS_TASK_STATUSES as readonly string[]).includes(r.status);
+
+function TaskRow({ row, lang }: { row: TaskListItem; lang: Lang }) {
+  const urgency = row.urgency_tier ?? row.request_urgency_tier;
   return (
-    <Link to={`/tech/appels/${row.request_id}`} className={styles.callRow}>
+    <Link to={`/tech/appels/${row.request_id}?task=${row.task_id}`} className={styles.callRow}>
       <div className={styles.callRowTop}>
-        <span className={styles.callDate}>{row.start_date ?? t(lang, 'Sans date', 'No date')}</span>
+        <span className={styles.callDate}>{dueDay(row.due_at) ?? t(lang, 'Sans date', 'No date')}</span>
         <span className={styles.statusBadge} data-status={row.status}>
           {statusLabel(lang, row.status)}
         </span>
-        {row.urgency_tier && row.urgency_tier !== 'none' && (
-          <span className={styles.urgencyBadge}>{row.urgency_tier}</span>
+        {urgency && urgency !== 'none' && (
+          <span className={styles.urgencyBadge}>{urgencyLabel(lang, urgency)}</span>
         )}
       </div>
-      <div className={styles.callTitle}>{row.raw_title ?? `#${row.request_id}`}</div>
+      <div className={styles.callTitle}>{row.request_title ?? `#${row.request_id}`}</div>
+      <div className={styles.callAddress}>{row.description}</div>
       <div className={styles.callAddress}>
         {row.building_address ?? '—'}
         {row.unit_label ? `, app. ${row.unit_label}` : ''}
@@ -43,39 +46,34 @@ function CallRow({ row, lang }: { row: ListRow; lang: Lang }) {
   );
 }
 
-function Section({ title, rows, lang }: { title: string; rows: ListRow[]; lang: Lang }) {
+function Section({ title, rows, lang }: { title: string; rows: TaskListItem[]; lang: Lang }) {
   if (rows.length === 0) return null;
   return (
     <>
       <h2 className={styles.sectionTitle}>{title}</h2>
-      {rows.map((r) => <CallRow key={r.request_id} row={r} lang={lang} />)}
+      {rows.map((r) => <TaskRow key={r.task_id} row={r} lang={lang} />)}
     </>
   );
 }
 
 export default function TechList({ lang, me, onSignOut, onToggleLang }: Props) {
+  // My open tasks, any date.
   const params = me
-    ? {
-        assigned_employee_id: me.employee_id,
-        status: [...OPEN_STATUSES],
-        sort_by: 'start_date',
-        sort_dir: 'asc' as const,
-        limit: 200,
-      }
+    ? { assigned_employee_id: me.employee_id, status: [...MY_OPEN_TASK_STATUSES] }
     : null;
-  const { data, isPending, isError } = useRequests(params);
+  const { data, isPending, isError } = useTasks(params);
 
   const today = todayToronto();
-  // Defensive: drop anything closed even if the API returned it.
-  const all = data
-    ? [...data.items, ...data.unscheduled_items].filter((r) => r.status !== 'closed')
-    : [];
-  const enRoute = all.filter((r) => r.status === 'en_route');
-  const rest = all.filter((r) => r.status !== 'en_route');
-  const overdue = rest.filter((r) => r.start_date != null && r.start_date < today);
-  const dueToday = rest.filter((r) => r.start_date === today);
-  const upcoming = rest.filter((r) => r.start_date != null && r.start_date > today);
-  const undated = rest.filter((r) => r.start_date == null);
+  const all = data?.items ?? [];
+  const current = all.filter(inProgress);
+  const rest = all.filter((r) => !inProgress(r));
+  const overdue = rest.filter((r) => { const d = dueDay(r.due_at); return d != null && d < today; });
+  const dueToday = rest.filter((r) => dueDay(r.due_at) === today);
+  const upcoming = rest.filter((r) => { const d = dueDay(r.due_at); return d != null && d > today; });
+  const undated = rest.filter((r) => r.due_at == null);
+
+  // From en_route on a task can no longer be edited, so updated_at is when it entered its status.
+  const since = current[0] ? elapsedLabel(current[0].updated_at) : null;
 
   return (
     <div className={styles.page}>
@@ -84,15 +82,15 @@ export default function TechList({ lang, me, onSignOut, onToggleLang }: Props) {
         {isPending && <p className={styles.muted}>{t(lang, 'Chargement…', 'Loading…')}</p>}
         {isError && <p className={styles.error}>{t(lang, 'Erreur de chargement', 'Failed to load')}</p>}
 
-        {enRoute.length > 0 && (
+        {current.length > 0 && (
           <section className={styles.openCall}>
             <div className={styles.openCallBanner}>
               {t(lang, 'Appel en cours — à clôturer avant le prochain', 'Open call — close it before the next one')}
-              {elapsedLabel(enRoute[0].en_route_at) && (
-                <> · {t(lang, 'En route depuis', 'En route for')} {elapsedLabel(enRoute[0].en_route_at)}</>
-              )}
+              {since && (current[0].status === 'en_route'
+                ? <> · {t(lang, 'En route depuis', 'En route for')} {since}</>
+                : <> · {t(lang, 'Arrivé depuis', 'Arrived for')} {since}</>)}
             </div>
-            {enRoute.map((r) => <CallRow key={r.request_id} row={r} lang={lang} />)}
+            {current.map((r) => <TaskRow key={r.task_id} row={r} lang={lang} />)}
           </section>
         )}
 

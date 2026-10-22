@@ -9,23 +9,23 @@ from typing import Any
 from datetime import datetime, timezone
 
 from backend.core.exceptions import (
-    AssigneeEnRouteError, ConflictError, InvalidTransition, NotFoundError,
-    PermissionDenied, RequestClosedError, RequestEnRouteError, StaleDataError,
+    ConflictError, GoneError, InvalidTransition, NotFoundError,
+    PermissionDenied, RequestClosedError, StaleDataError,
     ValidationFailed,
 )
-from backend.domain.status_machine import transition
 from backend.core.security import CurrentUser
 from backend.core.utils import today_local
+from backend.modules.tasks import repository as task_repo
+from backend.modules.tasks import service as task_service
 from backend.modules.weather import repository as weather_repo
 
 from . import repository as repo
 from . import storage
 from .schemas import (
-    AddLogBody, AssignBody, CloseoutBody, DossierListResponse, DossierRow,
-    EnRouteBody, ListResponse, ListRow,
+    AddLogBody, AssignBody, ListResponse, ListRow,
     PhotoUploadResponse, PhotoUrlResponse, RequestDetail, RescheduleBody,
     RouteBody, SaveDispatchBody, SetCostBody, SetFollowUpDateBody, SetNextStepsBody,
-    SetUrgencyBody,
+    SetUrgencyBody, TechnicianSuggestion, TechnicianSuggestionsResponse,
 )
 
 _PHOTO_MIMES = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
@@ -41,17 +41,19 @@ _INTERNAL_TECH: frozenset[str] = frozenset({
     "other_notes",
 })
 
-# Case-scoped personal data — null unless coordinator/director OR the directly-
-# assigned employee.  Covers both contact fields and tenant-identifying text.
+# Case-scoped personal data — null unless coordinator/director OR an assigned
+# employee (see _ASSIGNED_SQL).  Covers both contact fields and tenant-identifying text.
 #
 # Technician/contractor ALWAYS receive (regardless of assignment):
 #   request_id, start_date, asnu, urgency_tier, urgency_raw, raw_title,
 #   building_id/address/name, sector_id, territoire, color_code,
 #   assigned_employee_id/name, subcontractor_name, time_estimate_*, source_calendar*,
-#   status, event_id, problem_summary, work_performed, entry_permission, animals,
+#   status, event_id, problem_summary, work_performed, ai_important_notes,
+#   ai_next_steps, entry_permission, animals,
 #   follow_up_expected, unit_id/label, project_id/label, html_link, caller_type,
 #   bail_raw, historique_raw, ft_link, ft_name, problems, followup_log,
-#   estimated_cost/next_follow_up_date/next_steps (all null – migration 0002)
+#   category_raw, element, symptome, composante, emplacement,
+#   estimated_cost/next_follow_up_date/next_steps
 _CASE_SCOPED_PII: frozenset[str] = frozenset({
     "caller_name",
     "caller_phone",
@@ -62,16 +64,29 @@ _CASE_SCOPED_PII: frozenset[str] = frozenset({
 })
 
 
+# Assigned = on an accepted task of the call, or the legacy call-level assignee
+# (no longer written, kept so pre-task history stays visible).
+_ASSIGNED_SQL = """(
+    mr.assigned_employee_id = %(emp_id)s
+    OR EXISTS (
+        SELECT 1 FROM dispatch_task dt
+        WHERE dt.request_id = mr.request_id
+          AND dt.assigned_employee_id = %(emp_id)s
+          AND dt.accepted_at IS NOT NULL
+    )
+)"""
+
+
 def _scope(user: CurrentUser) -> tuple[str, dict[str, Any]]:
     """Return (scope_sql_fragment, params) to append to any WHERE clause."""
     if user.roles & {"director", "coordinator"}:
         return "", {}
     if "technician" in user.roles:
-        # Exact match of tech_scoped RLS: directly assigned OR sector buildings
-        # OR explicitly assigned buildings via employee_building_assignment.
+        # Assigned (see _ASSIGNED_SQL) OR sector buildings OR explicitly
+        # assigned buildings via employee_building_assignment.
         return (
-            """AND (
-                mr.assigned_employee_id = %(emp_id)s
+            f"""AND (
+                {_ASSIGNED_SQL}
                 OR mr.building_id IN (
                     SELECT b2.building_id FROM building b2
                     JOIN employee e2 ON b2.sector_id = e2.sector_id
@@ -84,15 +99,23 @@ def _scope(user: CurrentUser) -> tuple[str, dict[str, Any]]:
             {"emp_id": user.employee_id},
         )
     if "contractor" in user.roles:
-        return "AND mr.assigned_employee_id = %(emp_id)s", {"emp_id": user.employee_id}
+        return f"AND {_ASSIGNED_SQL}", {"emp_id": user.employee_id}
     return "AND FALSE", {}
 
 
-def _case_pii_visible(user: CurrentUser, row: dict) -> bool:
+def _is_assigned(conn, user: CurrentUser, row: dict) -> bool:
+    """Same rule as _ASSIGNED_SQL, for one already-loaded request row."""
+    return (
+        row.get("assigned_employee_id") == user.employee_id
+        or task_repo.is_assignee_on_request(conn, row["request_id"], user.employee_id)
+    )
+
+
+def _case_pii_visible(conn, user: CurrentUser, row: dict) -> bool:
     """True when the user may see case-scoped PII for this row."""
     if user.roles & {"director", "coordinator"}:
         return True
-    return row.get("assigned_employee_id") == user.employee_id
+    return _is_assigned(conn, user, row)
 
 
 def list_requests(conn, params, user: CurrentUser) -> ListResponse:
@@ -141,45 +164,63 @@ def list_requests(conn, params, user: CurrentUser) -> ListResponse:
     )
 
 
-def list_dossiers(conn, *, outcome, employee_id, start_date, end_date, q,
-                  limit, offset) -> DossierListResponse:
-    if (start_date is None) != (end_date is None):
-        raise ValidationFailed("start_date and end_date must be provided together")
-    if start_date is not None and end_date < start_date:
-        raise ValidationFailed("end_date must not be before start_date")
-    total, rows = repo.list_dossiers(
-        conn, outcome=outcome, employee_id=employee_id,
-        start_date=start_date, end_date=end_date, q=q,
-        limit=limit, offset=offset,
-    )
-    return DossierListResponse(total=total, items=[DossierRow(**r) for r in rows])
+def _hydrate_ai_notes(row: dict) -> None:
+    """Fill ai_* arrays from other_notes when columns are empty (legacy rows).
+
+    Tech/contractor never receive other_notes (stripped below); they do receive
+    ai_important_notes / ai_next_steps — so hydrate before the strip.
+    """
+    has_arrays = bool(row.get("ai_important_notes")) or bool(row.get("ai_next_steps"))
+    if has_arrays or not row.get("other_notes"):
+        return
+    from backend.triage.ai_notes import parse_other_notes
+    important, next_steps = parse_other_notes(row["other_notes"])
+    row["ai_important_notes"] = important
+    row["ai_next_steps"] = next_steps
 
 
-def get_request(conn, request_id: int, user: CurrentUser, *, bypass_scope: bool = False) -> RequestDetail:
-    # bypass_scope: closeout outcomes 3/4 clear the assignment, which can push
-    # the request out of the caller's scope — the response must still be built.
-    scope_sql, scope_params = ("", {}) if bypass_scope else _scope(user)
+def get_request(conn, request_id: int, user: CurrentUser) -> RequestDetail:
+    scope_sql, scope_params = _scope(user)
     row = repo.get_request(conn, request_id, scope_sql=scope_sql, scope_params=scope_params)
     if row is None:
         raise NotFoundError(f"Request {request_id} not found")
     row["followup_log"] = repo.list_followup_entries(conn, request_id)
     row["visits"] = repo.list_visits(conn, request_id)
+    row["tasks"] = task_service.list_for_request(conn, request_id, user)
     row["intake_photo_ids"] = repo.list_intake_photo_ids(conn, request_id)
+
+    _hydrate_ai_notes(row)
 
     is_restricted = not bool(user.roles & {"director", "coordinator"})
     if is_restricted:
         row["justification_log"] = []
         for field in _INTERNAL_TECH:
             row[field] = None
-        if not _case_pii_visible(user, row):
+        if not _case_pii_visible(conn, user, row):
             for field in _CASE_SCOPED_PII:
                 row[field] = None
     else:
-        row["justification_log"] = repo.list_justification_entries(conn, request_id)
+        row["justification_log"] = _with_assignee_names(conn, repo.list_justification_entries(conn, request_id))
+        row["status_history"] = repo.list_status_changes(conn, request_id)
 
     # Weather summary is coordinator/director-only, like the manual check endpoint.
     row["weather_evaluation"] = None if is_restricted else weather_repo.get_latest_evaluation(conn, request_id)
     return RequestDetail(**row)
+
+
+def _with_assignee_names(conn, entries: list[dict]) -> list[dict]:
+    """Put assigned_employee_name next to each assigned_employee_id in before/after."""
+    ids = {
+        v["assigned_employee_id"] for e in entries for v in (e["before_value"], e["after_value"])
+        if isinstance(v, dict) and isinstance(v.get("assigned_employee_id"), int)
+    }
+    names = repo.employee_names(conn, sorted(ids))
+    for e in entries:
+        for side in ("before_value", "after_value"):
+            v = e[side]
+            if isinstance(v, dict) and isinstance(v.get("assigned_employee_id"), int):
+                e[side] = {**v, "assigned_employee_name": names.get(v["assigned_employee_id"])}
+    return entries
 
 
 def _after_action(conn, request_id: int, user: CurrentUser) -> RequestDetail:
@@ -190,6 +231,7 @@ def _after_action(conn, request_id: int, user: CurrentUser) -> RequestDetail:
     row["followup_log"] = repo.list_followup_entries(conn, request_id)
     row["justification_log"] = repo.list_justification_entries(conn, request_id)
     row["visits"] = repo.list_visits(conn, request_id)
+    row["tasks"] = task_service.list_for_request(conn, request_id, user)
     row["intake_photo_ids"] = repo.list_intake_photo_ids(conn, request_id)
     row["weather_evaluation"] = weather_repo.get_latest_evaluation(conn, request_id)
     return RequestDetail(**row)
@@ -228,55 +270,18 @@ def _write_justification(conn, request_id: int, user: CurrentUser, body, *,
     )
 
 
-def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) -> RequestDetail:
-    row = _lock_or_404(conn, request_id)
-    _check_not_closed(row)
-    # Reassigning or unassigning while the technician is en route would orphan
-    # his open visit (he could no longer close it; nobody else could either).
-    if row["status"] == "en_route":
-        raise RequestEnRouteError()
-    if (row["assigned_employee_id"] != body.current_assigned_employee_id
-            or row["start_date"] != body.current_start_date
-            or _norm_urgency(row["urgency_tier"]) != _norm_urgency(body.current_urgency_tier)):
-        raise StaleDataError()
-    if body.employee_id is not None and not repo.is_valid_assignee(conn, body.employee_id):
-        raise ValidationFailed("Employee must be an active technician or contractor")
-    if body.employee_id is not None and repo.employee_has_open_en_route(conn, body.employee_id):
-        raise AssigneeEnRouteError()
+_USE_TASKS = "Assignee and due date now live on tasks — use POST /api/v1/tasks/{task_id}/%s"
+_USE_TASK_FIELDWORK = "Visits now live on tasks — use POST /api/v1/tasks/{task_id}/%s"
 
-    repo.update_field(conn, request_id, "assigned_employee_id", body.employee_id)
-    _write_justification(conn, request_id, user, body, decision_type="assign",
-        before_value={"assigned_employee_id": row["assigned_employee_id"]},
-        after_value={"assigned_employee_id": body.employee_id},
-    )
-    repo.write_provenance(conn,
-        target_table="maintenance_request", target_pk=str(request_id),
-        target_column="assigned_employee_id", employee_id=user.employee_id,
-        previous_value=_to_str(row["assigned_employee_id"]),
-        new_value=_to_str(body.employee_id),
-    )
-    return _after_action(conn, request_id, user)
+
+def action_assign(conn, request_id: int, body: AssignBody, user: CurrentUser) -> RequestDetail:
+    # Hard cutover: fieldwork (assignee) belongs to dispatch_task, not the call.
+    raise GoneError(_USE_TASKS % "assign")
 
 
 def action_reschedule(conn, request_id: int, body: RescheduleBody, user: CurrentUser) -> RequestDetail:
-    row = _lock_or_404(conn, request_id)
-    _check_not_closed(row)
-    if (row["start_date"] != body.current_start_date
-            or row["assigned_employee_id"] != body.current_assigned_employee_id
-            or _norm_urgency(row["urgency_tier"]) != _norm_urgency(body.current_urgency_tier)):
-        raise StaleDataError()
-
-    repo.update_field(conn, request_id, "start_date", body.start_date)
-    _write_justification(conn, request_id, user, body, decision_type="reschedule",
-        before_value={"start_date": _to_str(row["start_date"])},
-        after_value={"start_date": str(body.start_date)},
-    )
-    repo.write_provenance(conn,
-        target_table="maintenance_request", target_pk=str(request_id),
-        target_column="start_date", employee_id=user.employee_id,
-        previous_value=_to_str(row["start_date"]), new_value=str(body.start_date),
-    )
-    return _after_action(conn, request_id, user)
+    # Hard cutover: the due date belongs to dispatch_task, not the call.
+    raise GoneError(_USE_TASKS % "schedule")
 
 
 def action_set_urgency(conn, request_id: int, body: SetUrgencyBody, user: CurrentUser) -> RequestDetail:
@@ -367,15 +372,20 @@ def action_save_dispatch(conn, request_id: int, body: SaveDispatchBody, user: Cu
     changed = body.changes.model_fields_set
     if not changed:
         raise ValidationFailed("Aucune modification à enregistrer")
+    if changed & {"assigned_employee_id", "start_date"}:
+        # Checked before any write so the call is left untouched.
+        raise GoneError(_USE_TASKS % "assign or /schedule")
     ch = body.changes
     cur = body.current.model_dump()
     j = body.justification
     detail: RequestDetail | None = None
 
-    def sync(d: RequestDetail) -> None:
+    def sync(d: RequestDetail, *keys: str) -> None:
+        # Only refresh fields this step changed — keep the screen snapshot for
+        # later stale checks (otherwise a mid-save refresh hides conflicts).
         nonlocal detail
         detail = d
-        for k in cur:
+        for k in keys:
             cur[k] = getattr(d, k)
 
     if "assigned_employee_id" in changed:
@@ -383,30 +393,32 @@ def action_save_dispatch(conn, request_id: int, body: SaveDispatchBody, user: Cu
             employee_id=ch.assigned_employee_id,
             current_assigned_employee_id=cur["assigned_employee_id"],
             current_start_date=cur["start_date"], current_urgency_tier=cur["urgency_tier"],
-            justification=j), user))
+            justification=j), user), "assigned_employee_id")
     if "start_date" in changed:
         if ch.start_date is None:
             raise ValidationFailed("Date de répartition requise")
         sync(action_reschedule(conn, request_id, RescheduleBody(
             start_date=ch.start_date, current_start_date=cur["start_date"],
             current_assigned_employee_id=cur["assigned_employee_id"],
-            current_urgency_tier=cur["urgency_tier"], justification=j), user))
+            current_urgency_tier=cur["urgency_tier"], justification=j), user), "start_date")
     if "urgency_tier" in changed:
         sync(action_set_urgency(conn, request_id, SetUrgencyBody(
             urgency_tier=ch.urgency_tier, current_urgency_tier=cur["urgency_tier"],
             current_assigned_employee_id=cur["assigned_employee_id"],
-            current_start_date=cur["start_date"], justification=j), user))
+            current_start_date=cur["start_date"], justification=j), user), "urgency_tier")
     if "next_follow_up_date" in changed:
         sync(action_set_follow_up_date(conn, request_id, SetFollowUpDateBody(
             next_follow_up_date=ch.next_follow_up_date,
-            current_next_follow_up_date=cur["next_follow_up_date"], justification=j), user))
+            current_next_follow_up_date=cur["next_follow_up_date"], justification=j), user),
+            "next_follow_up_date")
     if "next_steps" in changed:
         sync(action_set_next_steps(conn, request_id, SetNextStepsBody(
-            next_steps=ch.next_steps, current_next_steps=cur["next_steps"], justification=j), user))
+            next_steps=ch.next_steps, current_next_steps=cur["next_steps"], justification=j), user),
+            "next_steps")
     if "estimated_cost" in changed:
         sync(action_set_cost(conn, request_id, SetCostBody(
             estimated_cost=ch.estimated_cost, current_estimated_cost=cur["estimated_cost"],
-            justification=j), user))
+            justification=j), user), "estimated_cost")
     assert detail is not None
     return detail
 
@@ -433,73 +445,13 @@ def action_set_cost(conn, request_id: int, body: SetCostBody, user: CurrentUser)
     return _after_action(conn, request_id, user)
 
 
-def action_en_route(conn, request_id: int, body: EnRouteBody, user: CurrentUser) -> RequestDetail:
-    """Technician/contractor departs for the call. Status → en_route, visit row,
-    two outbox rows (sms + email, never sent in V1), provenance per column."""
-    row = _lock_or_404(conn, request_id)
-    if row["assigned_employee_id"] != user.employee_id:
-        raise PermissionDenied("Seul l'employé assigné peut se mettre en route")
-    _check_not_closed(row)
-    if row["status"] != body.current_status or row["start_date"] != body.current_start_date:
-        raise StaleDataError()
-    # Background triage writes status unconditionally when it finishes
-    # (triage/service.py:221) — going en route now would be overwritten.
-    if row["status"] == "triage_pending":
-        raise ConflictError("Triage en cours — réessayez dans un instant")
+def action_en_route(conn, request_id: int, user: CurrentUser) -> RequestDetail:
+    # Hard cutover: fieldwork (visits) belongs to dispatch_task, not the call.
+    raise GoneError(_USE_TASK_FIELDWORK % "en-route")
 
-    open_visit = repo.get_open_visit(conn, user.employee_id)
-    if open_visit is not None:
-        raise ConflictError(
-            f"Appel {open_visit['request_id']} déjà en route — clôturez-le d'abord",
-            details={
-                "open_request_id": open_visit["request_id"],
-                "open_request_title": open_visit["raw_title"],
-            },
-        )
 
-    transition(row["status"], "en_route")  # 409 if the machine forbids it
-
-    now = datetime.now(timezone.utc)
-    # Insert the visit first: the partial unique index is the authoritative
-    # one-open-call guard if two devices race past the SELECT above.
-    visit_id = repo.insert_visit(
-        conn, request_id=request_id, employee_id=user.employee_id,
-        lat=body.lat, lng=body.lng,
-    )
-    repo.update_field(conn, request_id, "status", "en_route")
-    repo.update_field(conn, request_id, "en_route_at", now)
-    repo.write_provenance(conn,
-        target_table="maintenance_request", target_pk=str(request_id),
-        target_column="status", employee_id=user.employee_id,
-        previous_value=row["status"], new_value="en_route",
-    )
-    repo.write_provenance(conn,
-        target_table="maintenance_request", target_pk=str(request_id),
-        target_column="en_route_at", employee_id=user.employee_id,
-        previous_value=_to_str(row["en_route_at"]), new_value=now.isoformat(),
-    )
-
-    # Tenant notification — template start is the client's (reference §5);
-    # outbox only, status 'not_sent': no sender code exists in V1.
-    ctx = repo.get_message_context(conn, request_id)
-    address = ctx["adresse"] or ""
-    if ctx["unit_label"]:
-        address = f"{address}, app. {ctx['unit_label']}" if address else f"app. {ctx['unit_label']}"
-    msg = (
-        f"Bonjour, Ce message est destiné aux occupants, aux locataires du {address or 'logement'}. "
-        "Votre technicien S.I. Bélanger est en route."
-    )
-    for channel, recipient, subject in (
-        ("sms", ctx["caller_phone"], None),
-        ("email", ctx["caller_email"], "Technicien en route — S.I. Bélanger"),
-    ):
-        repo.insert_outbox(conn,
-            request_id=request_id, visit_id=visit_id, channel=channel,
-            recipient=recipient, subject=subject, body=msg,
-            employee_id=user.employee_id,
-        )
-
-    return get_request(conn, request_id, user)
+def action_arrived(conn, request_id: int, user: CurrentUser) -> RequestDetail:
+    raise GoneError(_USE_TASK_FIELDWORK % "arrived")
 
 
 def action_upload_photo(conn, request_id: int, content: bytes, mime: str, user: CurrentUser) -> PhotoUploadResponse:
@@ -507,7 +459,7 @@ def action_upload_photo(conn, request_id: int, content: bytes, mime: str, user: 
     row — an attachment row must never exist without its stored object; if the
     insert fails the uploaded file is deleted (best effort)."""
     row = _lock_or_404(conn, request_id)
-    if row["assigned_employee_id"] != user.employee_id:
+    if not task_repo.is_assignee_on_request(conn, request_id, user.employee_id):
         raise PermissionDenied("Seul l'employé assigné peut ajouter des photos")
     _check_not_closed(row)
     ext = _PHOTO_MIMES.get(mime.split(";")[0].strip().lower())
@@ -538,119 +490,14 @@ def get_photo_url(conn, request_id: int, attachment_id: int, user: CurrentUser) 
     if photo is None or not photo["storage_path"]:
         raise NotFoundError("Photo introuvable")
     if not (user.roles & {"coordinator", "director"}) \
-            and photo["assigned_employee_id"] != user.employee_id:
+            and photo["uploaded_by_employee_id"] != user.employee_id \
+            and not task_repo.is_assignee_on_request(conn, request_id, user.employee_id):
         raise PermissionDenied()
     return PhotoUrlResponse(url=storage.create_signed_url(photo["storage_path"]))
 
 
-def action_closeout(conn, request_id: int, body: CloseoutBody, user: CurrentUser) -> RequestDetail:
-    """The four outcomes from François's notes (reference §6.1). Closes the
-    visit, writes the follow-up entry, provenance per column; outcomes 3/4
-    return the call to the coordinator queue with a justification row."""
-    row = _lock_or_404(conn, request_id)
-    if row["assigned_employee_id"] != user.employee_id:
-        raise PermissionDenied("Seul l'employé assigné peut clôturer")
-    _check_not_closed(row)
-    if row["status"] != body.current_status:
-        raise StaleDataError()
-    if row["status"] != "en_route":
-        raise ConflictError("L'appel n'est pas en route")
-    visit = repo.get_open_visit(conn, user.employee_id)
-    if visit is None or visit["request_id"] != request_id:
-        raise ConflictError("Aucune visite en cours pour cet appel")
-
-    today = today_local()
-    if body.outcome == "partial_reschedule":
-        if body.next_date is None:
-            raise ValidationFailed("Date de retour requise pour « je dois revenir »")
-        if body.next_date < today:
-            raise ValidationFailed("La date de retour ne peut pas être dans le passé")
-    elif body.next_date is not None:
-        raise ValidationFailed("Une date de retour n'est permise que pour « je dois revenir »")
-    if body.urgent and body.outcome not in ("partial_expertise", "failed"):
-        raise ValidationFailed("« Urgent » n'est permis que pour les expertises")
-
-    ids = list(dict.fromkeys(body.attachment_ids))
-    if repo.count_usable_photos(conn, request_id, user.employee_id, ids) != len(ids):
-        raise ValidationFailed("Photo invalide, d'un autre appel ou déjà utilisée")
-
-    target = "closed" if body.outcome == "complete" else "triaged"
-    transition(row["status"], target)
-
-    now = datetime.now(timezone.utc)
-    repo.close_visit(conn, visit_id=visit["visit_id"], outcome=body.outcome,
-                     comment=body.comment, lat=body.lat, lng=body.lng)
-    repo.mark_photos_used(conn, visit["visit_id"], ids)
-
-    def _set(column: str, value: Any, previous: Any) -> None:
-        repo.update_field(conn, request_id, column, value)
-        repo.write_provenance(conn,
-            target_table="maintenance_request", target_pk=str(request_id),
-            target_column=column, employee_id=user.employee_id,
-            previous_value=_to_str(previous), new_value=_to_str(value),
-        )
-
-    _set("status", target, row["status"])
-    _set("closeout_outcome", body.outcome, row["closeout_outcome"])
-    _set("work_performed", body.comment, row["work_performed"])
-    if body.outcome == "complete":
-        _set("closed_at", now.isoformat(), row["closed_at"])
-    if body.outcome == "partial_reschedule":
-        # He picks the new date himself; the call stays his.
-        _set("start_date", body.next_date, row["start_date"])
-    if body.outcome in ("partial_expertise", "failed"):
-        # Back to the coordinator queue: unassigned = triaged + no employee.
-        _set("assigned_employee_id", None, row["assigned_employee_id"])
-        _set("closeout_urgent", body.urgent, row["closeout_urgent"])
-        repo.write_justification(conn,
-            request_id=request_id, employee_id=user.employee_id,
-            decision_type="closeout",
-            before_value={"assigned_employee_id": row["assigned_employee_id"],
-                          "status": "en_route"},
-            after_value={"assigned_employee_id": None, "status": "triaged",
-                         "closeout_outcome": body.outcome, "urgent": body.urgent},
-            text=body.comment, input_method=body.input_method,
-        )
-
-    # Follow-up entry with the comment, technician initials (add-log pattern).
-    emp_row = conn.execute(
-        "SELECT nom_employe FROM employee WHERE employee_id = %(emp_id)s",
-        {"emp_id": user.employee_id},
-    ).fetchone()
-    tech_name = emp_row["nom_employe"] if emp_row else "?"
-    initials = "".join(w[0].upper() for w in tech_name.split() if w)[:4]
-    followup_id = repo.add_log_entry(conn, request_id, body.comment, initials, today)
-    repo.write_provenance(conn,
-        target_table="maintenance_followup_entry", target_pk=str(followup_id),
-        target_column="entry_text", employee_id=user.employee_id,
-        previous_value=None, new_value=body.comment,
-    )
-
-    title = (row.get("raw_title") or f"#{request_id}").strip()
-    from backend.modules.alerts import service as alerts
-    from backend.modules.survey import repository as survey_repo
-
-    if body.outcome == "complete":
-        survey_repo.create_survey(
-            conn, request_id=request_id, visit_id=visit["visit_id"],
-            employee_id=user.employee_id,
-        )
-        alerts.notify(
-            conn, request_id=request_id, kind="call_completed",
-            summary=f"Appel terminé — {tech_name}: {title}",
-        )
-    elif body.outcome in ("partial_expertise", "failed"):
-        alerts.notify(
-            conn, request_id=request_id, kind="expertise_needed",
-            summary=f"Expertise requise — {tech_name}: {title}",
-        )
-    elif body.outcome == "partial_reschedule":
-        alerts.notify(
-            conn, request_id=request_id, kind="followup_added",
-            summary=f"Retour prévu — {tech_name}: {title}",
-        )
-
-    return get_request(conn, request_id, user, bypass_scope=True)
+def action_closeout(conn, request_id: int, user: CurrentUser) -> RequestDetail:
+    raise GoneError(_USE_TASK_FIELDWORK % "closeout")
 
 
 def action_trigger_triage(conn, request_id: int) -> None:
@@ -665,7 +512,13 @@ def action_trigger_triage(conn, request_id: int) -> None:
     status = row["status"]
     if status == "closed":
         raise RequestClosedError()
-    if status in ("triaged", "triage_proposal", "en_route"):
+    # Post-proposal fieldwork lives on tasks. `open` replaced scheduled /
+    # en_route / arrived; re-triage would pull the call out from under them.
+    # intake_received, triage_failed, and a stale triage_pending stay allowed.
+    # triage_clarify stays blocked until a human resolves the address/lease.
+    # triage_proposal stays blocked: accept/reject, don't run the model again.
+    if status in ("open", "triaged", "scheduled", "awaiting_redispatch",
+                  "triage_proposal", "en_route", "arrived"):
         raise InvalidTransition(f"Cannot trigger triage: current status is '{status}'")
     if status == "triage_clarify":
         raise ConflictError("Triage bloqué — résoudre l'ambiguïté d'adresse d'abord")
@@ -677,6 +530,73 @@ def action_trigger_triage(conn, request_id: int) -> None:
                 raise ConflictError(
                     f"Triage déjà en cours (démarré il y a {age_min:.0f} min) — réessayez dans quelques minutes"
                 )
+
+
+def _suggestion_why(c: dict, lang: str) -> str:
+    fr = lang != "en"
+    parts: list[str] = []
+    hist = int(c.get("history_count") or 0)
+    load = int(c.get("today_load") or 0)
+    if c.get("is_a5"):
+        parts.append("Dédié à cet immeuble" if fr else "Dedicated to this building")
+    if hist > 0:
+        parts.append(
+            f"Déjà intervenu {hist}× ici (12 mois)" if fr
+            else f"Worked here {hist}× (12 months)"
+        )
+    if not parts:
+        parts.append("Secteur correspondant" if fr else "Matches sector")
+    if load > 0:
+        parts.append(
+            f"{load} appel{'s' if load > 1 else ''} aujourd'hui" if fr
+            else f"{load} call{'s' if load != 1 else ''} today"
+        )
+    else:
+        parts.append("Charge légère aujourd'hui" if fr else "Light load today")
+    if c.get("is_en_route"):
+        parts.append("En route actuellement" if fr else "Currently en route")
+    return " · ".join(parts)
+
+
+def get_technician_suggestions(
+    conn, request_id: int, lang: str = "fr",
+) -> TechnicianSuggestionsResponse:
+    """DB-ranked top-3 suggestions; never invents out-of-sector people.
+
+    Rank: A5 dedicated → lighter today_load → more building history →
+    prefer not en_route → name. Workload is a first-class signal, not a
+    tie-break after history alone.
+    """
+    loc = repo.get_request_location(conn, request_id)
+    if loc is None:
+        raise NotFoundError(f"Request {request_id} not found")
+    candidates = repo.list_technician_suggestion_candidates(
+        conn, building_id=loc.get("building_id"), sector_id=loc.get("sector_id"),
+    )
+    candidates.sort(
+        key=lambda c: (
+            -int(bool(c.get("is_a5"))),
+            int(c.get("today_load") or 0),
+            -int(c.get("history_count") or 0),
+            bool(c.get("is_en_route")),
+            (c.get("name") or "").lower(),
+        )
+    )
+    top = candidates[:3]
+    return TechnicianSuggestionsResponse(
+        request_id=request_id,
+        suggestions=[
+            TechnicianSuggestion(
+                employee_id=int(c["employee_id"]),
+                initials=c.get("initials"),
+                name=c.get("name") or "",
+                why=_suggestion_why(c, lang),
+                is_en_route=bool(c.get("is_en_route")),
+                today_load=int(c.get("today_load") or 0),
+            )
+            for c in top
+        ],
+    )
 
 
 def action_route(conn, request_id: int, body: RouteBody, user: CurrentUser) -> RequestDetail:
@@ -702,7 +622,7 @@ def action_add_log(conn, request_id: int, body: AddLogBody, user: CurrentUser) -
     # Lock the request row to confirm it exists.
     row = _lock_or_404(conn, request_id)
     is_coord = bool(user.roles & {"coordinator", "director"})
-    if not is_coord and row["assigned_employee_id"] != user.employee_id:
+    if not is_coord and not _is_assigned(conn, user, row):
         raise PermissionDenied("Seul l'employé assigné peut ajouter une note")
 
     # Resolve initials from the employee's name

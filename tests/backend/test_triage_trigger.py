@@ -78,6 +78,17 @@ def test_en_route_returns_409(ac, db_conn):
     assert r.status_code == 409
 
 
+def test_open_returns_409(ac, db_conn):
+    """An open call has accepted tasks; re-triage must not pull it back to pending."""
+    rid = _insert_request(db_conn, "open")
+    r = ac(_user(_COORD, "coordinator")).post(f"/api/v1/requests/{rid}/triage")
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "INVALID_TRANSITION"
+    assert db_conn.execute(
+        "SELECT status::text AS s FROM maintenance_request WHERE request_id = %s", [rid]
+    ).fetchone()["s"] == "open"
+
+
 def test_triage_pending_recent_returns_409(ac, db_conn):
     # started 2 minutes ago — not stale
     recent = datetime.now(timezone.utc) - timedelta(minutes=2)

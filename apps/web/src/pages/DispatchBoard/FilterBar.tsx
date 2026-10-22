@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import type { BoardMode } from '../../api/boardModes';
+import { statusesForMode } from '../../api/boardModes';
 import { statusLabel, t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import type { SectorLookup, EmployeeLookup } from '../../api/schema.d.ts';
@@ -9,6 +11,8 @@ import Select from '../../components/Select';
 
 interface Props {
   lang?: Lang;
+  /** triage = no date period; tasks = dates + escalated filter. */
+  mode?: BoardMode;
   startDate: string;
   endDate: string;
   status: string[];
@@ -40,10 +44,15 @@ interface Props {
   /** True when any filter differs from the page defaults. */
   hasActiveFilters?: boolean;
   onReset?: () => void;
+  /** What `total` counts. */
+  countUnit?: 'call' | 'task';
+  /** Tasks carry no source calendar. */
+  showSourceFilter?: boolean;
 }
 
 export default function FilterBar({
   lang = 'fr',
+  mode = 'tasks',
   startDate, endDate, status, sourceCalendar, q, total,
   sectors = [], sectorId = null, urgency = '',
   employees = [], assignedEmployeeId = null,
@@ -60,7 +69,10 @@ export default function FilterBar({
   onRedispatch = () => {},
   hasActiveFilters = false,
   onReset,
+  countUnit = 'call',
+  showSourceFilter = true,
 }: Props) {
+  const statusOptions = statusesForMode(mode);
   const [draft, setDraft] = useState(q);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -112,9 +124,9 @@ export default function FilterBar({
 
   const URGENCY_OPTS = [
     { value: '', label: t(lang, 'Tout', 'All') },
-    { value: 'AJD', label: 'AJD' },
-    { value: 'ajd', label: 'ajd' },
-    { value: 'none', label: t(lang, 'Aucune', 'None') },
+    { value: 'URGENT', label: t(lang, 'Urgent', 'Urgent') },
+    { value: 'Intermédiaire', label: t(lang, 'Intermédiaire', 'Medium') },
+    { value: 'Faible', label: t(lang, 'Faible', 'Low') },
   ];
 
   const SUB_OPTS = [
@@ -123,21 +135,24 @@ export default function FilterBar({
     { value: 'false', label: t(lang, 'Sans sous-traitant', 'No subcontractor') },
   ];
 
-  const countLabel = total === 1
-    ? `1 ${t(lang, 'appel', 'call')}`
-    : `${total} ${t(lang, 'appels', 'calls')}`;
+  const countLabel = countUnit === 'task'
+    ? (total === 1 ? `1 ${t(lang, 'tâche', 'task')}` : `${total} ${t(lang, 'tâches', 'tasks')}`)
+    : (total === 1 ? `1 ${t(lang, 'appel', 'call')}` : `${total} ${t(lang, 'appels', 'calls')}`);
 
-  // Quick ranges end today (America/Toronto, like the board's default) and
-  // count today as one of the days: « 7 derniers jours » = today + 6 before.
+  // Tasks look forward (scheduled work); triage looks back (intake dates).
   const todayYmd = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
-  function daysBefore(ymd: string, n: number): string {
+  function shiftYmd(ymd: string, n: number): string {
     const [y, m, d] = ymd.split('-').map(Number);
-    return new Date(Date.UTC(y, m - 1, d - n)).toISOString().slice(0, 10);
+    return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
   }
-  const QUICK_RANGES = [7, 14, 30].map((days) => ({ days, start: daysBefore(todayYmd, days - 1) }));
-  const activeQuick = draftEnd === todayYmd
-    ? QUICK_RANGES.find((r) => r.start === draftStart)?.days
-    : undefined;
+  const lookAhead = mode === 'tasks';
+  const QUICK_RANGES = [7, 14, 30].map((days) => lookAhead
+    ? { days, start: todayYmd, end: shiftYmd(todayYmd, days - 1) }
+    : { days, start: shiftYmd(todayYmd, -(days - 1)), end: todayYmd });
+  const activeQuick = QUICK_RANGES.find((r) => r.start === draftStart && r.end === draftEnd)?.days;
+  // « Tout »: no period, every date.
+  const allActive = !draftStart && !draftEnd;
+  const customActive = !activeQuick && !allActive;
   const shortDay = (v: string) => (v && v.length === 10 ? `${v.slice(8)}/${v.slice(5, 7)}` : '—');
   const customLabel = `${shortDay(draftStart)} → ${shortDay(draftEnd)}`;
 
@@ -161,13 +176,13 @@ export default function FilterBar({
     else { onStartDate(start); onEndDate(end); }
   }
 
-  function applyQuickRange(start: string) {
+  function applyQuickRange(start: string, end: string) {
     if (startTimer.current) clearTimeout(startTimer.current);
     if (endTimer.current) clearTimeout(endTimer.current);
     setDraftStart(start);
-    setDraftEnd(todayYmd);
-    if (onDateRange) onDateRange(start, todayYmd);
-    else { onStartDate(start); onEndDate(todayYmd); }
+    setDraftEnd(end);
+    if (onDateRange) onDateRange(start, end);
+    else { onStartDate(start); onEndDate(end); }
   }
 
   const dateRangeError = (() => {
@@ -179,7 +194,7 @@ export default function FilterBar({
     return null;
   })();
 
-  // ── Phone: the filters fold away behind a « Filtres » bar ──────────────
+  // ── Phone/tablet: the filters fold away behind a « Filtres » bar ───────
   const OPEN_KEY = 'sib.board.filtersOpen';
   const [filtersOpen, setFiltersOpen] = useState<boolean>(() => {
     try { return localStorage.getItem(OPEN_KEY) === '1'; } catch { return false; }
@@ -243,7 +258,7 @@ export default function FilterBar({
           />
         </div>
 
-        {/* Phone only: fold the filters away once they are set. */}
+        {/* Phone/tablet only: fold the filters away once they are set. */}
         <button
           type="button"
           className={styles.mobileToggle}
@@ -281,6 +296,17 @@ export default function FilterBar({
             }}
           >
             <div className={styles.period} role="group" aria-labelledby="board-period">
+              <button
+                type="button"
+                className={`${styles.periodBtn} ${allActive ? styles.periodBtnActive : ''}`}
+                aria-pressed={allActive}
+                disabled={!!dateNote}
+                title={t(lang, 'Toutes les dates', 'All dates')}
+                onClick={() => { applyQuickRange('', ''); setCalOpen(false); }}
+                data-testid="quick-range-all"
+              >
+                {t(lang, 'Tout', 'All')}
+              </button>
               {QUICK_RANGES.map((r) => (
                 <button
                   key={r.days}
@@ -288,9 +314,13 @@ export default function FilterBar({
                   className={`${styles.periodBtn} ${activeQuick === r.days ? styles.periodBtnActive : ''}`}
                   aria-pressed={activeQuick === r.days}
                   disabled={!!dateNote}
-                  title={t(lang, `${r.days} derniers jours`, `Last ${r.days} days`)}
-                  aria-label={t(lang, `${r.days} derniers jours`, `Last ${r.days} days`)}
-                  onClick={() => { applyQuickRange(r.start); setCalOpen(false); }}
+                  title={lookAhead
+                    ? t(lang, `${r.days} prochains jours`, `Next ${r.days} days`)
+                    : t(lang, `${r.days} derniers jours`, `Last ${r.days} days`)}
+                  aria-label={lookAhead
+                    ? t(lang, `${r.days} prochains jours`, `Next ${r.days} days`)
+                    : t(lang, `${r.days} derniers jours`, `Last ${r.days} days`)}
+                  onClick={() => { applyQuickRange(r.start, r.end); setCalOpen(false); }}
                   data-testid={`quick-range-${r.days}`}
                 >
                   {t(lang, `${r.days} jours`, `${r.days} days`)}
@@ -298,11 +328,11 @@ export default function FilterBar({
               ))}
               <button
                 type="button"
-                className={`${styles.periodBtn} ${styles.calBtn} ${!activeQuick ? styles.periodBtnActive : ''}`}
+                className={`${styles.periodBtn} ${styles.calBtn} ${customActive ? styles.periodBtnActive : ''}`}
                 aria-haspopup="dialog"
                 aria-expanded={calOpen}
                 aria-controls="board-period-cal"
-                aria-label={activeQuick
+                aria-label={!customActive
                   ? t(lang, 'Choisir une période personnalisée', 'Pick a custom range')
                   : t(lang, `Période personnalisée : ${customLabel}. Modifier`, `Custom range: ${customLabel}. Change`)}
                 disabled={!!dateNote}
@@ -312,7 +342,10 @@ export default function FilterBar({
                 <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="4.5" width="14" height="12" rx="2" /><path d="M3 8.5h14M7 3v3M13 3v3" />
                 </svg>
-                {!activeQuick && <span className={styles.customLabel}>{customLabel}</span>}
+                {customActive && <span className={styles.customLabel}>{customLabel}</span>}
+                {!customActive && (
+                  <span className={styles.calHint} aria-hidden="true">{t(lang, 'Choisir des dates', 'Pick dates')}</span>
+                )}
               </button>
             </div>
 
@@ -364,7 +397,12 @@ export default function FilterBar({
 
         <div className={styles.fieldGroup}>
           <span className={styles.label}>{t(lang, 'Statut', 'Status')}</span>
-          <StatusSelect lang={lang} value={status} onChange={onStatus} />
+          <StatusSelect
+            lang={lang}
+            value={status}
+            onChange={onStatus}
+            allowedStatuses={statusOptions}
+          />
         </div>
 
         <div className={styles.fieldGroup}>
@@ -400,19 +438,21 @@ export default function FilterBar({
           </div>
         )}
 
-        <div className={styles.fieldGroup}>
-          <label className={styles.label} htmlFor="board-source">{t(lang, 'Source', 'Source')}</label>
-          <Select
-            id="board-source"
-            className={`${styles.input} ${sourceCalendar ? styles.inputActive : ''}`}
-            value={sourceCalendar}
-            onChange={(e) => onSourceCalendar(e.target.value)}
-          >
-            {SOURCE_OPTS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </Select>
-        </div>
+        {showSourceFilter && (
+          <div className={styles.fieldGroup}>
+            <label className={styles.label} htmlFor="board-source">{t(lang, 'Source', 'Source')}</label>
+            <Select
+              id="board-source"
+              className={`${styles.input} ${sourceCalendar ? styles.inputActive : ''}`}
+              value={sourceCalendar}
+              onChange={(e) => onSourceCalendar(e.target.value)}
+            >
+              {SOURCE_OPTS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </Select>
+          </div>
+        )}
 
         <div className={styles.fieldGroup}>
           <label className={styles.label} htmlFor="board-subcontractor">
@@ -475,27 +515,33 @@ export default function FilterBar({
         )}
 
         <div className={styles.tools}>
-          <label
-            className={`${styles.toggleChip} ${redispatch ? styles.toggleChipActive : ''}`}
-            data-testid="redispatch-filter"
-          >
-            <input
-              type="checkbox"
-              checked={redispatch}
-              onChange={(e) => onRedispatch(e.target.checked)}
-            />
-            {t(lang, 'À redispatcher', 'To re-dispatch')}
-          </label>
+          {mode === 'tasks' && (
+            <label
+              className={`${styles.toggleChip} ${redispatch ? styles.toggleChipActive : ''}`}
+              data-testid="redispatch-filter"
+            >
+              <input
+                type="checkbox"
+                checked={redispatch}
+                onChange={(e) => onRedispatch(e.target.checked)}
+              />
+              {t(lang, 'À redispatcher', 'To re-dispatch')}
+            </label>
+          )}
 
-          <button
-            type="button"
-            className={styles.colsBtn + (showAllCols ? ' ' + styles.colsBtnActive : '')}
-            onClick={onToggleCols}
-            aria-pressed={showAllCols}
-            title={t(lang, 'Afficher toutes les colonnes', 'Toggle all columns')}
-          >
-            {showAllCols ? t(lang, 'Moins de colonnes', 'Fewer columns') : t(lang, 'Plus de colonnes', 'More columns')}
-          </button>
+          {/* Only the triage table has optional columns. */}
+          {mode === 'triage' && (
+            <button
+              type="button"
+              className={styles.colsBtn + (showAllCols ? ' ' + styles.colsBtnActive : '')}
+              onClick={onToggleCols}
+              aria-pressed={showAllCols}
+              title={t(lang, 'Afficher toutes les colonnes', 'Toggle all columns')}
+              data-testid="cols-toggle"
+            >
+              {showAllCols ? t(lang, 'Moins de colonnes', 'Fewer columns') : t(lang, 'Plus de colonnes', 'More columns')}
+            </button>
+          )}
 
           <span className={styles.divider} aria-hidden="true" />
 

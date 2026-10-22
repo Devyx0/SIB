@@ -2,11 +2,18 @@ import { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useRequests } from '../../hooks/useRequests';
-import { fetchSectors, fetchEmployees, ApiError } from '../../api/client';
+import { useTasks } from '../../hooks/useTasks';
+import { fetchSectors, fetchEmployees, apiErrorMessage } from '../../api/client';
+import type { BoardMode } from '../../api/boardModes';
+import { clampStatusesToMode, defaultStatusesForMode } from '../../api/boardModes';
+import { expandStatusFilter } from '../../api/statusValues';
+import type { TaskListItem } from '../../api/schema.d.ts';
 import type { Lang } from '../../i18n';
 import { t } from '../../i18n';
 import FilterBar from './FilterBar';
 import RequestTable from './RequestTable';
+import TaskTable, { sortTasks, taskUrgency, type TaskSortKey } from './TaskTable';
+import TaskWeekGrid, { addDays, mondayOf, torontoYmd } from './TaskWeekGrid';
 import DetailPanel from './DetailPanel';
 import NouvelAppelModal from './NouvelAppelModal';
 import Pagination from '../../components/Pagination';
@@ -18,29 +25,43 @@ import type { MeResponse } from '../../api/schema.d.ts';
 interface Props {
   lang: Lang;
   me?: MeResponse | null;
+  mode: BoardMode;
 }
 
 const PAGE_SIZE = 50;
 
-/** Local calendar dates in America/Toronto (matches backend today_local). */
-function torontoYmd(d: Date = new Date()): string {
-  return d.toLocaleDateString('en-CA', { timeZone: 'America/Toronto' }); // YYYY-MM-DD
+const TASK_SORT_KEYS: readonly string[] = [
+  'due_at', 'urgency_tier', 'description', 'territoire',
+  'building_address', 'assigned_employee_name', 'status',
+] satisfies TaskSortKey[];
+
+/** Board filters GET /tasks does not take — applied to the returned window. */
+function matchesTaskFilters(
+  row: TaskListItem,
+  f: { sectorId?: number; urgency?: string; q?: string; hasSubcontractor?: boolean },
+): boolean {
+  if (f.sectorId != null && row.sector_id !== f.sectorId) return false;
+  if (f.urgency && taskUrgency(row) !== f.urgency) return false;
+  if (f.hasSubcontractor != null && (row.subcontractor_name != null) !== f.hasSubcontractor) return false;
+  if (f.q) {
+    const needle = f.q.toLowerCase();
+    const hay = [
+      row.description, row.request_title, row.request_asnu, row.building_address,
+      row.unit_label, row.assigned_employee_name, row.territoire, String(row.request_id),
+    ].filter(Boolean).join(' ').toLowerCase();
+    if (!hay.includes(needle)) return false;
+  }
+  return true;
 }
 
-function defaultDateRange(): { start: string; end: string } {
-  const end = torontoYmd();
-  const start = `${end.slice(0, 7)}-01`; // first day of current month
-  return { start, end };
-}
-
-const { start: DEFAULT_START, end: DEFAULT_END } = defaultDateRange();
-
-export default function DispatchBoard({ lang, me }: Props) {
+export default function DispatchBoard({ lang, me, mode }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [showAllCols, setShowAllCols] = useState(false);
   const [showNewCall, setShowNewCall] = useState(false);
   const isCoordOrDir = !!(me?.roles.includes('coordinator') || me?.roles.includes('director'));
+  const isTriage = mode === 'triage';
 
   // Side-menu entry point: ?nouvel-appel=1 opens the modal. The param is
   // stripped on close/save so a refresh afterwards does not reopen it.
@@ -66,13 +87,27 @@ export default function DispatchBoard({ lang, me }: Props) {
     }
   }
 
-  const startDate = searchParams.get('start_date') ?? DEFAULT_START;
-  const endDate = searchParams.get('end_date') ?? DEFAULT_END;
-  const statusParam = searchParams.getAll('status');
+  const taskView = !isTriage && searchParams.get('view') === 'calendar' ? 'calendar' : 'list';
+  // Both boards list every date (« Tout ») until a period is picked, so an
+  // old untriaged call or an overdue task never drops out of view.
+  const rangeStart = searchParams.get('start_date') ?? '';
+  const rangeEnd = searchParams.get('end_date') ?? '';
+  const weekStart = mondayOf(
+    (/^\d{4}-\d{2}-\d{2}$/.test(rangeStart) ? rangeStart : torontoYmd()),
+  );
+  const weekEnd = addDays(weekStart, 6);
+  const hasRange = !!rangeStart && !!rangeEnd;
+  const startDate = taskView === 'calendar' ? weekStart : (hasRange ? rangeStart : '');
+  const endDate = taskView === 'calendar' ? weekEnd : (hasRange ? rangeEnd : '');
+  const statusParam = clampStatusesToMode(mode, searchParams.getAll('status'));
   const sourceCalendar = searchParams.get('source_calendar') ?? undefined;
   const q = searchParams.get('q') ?? undefined;
-  const sortBy = searchParams.get('sort_by') ?? 'start_date';
-  const sortDir = (searchParams.get('sort_dir') ?? 'asc') as 'asc' | 'desc';
+  const sortParam = searchParams.get('sort_by');
+  const sortBy = isTriage
+    ? (sortParam ?? 'urgency_tier')
+    : (sortParam && TASK_SORT_KEYS.includes(sortParam) ? sortParam : 'due_at');
+  const sortDir = (searchParams.get('sort_dir')
+    ?? (isTriage ? 'asc' : 'asc')) as 'asc' | 'desc';
   const offset = Number(searchParams.get('offset') ?? '0');
   const sectorId = searchParams.get('sector_id')
     ? Number(searchParams.get('sector_id'))
@@ -81,16 +116,21 @@ export default function DispatchBoard({ lang, me }: Props) {
   const assignedEmployeeId = searchParams.get('assigned_employee_id')
     ? Number(searchParams.get('assigned_employee_id'))
     : undefined;
-  const redispatch = searchParams.get('redispatch') === '1';
+  const redispatch = !isTriage && searchParams.get('redispatch') === '1';
   const hasSubParam = searchParams.get('has_subcontractor');
   const hasSubcontractor = hasSubParam === 'true' ? true
     : hasSubParam === 'false' ? false
     : undefined;
 
+  // Mode default statuses when URL has none; Received expands triage_pending.
+  const statusForApi = expandStatusFilter(
+    statusParam.length ? statusParam : defaultStatusesForMode(mode),
+  );
+
   const params = {
-    start_date: startDate,
-    end_date: endDate,
-    status: statusParam.length ? statusParam : undefined,
+    start_date: startDate || undefined,
+    end_date: endDate || undefined,
+    status: statusForApi,
     source_calendar: sourceCalendar,
     q: q || undefined,
     sort_by: sortBy,
@@ -114,7 +154,43 @@ export default function DispatchBoard({ lang, me }: Props) {
   const lastValidParamsRef = useRef(params);
   if (isDateRangeValid) lastValidParamsRef.current = params;
 
-  const { data, isPending, isError, error } = useRequests(lastValidParamsRef.current);
+  const requestsQuery = useRequests(isTriage ? lastValidParamsRef.current : null);
+
+  // « À redispatcher » = tasks that came back needing expertise or a return
+  // visit, any date, until a follow-up task is created for them.
+  const taskParams = isTriage ? null : (redispatch
+    ? { status: ['needs_expertise', 'return_visit'], assigned_employee_id: assignedEmployeeId }
+    : { start_date: startDate, end_date: endDate, status: statusForApi, assigned_employee_id: assignedEmployeeId });
+  const lastValidTaskParamsRef = useRef(taskParams);
+  if (isDateRangeValid) lastValidTaskParamsRef.current = taskParams;
+  const tasksQuery = useTasks(isTriage ? null : lastValidTaskParamsRef.current);
+  // Undated tasks are always queued (scheduled needs a date); the range query cannot see them.
+  const showUndated = !isTriage && !redispatch && statusForApi.includes('queued');
+  const undatedQuery = useTasks(showUndated
+    ? { status: ['queued'], assigned_employee_id: assignedEmployeeId }
+    : null);
+
+  const { isPending, isError, error } = isTriage ? requestsQuery : tasksQuery;
+  const data = requestsQuery.data;
+  const taskFilters = { sectorId, urgency, q, hasSubcontractor };
+  const taskRows = sortTasks(
+    (tasksQuery.data?.items ?? []).filter((r) =>
+      matchesTaskFilters(r, taskFilters) && !(redispatch && r.has_followup)
+      // « Tout » also returns undated tasks; they stay in their own group.
+      && !(showUndated && !startDate && r.due_at == null)),
+    sortBy, sortDir,
+  );
+  const undatedTasks = showUndated
+    ? sortTasks(
+      (undatedQuery.data?.items ?? []).filter((r) => r.due_at == null && matchesTaskFilters(r, taskFilters)),
+      sortBy, sortDir,
+    )
+    : [];
+
+  function selectTask(row: TaskListItem) {
+    setSelectedTaskId(row.task_id);
+    setSelectedId(row.request_id);
+  }
 
   const { data: sectors } = useQuery({
     queryKey: ['sectors'],
@@ -142,7 +218,7 @@ export default function DispatchBoard({ lang, me }: Props) {
   const FILTER_KEYS = [
     'start_date', 'end_date', 'status', 'source_calendar', 'q',
     'sector_id', 'urgency', 'assigned_employee_id', 'redispatch',
-    'has_subcontractor',
+    'has_subcontractor', 'sort_by', 'sort_dir',
   ];
   const hasActiveFilters = FILTER_KEYS.some((k) => searchParams.has(k));
 
@@ -154,6 +230,7 @@ export default function DispatchBoard({ lang, me }: Props) {
       return next;
     });
   }
+
 
   function setPage(newOffset: number) {
     setSearchParams((prev) => {
@@ -168,7 +245,7 @@ export default function DispatchBoard({ lang, me }: Props) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.delete('status');
-      values.forEach((v) => next.append('status', v));
+      clampStatusesToMode(mode, values).forEach((v) => next.append('status', v));
       next.delete('offset');
       return next;
     });
@@ -188,48 +265,90 @@ export default function DispatchBoard({ lang, me }: Props) {
     });
   }
 
-  const is403 =
-    isError &&
-    error instanceof ApiError &&
-    (error.code === 'PERMISSION_DENIED' || error.code === 'HTTP_403');
-
-  const errorMsg = !isError
-    ? undefined
-    : is403
-      ? t(lang, 'Accès refusé', 'Access denied')
-      : error instanceof ApiError && error.code === 'VALIDATION_FAILED' && error.message.includes('31 day')
-        ? t(lang, 'La plage de dates ne peut pas dépasser 31 jours', error.message)
-        : error instanceof ApiError && error.code === 'VALIDATION_FAILED' && error.message.includes('end_date')
-          ? t(lang, 'La date de fin ne peut pas précéder la date de début', error.message)
-          : (error instanceof ApiError ? error.message : t(lang, 'Erreur', 'Error'));
+  const errorMsg = !isError ? undefined : apiErrorMessage(lang, error);
 
   // Dev-only: ?demo=1 puts one fake call at the top of the main table.
   const demo = isDemoEnabled(searchParams);
   const mainRows = demo ? [DEMO_ROW, ...(data?.items ?? [])] : (data?.items ?? []);
-  const total = (data?.total ?? 0) + (demo ? 1 : 0);
+  const total = isTriage
+    ? (data?.total ?? 0) + (demo ? 1 : 0)
+    : taskRows.length + undatedTasks.length;
 
   return (
     <div className={styles.page}>
       <header className={styles.header}>
         <div className={styles.titleBlock}>
-          <h1>{t(lang, 'Répartition', 'Dispatch')}</h1>
-          <p className={styles.subtitle}>{t(lang, 'Appels de service et assignations', 'Service calls and assignments')}</p>
+          <h1>
+            {isTriage
+              ? t(lang, 'Triage', 'Triage')
+              : t(lang, 'Tâches', 'Tasks')}
+          </h1>
+          <p className={styles.subtitle}>
+            {isTriage
+              ? t(lang, 'Nouveaux appels à prioriser et assigner', 'New calls to prioritize and assign')
+              : t(lang, 'Travaux à planifier, planifiés et en cours', 'Work to plan, planned and in progress')}
+          </p>
         </div>
-        {isCoordOrDir && (
-          <button
-            data-testid="nouvel-appel-btn"
-            onClick={() => setShowNewCall(true)}
-            className={styles.newCallBtn}
-          >
-            {t(lang, '+ Nouvel appel', '+ New call')}
-          </button>
-        )}
+        <div className={styles.headerActions}>
+          {!isTriage && (
+            <div className={styles.viewToggle} role="group" aria-label={t(lang, 'Vue', 'View')} data-testid="tasks-view-toggle">
+              <button
+                type="button"
+                className={taskView === 'list' ? styles.viewToggleActive : undefined}
+                aria-pressed={taskView === 'list'}
+                data-testid="tasks-view-list"
+                onClick={() => setSearchParams((prev) => {
+                  // Leave the calendar's week behind: the list goes back to « Tout ».
+                  const next = new URLSearchParams(prev);
+                  next.delete('view');
+                  next.delete('start_date');
+                  next.delete('end_date');
+                  next.delete('offset');
+                  return next;
+                })}
+              >
+                {t(lang, 'Liste', 'List')}
+              </button>
+              <button
+                type="button"
+                className={taskView === 'calendar' ? styles.viewToggleActive : undefined}
+                aria-pressed={taskView === 'calendar'}
+                data-testid="tasks-view-calendar"
+                onClick={() => setSearchParams((prev) => {
+                  const next = new URLSearchParams(prev);
+                  next.set('view', 'calendar');
+                  // Snap the range to the week containing the current start (or today).
+                  const anchor = next.get('start_date') && /^\d{4}-\d{2}-\d{2}$/.test(next.get('start_date')!)
+                    ? next.get('start_date')!
+                    : torontoYmd();
+                  const mon = mondayOf(anchor);
+                  next.set('start_date', mon);
+                  next.set('end_date', addDays(mon, 6));
+                  next.delete('offset');
+                  return next;
+                })}
+              >
+                {t(lang, 'Calendrier', 'Calendar')}
+              </button>
+            </div>
+          )}
+          {isCoordOrDir && (
+            <button
+              data-testid="nouvel-appel-btn"
+              onClick={() => setShowNewCall(true)}
+              className={styles.newCallBtn}
+            >
+              {t(lang, '+ Nouvel appel', '+ New call')}
+            </button>
+          )}
+        </div>
       </header>
 
       <FilterBar
         lang={lang}
-        startDate={startDate}
-        endDate={endDate}
+        mode={mode}
+        startDate={rangeStart}
+        endDate={rangeEnd}
         status={statusParam}
         sourceCalendar={sourceCalendar ?? ''}
         q={q ?? ''}
@@ -243,12 +362,23 @@ export default function DispatchBoard({ lang, me }: Props) {
         showAllCols={showAllCols}
         redispatch={redispatch}
         onRedispatch={(v) => setFilter('redispatch', v ? '1' : null)}
-        onStartDate={(v) => setFilter('start_date', v)}
-        onEndDate={(v) => setFilter('end_date', v)}
+        onStartDate={(v) => setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          if (v) next.set('start_date', v); else next.delete('start_date');
+          next.delete('offset');
+          return next;
+        })}
+        onEndDate={(v) => setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          if (v) next.set('end_date', v); else next.delete('end_date');
+          next.delete('offset');
+          return next;
+        })}
         onDateRange={(start, end) => setSearchParams((prev) => {
           const next = new URLSearchParams(prev);
-          next.set('start_date', start);
-          next.set('end_date', end);
+          // Empty pair = « Tout »: every date.
+          if (start && end) { next.set('start_date', start); next.set('end_date', end); }
+          else { next.delete('start_date'); next.delete('end_date'); }
           next.delete('offset');
           return next;
         })}
@@ -263,23 +393,96 @@ export default function DispatchBoard({ lang, me }: Props) {
         onHasSubcontractor={(v) =>
           setFilter('has_subcontractor', v == null ? null : String(v))
         }
-        dateNote={sourceCalendar === 'unrouted'
-          ? t(lang, 'dates ignorées — 90 derniers jours', 'dates ignored — last 90 days')
-          : undefined}
         onToggleCols={() => setShowAllCols((b) => !b)}
         hasActiveFilters={hasActiveFilters}
         onReset={resetFilters}
+        countUnit={isTriage ? 'call' : 'task'}
+        // The calendar picks its week with its own arrows; the period control rests.
+        dateNote={!isTriage && taskView === 'calendar'
+          ? t(lang, 'En vue calendrier, changez de semaine avec les flèches du calendrier.',
+            'In calendar view, change week with the calendar arrows.')
+          : undefined}
+        showSourceFilter={isTriage}
       />
 
-      {/* Only this area scrolls; header, filters and paging stay put. */}
-      <div className={styles.scrollArea} data-testid="board-scroll">
+
+      {/* Only the table cards scroll; header, filters and paging stay put. */}
+      {!isTriage && taskView === 'list' && (
+        <div className={styles.scrollArea} data-testid="board-scroll">
+          {undatedTasks.length > 0 && (
+            <div className={`${styles.tableWrap} ${styles.unscheduledGroup}`} data-testid="unscheduled-group">
+              <h2 className={styles.groupHeading}>
+                {t(lang, `Sans date (${undatedTasks.length})`, `No date (${undatedTasks.length})`)}
+              </h2>
+              <TaskTable
+                lang={lang}
+                inScroller
+                rows={undatedTasks}
+                selectedTaskId={selectedTaskId}
+                sortBy={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+                onSelect={selectTask}
+                isLoading={false}
+                isError={false}
+              />
+            </div>
+          )}
+          <div className={`${styles.tableWrap} ${styles.mainGroup}`}>
+            <TaskTable
+              lang={lang}
+              inScroller
+              rows={taskRows}
+              selectedTaskId={selectedTaskId}
+              sortBy={sortBy}
+              sortDir={sortDir}
+              onSort={handleSort}
+              onSelect={selectTask}
+              isLoading={isPending}
+              isError={isError}
+              errorMsg={errorMsg}
+            />
+          </div>
+        </div>
+      )}
+
+      {!isTriage && taskView === 'calendar' && (
+        <TaskWeekGrid
+          lang={lang}
+          weekStart={weekStart}
+          datedRows={taskRows}
+          undatedRows={undatedTasks}
+          selectedTaskId={selectedTaskId}
+          onSelect={selectTask}
+          isLoading={isPending}
+          isError={isError}
+          onToday={() => setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            const mon = mondayOf(torontoYmd());
+            next.set('start_date', mon);
+            next.set('end_date', addDays(mon, 6));
+            next.delete('offset');
+            return next;
+          })}
+          onShiftWeek={(delta) => setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            const mon = addDays(weekStart, delta * 7);
+            next.set('start_date', mon);
+            next.set('end_date', addDays(mon, 6));
+            next.delete('offset');
+            return next;
+          })}
+        />
+      )}
+
+      {isTriage && <div className={styles.scrollArea} data-testid="board-scroll">
         {(data?.unscheduled_items?.length ?? 0) > 0 && (
-          <div className={styles.tableWrap} data-testid="unscheduled-group">
+          <div className={`${styles.tableWrap} ${styles.unscheduledGroup}`} data-testid="unscheduled-group">
             <h2 className={styles.groupHeading}>
               {t(
                 lang,
-                `À traiter — sans date (${data!.unscheduled_items.length})`,
-                `Needs attention — no date yet (${data!.unscheduled_items.length})`,
+                `Sans date (${data!.unscheduled_items.length})`,
+                `No date (${data!.unscheduled_items.length})`,
               )}
             </h2>
             <RequestTable
@@ -299,7 +502,7 @@ export default function DispatchBoard({ lang, me }: Props) {
           </div>
         )}
 
-        <div className={styles.tableWrap}>
+        <div className={`${styles.tableWrap} ${styles.mainGroup}`}>
           <RequestTable
             lang={lang}
             inScroller
@@ -316,22 +519,24 @@ export default function DispatchBoard({ lang, me }: Props) {
             errorMsg={errorMsg}
           />
         </div>
-      </div>
+      </div>}
 
-      <Pagination
-        offset={offset}
-        pageSize={PAGE_SIZE}
-        total={total}
-        lang={lang}
-        onPrev={() => setPage(Math.max(0, offset - PAGE_SIZE))}
-        onNext={() => setPage(offset + PAGE_SIZE)}
-      />
+      {isTriage && (
+        <Pagination
+          offset={offset}
+          pageSize={PAGE_SIZE}
+          total={total}
+          lang={lang}
+          onPrev={() => setPage(Math.max(0, offset - PAGE_SIZE))}
+          onNext={() => setPage(offset + PAGE_SIZE)}
+        />
+      )}
 
       {selectedId !== null && (
         <DetailPanel
           lang={lang}
           requestId={selectedId}
-          onClose={() => setSelectedId(null)}
+          onClose={() => { setSelectedId(null); setSelectedTaskId(null); }}
           onSelectPeer={setSelectedId}
           me={me}
         />

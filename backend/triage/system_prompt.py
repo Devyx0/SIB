@@ -27,8 +27,7 @@ Return ONLY valid JSON matching this schema. No prose, no explanation.
   "title": string,
   "problems": [string, ...],
   "entry_permission": string | null,
-  "animals": string | null,
-  "urgency_tier": "AJD" | "ajd" | null,
+  "urgency_tier": "URGENT" | "Intermédiaire" | "Faible" | null,
   "heating_failure": true | false | null,
   "complexity_tier": "C1" | "C2" | "C3" | "C4",
   "congestion_level": "N1" | "N2" | "N3" | "N4" | "N5",
@@ -39,18 +38,34 @@ Return ONLY valid JSON matching this schema. No prose, no explanation.
   "subcontractor_name": string | null,
   "vendor_id": integer | null,
   "synergy_request_ids": [integer, ...],
-  "other_notes": string | null
+  "ai_important_notes": [string, ...] | null,
+  "ai_next_steps": [string, ...] | null,
+  "reasoning": string | null,
+  "recommended_tasks": [
+    {
+      "description": string,
+      "suggested_trade": string | null,
+      "urgency_tier": "URGENT" | "Intermédiaire" | "Faible" | null,
+      "vendor_id": integer | null,
+      "subcontractor_name": string | null,
+      "notes": string | null
+    }, ...
+  ]
 }
 
-There is NO assignee field. Do not include one. Never write employee initials (2–4 capital letters, e.g. CHGE) in title, problems, entry_permission, animals, or other_notes. Vendor names (Duclos, Body Gym, Fortin, Éric) go in subcontractor_name only.
+recommended_tasks = the schedulable work units for this call, each a single visit's worth of work for one trade. Verdict "single" requires at least one task. A problem spanning several trades (e.g. plumbing leak + damaged floor) → one task per trade, in the order the work should happen. "duplicate" → return an empty list (no tasks are created). "addition" → tasks only for the new, distinct work (they are proposed on the open call); empty list allowed. Also give at least one task for an "addition" forced to "single" by exclusive routing (A1/A2/A3/A3b/A4). Task description: short, plain, operational, in the output language. suggested_trade = the trade/métier for that visit (e.g. plomberie, plancher, électrique) — the system uses it to recommend one technician per task; always set it when the trade is clear. urgency_tier on a task is null unless it differs from the call's urgency_tier. vendor_id / subcontractor_name follow the same exclusive-vendor rules as the call-level fields — leave null unless the work is for that vendor. There is no assignee field: never name a person or initials; the system assigns from suggested_trade + history. The same bans apply to task text (description, suggested_trade, notes): no financial content, no access codes, no routing codes.
+
+There is NO assignee field. Do not include one. There is NO animals / pets field — do not include one; ignore any form yes/no pet answer. Never write employee initials (2–4 capital letters, e.g. CHGE) in title, problems, entry_permission, ai_important_notes, or ai_next_steps. Vendor names (Duclos, Body Gym, Fortin, Éric) go in subcontractor_name only. There is NO other_notes field — use the two arrays instead.
 Same-unit open calls: same problem → verdict "duplicate" (flag only, title contains DOUBLON POTENTIEL). Different problem + routing A1/A2/A3/A3b/A4 → verdict "single" (own ticket, never addition). Different problem + normal routing (A0/A5) → verdict "addition" (system will merge into the open call).
-urgency_tier is exactly "AJD" (do today: active water including hidden leaks, backflow, no heat or hot water, person stuck, alarm/fire, lock not working, dead fridge, electrical or structural danger), "ajd" (priority, not necessarily today: contained slow leak, mould, non-critical appliance, any vermin, AC in a heatwave), or null (not urgent). The title must start with the same token ("AJD " or "ajd ") or with neither when null.
-Routing codes (A0, A1, A2, A3, A3b, A4, A5) belong ONLY in the routing_rule field. NEVER write them in title, problems, entry_permission, other_notes, or any other text field — use plain operational language instead.
+urgency_tier is exactly "URGENT" (do today: active water including hidden leaks, backflow, no heat or hot water, person stuck, alarm/fire, lock not working, dead fridge, electrical or structural danger), "Intermédiaire" (priority, not necessarily today: contained slow leak, mould, non-critical appliance, any vermin, AC in a heatwave), "Faible" (non-urgent / can wait), or null when urgency cannot be judged. title is a one-liner about the ISSUE only (e.g. "Fuite sous le lavabo", "DOUBLON POTENTIEL — Suivi ventilateur SDB"). Do NOT put urgency codes (AJD/ajd), unit numbers, or street addresses in title — unit and address already live on the call and are shown separately in the app. Ignore any caller/form self-report of urgency (Gravity "Urgent ou non-urgent", intake urgent flag, or similar) when judging urgency_tier.
+Routing codes (A0, A1, A2, A3, A3b, A4, A5) belong ONLY in the routing_rule field. NEVER write them in title, problems, entry_permission, ai_important_notes, ai_next_steps, or any other text field — use plain operational language instead.
 Access codes and combinations are FORBIDDEN in all text fields. When a keybox, door code, NIP, or combination appears in the source request, reference the device by label only (e.g. "keybox H", "clavier principal") — never include the digit sequence.
 Exclusive vendors: A2 subcontractor_name is Body Gym. A3 (certain door/window replacement) is Duclos. A3b (unknown cause — diagnose first) leaves subcontractor_name null and must not name Duclos. A4 extermination names Éric. C4 plumbing names Fortin. Do not put those vendors on any other routing_rule.
-When noting in other_notes why urgency was adjusted or how the work category informs routing, describe the work in plain operational terms (e.g. "intercom en partie commune", "employé affecté à l'immeuble") — never use a routing code as a category label.
+When noting in ai_important_notes why urgency was adjusted or how the work category informs routing, describe the work in plain operational terms (e.g. "intercom en partie commune", "employé affecté à l'immeuble") — never use a routing code as a category label.
 When noting which geographic sector or territory an immeuble belongs to, or which dedicated worker covers it, use place names only (e.g. "Ste-Foy", "Rive-Sud", "secteur Châtelets", "Lévis-Ouest") — never use an internal designation as a geographic label in any text field.
-When the user message lists required other_notes phrases (ÉCART ANIMAUX, RÉQUÉRANT ABSENT, emménagement récent, bail anglais, LOGEMENT VACANT), other_notes must contain each phrase verbatim. Mention the lease language only when it is English.
+ai_important_notes = short operational bullets (constraints, access quirks, hazards). ai_next_steps = ordered operational next steps for the dispatcher or tech (also prefilled into the call's next_steps field). Use null (not []) when a list has nothing to say. title already covers the short summary — do not put a summary bullet in either array.
+reasoning = 2–4 short sentences explaining the triage choices the dispatcher will see prefilled (urgency, routing category in plain language, why those next steps / task split). No routing codes, no employee names or initials, no access codes. null only when there is nothing useful to say.
+When the user message lists required note phrases (RÉQUÉRANT ABSENT, emménagement récent, bail anglais, LOGEMENT VACANT), put each phrase verbatim as its own ai_important_notes entry. Mention the lease language only when it is English.
 heating_failure: true ONLY when the tenant reports no or insufficient heating of the dwelling itself (heating is a lessor obligation, art. 1864-1865 C.c.Q.). false when the heating mention is clearly something else (pool heater, thermostat stuck hot, summer-mode notice, routine maintenance). null when unclear — never guess.\
 """
 
@@ -58,17 +73,17 @@ _LANG_EN = """\
 ## Output language
 
 The skill and guide above are in French — follow their rules exactly.
-Write ALL human-readable JSON string fields in English: title, problems, entry_permission, animals, other_notes.
+Write ALL human-readable JSON string fields in English: title, problems, entry_permission, ai_important_notes, ai_next_steps, reasoning, and recommended_tasks description / suggested_trade / notes.
 Keep proper nouns and place names as-is (addresses, Ste-Foy, Duclos, etc.).
-Enum / code fields stay exactly as specified (AJD, ajd, C1–C4, A0–A5, YES/NO/CONDITIONAL, time buckets, etc.).
+Enum / code fields stay exactly as specified (URGENT, Intermédiaire, Faible, C1–C4, A0–A5, YES/NO/CONDITIONAL, time buckets, etc.).
 subcontractor_name: keep the vendor's real name; do not translate brand names.\
 """
 
 _LANG_FR = """\
 ## Langue de sortie
 
-Rédige TOUS les champs texte lisibles du JSON en français : title, problems, entry_permission, animals, other_notes.
-Les codes / enums restent tels que spécifiés (AJD, ajd, C1–C4, A0–A5, etc.).\
+Rédige TOUS les champs texte lisibles du JSON en français : title, problems, entry_permission, ai_important_notes, ai_next_steps, reasoning, ainsi que description / suggested_trade / notes de recommended_tasks.
+Les codes / enums restent tels que spécifiés (URGENT, Intermédiaire, Faible, C1–C4, A0–A5, etc.).\
 """
 
 

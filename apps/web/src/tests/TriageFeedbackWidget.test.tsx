@@ -6,11 +6,11 @@ import { ApiError } from '../api/client';
 import * as client from '../api/client';
 import TriageFeedbackWidget from '../components/TriageFeedbackWidget';
 
-function wrap(requestId = 1) {
+function wrap(requestId = 1, props: { hasProposals?: boolean; onDispatchProposals?: () => Promise<void> } = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <TriageFeedbackWidget requestId={requestId} lang="fr" />
+      <TriageFeedbackWidget requestId={requestId} lang="fr" {...props} />
     </QueryClientProvider>
   );
 }
@@ -141,6 +141,18 @@ describe('TriageFeedbackWidget', () => {
     await userEvent.click(screen.getByTestId('feedback-level-utile'));
     await userEvent.click(screen.getByTestId('feedback-save'));
     await waitFor(() => expect(upsertSpy).toHaveBeenCalledWith(1, { level: 'utile', reason: null }));
+  });
+
+  it('Dispatch saves feedback then runs onDispatchProposals', async () => {
+    vi.spyOn(client, 'fetchFeedback').mockRejectedValue(new ApiError('NOT_FOUND', 'no feedback'));
+    const upsertSpy = vi.spyOn(client, 'upsertFeedback').mockResolvedValue(FEEDBACK_UTILE);
+    const onDispatch = vi.fn().mockResolvedValue(undefined);
+    wrap(1, { hasProposals: true, onDispatchProposals: onDispatch });
+    await waitFor(() => screen.getByTestId('feedback-level-utile'));
+    await userEvent.click(screen.getByTestId('feedback-level-utile'));
+    await userEvent.click(screen.getByTestId('feedback-dispatch'));
+    await waitFor(() => expect(upsertSpy).toHaveBeenCalled());
+    await waitFor(() => expect(onDispatch).toHaveBeenCalled());
   });
 
   it('shows error message when upsert fails', async () => {

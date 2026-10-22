@@ -2,7 +2,8 @@
 Triage service — wires context_builder → system_prompt → Anthropic API → output_contract.
 
 Status machine:
-    intake_received → triage_pending → triage_proposal → triaged
+    intake_received → triage_pending → triage_proposal → open   (single + recommended_tasks[]: proposals written)
+                                    ↘ triaged           (duplicate / merged addition / no tasks)
                                     ↘ triage_clarify  (human input required, NO auto-retry)
                                     ↘ triage_failed   (API/gate failure, auto-retry ok)
 
@@ -31,11 +32,14 @@ import anthropic
 from .context_builder import assemble
 
 logger = logging.getLogger("backend.triage")
-from .output_contract import ValidationError, parse_response, validate
+from .ai_notes import append_important, normalize_parsed
+from .output_contract import EXCLUSIVE_ROUTING, ValidationError, parse_response, validate
 from .system_prompt import DOCUMENTS_HASH, build_system_prompt
+from .titles import apply_clean_title
 
 _MODEL = os.getenv("TRIAGE_MODEL", "claude-sonnet-4-6")
 _MAX_RETRIES = 3
+_MAX_TOKENS = 2048  # call fields + recommended_tasks[] outgrow 1024
 _ABANDONED_MINUTES = 10
 
 
@@ -60,16 +64,12 @@ def _format_context(ctx: dict) -> str:
 
     parts.append(f"## Demande #{req['request_id']} — {req.get('raw_title', '')}")
     parts.append(f"Date : {_d(req.get('start_date'))}")
-    if req.get("urgency_raw"):
-        parts.append(f"Urgence brute : {req['urgency_raw']}")
     if req.get("problem_summary"):
         parts.append(f"Résumé actuel : {req['problem_summary']}")
     if req.get("problems"):
         parts.append(f"Problèmes saisis :\n{req['problems']}")
     if req.get("entry_permission"):
         parts.append(f"Entrée : {req['entry_permission']}")
-    if req.get("animals"):
-        parts.append(f"Animaux : {req['animals']}")
     if req.get("subcontractor_name"):
         parts.append(f"Sous-traitant brut : {req['subcontractor_name']}")
     if req.get("ft_link"):
@@ -93,10 +93,6 @@ def _format_context(ctx: dict) -> str:
         parts.append(bail)
         if rr.get("langue_en"):
             parts.append("Langue du bail : anglais")
-        if unit.get("droit_animaux") is True:
-            parts.append("Animaux autorisés au bail : oui")
-        elif unit.get("droit_animaux") is False:
-            parts.append("Animaux autorisés au bail : non")
         if rr.get("vacant"):
             parts.append("LOGEMENT VACANT — accès libre")
         for o in unit.get("occupants", []):
@@ -108,14 +104,12 @@ def _format_context(ctx: dict) -> str:
             if o.get("capacite"):
                 line += f"  [{o['capacite']}]"
             parts.append(f"  - {line}")
-        if rr.get("pet_mismatch"):
-            parts.append("ÉCART ANIMAUX : déclaration Gravity non autorisée au bail.")
         if rr.get("caller_mismatch"):
             parts.append("RÉQUÉRANT ABSENT des titulaires du bail.")
         required = rr.get("required_notes") or []
         if required:
             quoted = ", ".join(f"« {p} »" for p in required)
-            parts.append(f"other_notes DOIT contenir chacune de ces mentions : {quoted}.")
+            parts.append(f"ai_important_notes DOIT contenir chacune de ces mentions : {quoted}.")
 
     # Building
     parts.append("\n## Immeuble")
@@ -256,15 +250,16 @@ def _format_context(ctx: dict) -> str:
 # ── DB write helpers ───────────────────────────────────────────────────────────
 
 _PROVENANCE_COLS = (
-    "problem_summary", "problems", "entry_permission", "animals",
+    "problem_summary", "problems", "entry_permission",
     "urgency_tier", "complexity_tier", "congestion_level",
     "time_estimate_bucket", "delegable_status", "report_status",
-    "routing_rule", "other_notes",
+    "routing_rule", "other_notes", "ai_important_notes", "ai_next_steps",
+    "ai_reasoning", "next_steps",
 )
 
 
 def _write_triage_provenance(cur, request_id: int, parsed: dict,
-                              model_version: str, old_row: tuple) -> None:
+                              model_version: str, old_row) -> None:
     problems_text = None
     if parsed.get("problems"):
         problems_text = "\n".join(f"- {p}" for p in parsed["problems"])
@@ -272,7 +267,6 @@ def _write_triage_provenance(cur, request_id: int, parsed: dict,
         "problem_summary":    parsed.get("title"),
         "problems":           problems_text,
         "entry_permission":   parsed.get("entry_permission"),
-        "animals":            parsed.get("animals"),
         "urgency_tier":       parsed.get("urgency_tier"),
         "complexity_tier":    parsed.get("complexity_tier"),
         "congestion_level":   parsed.get("congestion_level"),
@@ -281,16 +275,26 @@ def _write_triage_provenance(cur, request_id: int, parsed: dict,
         "report_status":      parsed.get("report_status"),
         "routing_rule":       parsed.get("routing_rule"),
         "other_notes":        parsed.get("other_notes"),
+        "ai_important_notes": parsed.get("ai_important_notes"),
+        "ai_next_steps":      parsed.get("ai_next_steps"),
+        "ai_reasoning":       parsed.get("ai_reasoning"),
+        "next_steps":         parsed.get("next_steps"),
     }
+    # Pool connections return dict rows; tests often use tuple rows.
+    def _old(i: int, col: str):
+        if isinstance(old_row, dict):
+            return old_row.get(col)
+        return old_row[i]
+
     rows = [
         (
             str(request_id), col,
-            str(old_row[i]) if old_row[i] is not None else None,
+            str(_old(i, col)) if _old(i, col) is not None else None,
             str(new_vals[col]) if new_vals[col] is not None else None,
             model_version,
         )
         for i, col in enumerate(_PROVENANCE_COLS)
-        if (old_row[i] if old_row[i] is not None else None) != (
+        if (_old(i, col) if _old(i, col) is not None else None) != (
             str(new_vals[col]) if new_vals[col] is not None else None
         )
     ]
@@ -307,12 +311,177 @@ def _write_triage_provenance(cur, request_id: int, parsed: dict,
     )
 
 
-# Exclusive / auto-routed categories — never merge into an open same-unit call.
-_EXCLUSIVE_ROUTING = frozenset({"A1", "A2", "A3", "A3b", "A4"})
+_EXCLUSIVE_ROUTING = EXCLUSIVE_ROUTING  # defined with the contract so the gate and rewrite agree
 
 
-def _merge_addition_into_peer(cur, request_id: int, peer_id: int, parsed: dict) -> None:
-    """Append this call's problems onto the open peer, then close this request as merged."""
+def _default_due_at(urgency: str | None):
+    """Prefill due from urgency: URGENT today 08:00, Intermédiaire +1d, else +3d."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from backend.core.config import settings
+
+    tz = ZoneInfo(settings.TIMEZONE)
+    base = datetime.now(tz).replace(hour=8, minute=0, second=0, microsecond=0)
+    if urgency == "URGENT":
+        return base
+    if urgency == "Intermédiaire":
+        return base + timedelta(days=1)
+    return base + timedelta(days=3)
+
+
+def _request_location(cur, request_id: int) -> tuple[int | None, int | None]:
+    cur.execute(
+        "SELECT building_id, sector_id FROM maintenance_request WHERE request_id = %s",
+        (request_id,),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return None, None
+    bldg = row["building_id"] if isinstance(row, dict) else row[0]
+    sector = row["sector_id"] if isinstance(row, dict) else row[1]
+    return bldg, sector
+
+
+def _pick_tech_for_trade(
+    cur, *, building_id: int | None, sector_id: int | None,
+    trade: str | None, used: set[int],
+) -> int | None:
+    """One tech for this AI trade: trade history at building > building history > sector.
+
+    Skips already-picked techs on the same call so multi-trade proposals get
+    different people when the pool allows. Never invents out-of-sector IDs.
+    """
+    if building_id is None and sector_id is None:
+        return None
+    trade_s = (trade or "").strip()
+    needle = f"%{trade_s}%" if trade_s else None
+    # Avoid empty ANY() — use a sentinel id that never matches a real employee.
+    used_ids = list(used) if used else [-1]
+    from backend.core.config import settings as _settings
+    from backend.modules.requests.repository import today_load_sql
+
+    # Prefer unused → lighter today_load → trade/building history → not en route.
+    cur.execute(
+        f"""
+        SELECT e.employee_id
+        FROM employee e
+        JOIN employee_role er ON er.employee_id = e.employee_id
+        WHERE e.is_active = true
+          AND er.role IN ('technician', 'contractor')
+          AND (
+            (%s::int IS NOT NULL AND e.sector_id = %s)
+            OR (
+              %s::int IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM employee_building_assignment eba
+                WHERE eba.employee_id = e.employee_id AND eba.building_id = %s
+              )
+            )
+          )
+        ORDER BY
+          CASE WHEN e.employee_id = ANY(%s) THEN 1 ELSE 0 END ASC,
+          {today_load_sql(tz_literal="%s")} ASC,
+          COALESCE((
+            SELECT count(*)::int FROM dispatch_task t
+            JOIN maintenance_request mr ON mr.request_id = t.request_id
+            WHERE t.assigned_employee_id = e.employee_id
+              AND t.accepted_at IS NOT NULL AND t.status::text = 'done'
+              AND %s::int IS NOT NULL AND mr.building_id = %s
+              AND %s::text IS NOT NULL
+              AND (
+                t.description ILIKE %s
+                OR COALESCE(t.subcontractor_name, '') ILIKE %s
+                OR COALESCE(mr.problems, '') ILIKE %s
+                OR COALESCE(mr.raw_title, '') ILIKE %s
+              )
+          ), 0) DESC,
+          COALESCE((
+            SELECT count(*)::int FROM dispatch_task t
+            JOIN maintenance_request mr ON mr.request_id = t.request_id
+            WHERE t.assigned_employee_id = e.employee_id
+              AND t.accepted_at IS NOT NULL AND t.status::text = 'done'
+              AND %s::int IS NOT NULL AND mr.building_id = %s
+          ), 0) DESC,
+          EXISTS (
+            SELECT 1 FROM request_visit v
+            WHERE v.employee_id = e.employee_id AND v.closeout_at IS NULL
+          ) ASC,
+          e.nom_employe ASC
+        LIMIT 1
+        """,
+        (
+            sector_id, sector_id, building_id, building_id,
+            used_ids,
+            # today_load_sql embeds the tz placeholder three times
+            _settings.TIMEZONE, _settings.TIMEZONE, _settings.TIMEZONE,
+            building_id, building_id, needle, needle, needle, needle, needle,
+            building_id, building_id,
+        ),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return None
+    return int(row["employee_id"] if isinstance(row, dict) else row[0])
+
+
+def _write_proposal_tasks(
+    cur, request_id: int, tasks: list[dict], *, replace: bool = True,
+    call_subcontractor: str | None = None, call_vendor_id: int | None = None,
+    call_urgency: str | None = None,
+) -> None:
+    """Insert AI proposals (accepted_at NULL, source ai_recommended) under a call.
+
+    Prefills one technician per task from AI suggested_trade (+ building history)
+    and a due date from urgency. Coordinator reviews and Saves. A re-triage
+    replaces un-accepted AI proposals (`replace=True`).
+    """
+    if replace:
+        cur.execute(
+            "DELETE FROM dispatch_task "
+            "WHERE request_id = %s AND source = 'ai_recommended' AND accepted_at IS NULL",
+            (request_id,),
+        )
+    cur.execute(
+        "SELECT COALESCE(MAX(sort_order) + 1, 0) AS next_order "
+        "FROM dispatch_task WHERE request_id = %s",
+        (request_id,),
+    )
+    row = cur.fetchone()
+    # Triage cursors are sometimes tuple-row (tests) and sometimes dict-row (pool).
+    base = row["next_order"] if isinstance(row, dict) else row[0]
+    bldg, sector = _request_location(cur, request_id)
+    used: set[int] = set()
+    for i, t in enumerate(tasks):
+        description = t["description"].strip()
+        if (t.get("notes") or "").strip():
+            description += "\n" + t["notes"].strip()
+        urgency = t.get("urgency_tier") if t.get("urgency_tier") is not None else call_urgency
+        vendor_id = t.get("vendor_id") if t.get("vendor_id") is not None else call_vendor_id
+        sub = t.get("subcontractor_name") or call_subcontractor
+        trade = (t.get("suggested_trade") or "").strip() or None
+        assignee = _pick_tech_for_trade(
+            cur, building_id=bldg, sector_id=sector, trade=trade, used=used,
+        )
+        if assignee is not None:
+            used.add(assignee)
+        due = _default_due_at(urgency)
+        cur.execute(
+            """
+            INSERT INTO dispatch_task
+                (request_id, description, urgency_tier, vendor_id,
+                 subcontractor_name, assigned_employee_id, due_at,
+                 source, accepted_at, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'ai_recommended', NULL, %s)
+            """,
+            (request_id, description, urgency, vendor_id, sub, assignee, due, base + i),
+        )
+
+
+def _merge_addition_into_peer(cur, request_id: int, peer_id: int, parsed: dict) -> bool:
+    """Append this call's problems onto the open peer, then close this request as merged.
+
+    Returns False when the peer was not updated (missing or already closed)."""
     new_problems = parsed.get("problems") or []
     bullet = "\n".join(f"- {p}" for p in new_problems) if new_problems else None
     note = (
@@ -329,18 +498,18 @@ def _merge_addition_into_peer(cur, request_id: int, peer_id: int, parsed: dict) 
             other_notes = CASE
                 WHEN other_notes IS NULL OR BTRIM(other_notes) = '' THEN %s
                 ELSE other_notes || E'\\n' || %s
-            END
+            END,
+            ai_important_notes = COALESCE(ai_important_notes, ARRAY[]::text[]) || ARRAY[%s]::text[]
         WHERE request_id = %s
           AND status::text NOT IN ('closed')
         """,
-        (bullet or note, bullet or note, note, note, peer_id),
+        (bullet or note, bullet or note, note, note, note, peer_id),
     )
+    peer_updated = cur.rowcount > 0
     # Child is kept for audit but closed so it isn't dispatched separately.
     merge_note = f"Fusionné dans l'appel ouvert #{peer_id} (ajout — même unité, problème différent)."
-    if parsed.get("other_notes"):
-        parsed["other_notes"] = f"{parsed['other_notes']}\n{merge_note}"
-    else:
-        parsed["other_notes"] = merge_note
+    append_important(parsed, merge_note)
+    return peer_updated
 
 
 def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> None:
@@ -356,10 +525,15 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
         parsed["addition_to_request_id"] = None
 
     merged = False
+    peer_updated = False
     add_id = parsed.get("addition_to_request_id")
     if parsed.get("verdict") == "addition" and isinstance(add_id, int):
-        _merge_addition_into_peer(cur, request_id, add_id, parsed)
+        peer_updated = _merge_addition_into_peer(cur, request_id, add_id, parsed)
         merged = True
+
+    # Tasks proposed for this call (single) or its peer (addition); never on a duplicate.
+    tasks = [t for t in (parsed.get("recommended_tasks") or []) if isinstance(t, dict)]
+    proposing = parsed.get("verdict") == "single" and bool(tasks)
 
     problems_text = None
     if parsed.get("problems"):
@@ -369,7 +543,7 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
     from .calendar_route import infer_source_calendar_from_cur
     cal = infer_source_calendar_from_cur(cur, request_id)
 
-    status = "closed" if merged else "triaged"
+    status = "closed" if merged else "triage_proposal" if proposing else "triaged"
     cur.execute(
         """
         UPDATE maintenance_request SET
@@ -377,8 +551,7 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
             problem_summary         = %(title)s,
             problems                = %(problems)s,
             entry_permission        = %(entry_permission)s,
-            animals                 = %(animals)s,
-            urgency_tier            = %(urgency_tier)s::urgency_tier,
+            urgency_tier            = %(urgency_tier)s,
             complexity_tier         = %(complexity_tier)s::complexity_tier,
             congestion_level        = %(congestion_level)s::congestion_level,
             time_estimate_bucket    = %(time_estimate_bucket)s::time_estimate_bucket,
@@ -389,6 +562,10 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
             vendor_id               = %(vendor_id)s,
             synergy_request_ids     = %(synergy_request_ids)s,
             other_notes             = %(other_notes)s,
+            ai_important_notes      = %(ai_important_notes)s,
+            ai_next_steps           = %(ai_next_steps)s,
+            ai_reasoning            = %(ai_reasoning)s,
+            next_steps              = %(next_steps)s,
             duplicate_of_request_id = %(dup_id)s,
             addition_to_request_id  = %(add_id)s,
             source_calendar         = %(source_calendar)s,
@@ -402,7 +579,6 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
             "title":              parsed.get("title"),
             "problems":           problems_text,
             "entry_permission":   parsed.get("entry_permission"),
-            "animals":            parsed.get("animals"),
             "urgency_tier":       parsed.get("urgency_tier"),
             "complexity_tier":    parsed.get("complexity_tier"),
             "congestion_level":   parsed.get("congestion_level"),
@@ -414,6 +590,10 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
             "vendor_id":          parsed.get("vendor_id"),
             "synergy_request_ids": parsed.get("synergy_request_ids") or [],
             "other_notes":        parsed.get("other_notes"),
+            "ai_important_notes": parsed.get("ai_important_notes"),
+            "ai_next_steps":      parsed.get("ai_next_steps"),
+            "ai_reasoning":       parsed.get("ai_reasoning"),
+            "next_steps":         parsed.get("next_steps"),
             "dup_id":             parsed.get("duplicate_of_request_id"),
             "add_id":             parsed.get("addition_to_request_id"),
             "source_calendar":    cal,
@@ -428,6 +608,17 @@ def _write_result(cur, request_id: int, parsed: dict, model_version: str) -> Non
             request_id,
         )
         return
+    call_defaults = dict(
+        call_subcontractor=parsed.get("subcontractor_name"),
+        call_vendor_id=parsed.get("vendor_id"),
+        call_urgency=parsed.get("urgency_tier"),
+    )
+    if proposing:
+        _write_proposal_tasks(cur, request_id, tasks, **call_defaults)
+    elif merged and peer_updated and tasks:
+        # Mid-life proposals: the peer keeps its status (not bounced to triage_proposal)
+        # and keeps proposals the dispatcher has not accepted yet.
+        _write_proposal_tasks(cur, add_id, tasks, replace=False, **call_defaults)
     if old_row is not None:
         _write_triage_provenance(cur, request_id, parsed, model_version, old_row)
 
@@ -511,7 +702,7 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT request_id, status, triage_started_at, raw_title
+            SELECT request_id, status::text AS status, triage_started_at, raw_title
             FROM maintenance_request
             WHERE request_id = %s
             FOR UPDATE SKIP LOCKED
@@ -537,7 +728,11 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
         conn.rollback()
         return {"result": "skipped", "reason": "mechanically excluded title (SKILL §4.2)"}
 
-    if current_status in ("triaged", "en_route", "closed"):
+    # `open` is the in-flight container (tasks already accepted). Re-triage must
+    # not move it back to triage_pending. Legacy fieldwork statuses too.
+    # intake_received / triage_failed / triage_pending / triage_proposal stay runnable.
+    if current_status in ("open", "triaged", "scheduled", "awaiting_redispatch",
+                          "en_route", "arrived", "closed"):
         conn.rollback()
         return {"result": "skipped", "reason": f"already in terminal state ({current_status})"}
 
@@ -554,9 +749,21 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
     if not dry_run:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE maintenance_request SET status = 'triage_pending', triage_started_at = NOW() WHERE request_id = %s",
+                """
+                UPDATE maintenance_request
+                SET status = 'triage_pending', triage_started_at = NOW()
+                WHERE request_id = %s
+                  AND status::text NOT IN (
+                      'open', 'triaged', 'scheduled', 'awaiting_redispatch',
+                      'en_route', 'arrived', 'closed'
+                  )
+                """,
                 (request_id,),
             )
+            locked = cur.rowcount
+        if locked == 0:
+            conn.rollback()
+            return {"result": "skipped", "reason": f"already in terminal state ({current_status})"}
         conn.commit()
 
     # ── Build context ──────────────────────────────────────────────────────────
@@ -605,7 +812,7 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
         try:
             response = client.messages.create(
                 model=model,
-                max_tokens=1024,
+                max_tokens=_MAX_TOKENS,
                 system=system_blocks,
                 messages=[{"role": "user", "content": user_message}],
             )
@@ -623,6 +830,8 @@ def triage(conn, request_id: int, *, max_retries: int = _MAX_RETRIES,
             )
 
             if val_result == "accepted":
+                normalize_parsed(parsed)
+                apply_clean_title(parsed)
                 # Weather floor for "no heat" calls (art. 1864-1865 C.c.Q.).
                 # Uses its own pool connection (this conn is psycopg2); never raises.
                 from backend.modules.weather.service import apply_triage_escalation

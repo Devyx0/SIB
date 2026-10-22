@@ -5,6 +5,7 @@ import FilterBar from '../pages/DispatchBoard/FilterBar';
 
 const noop = () => {};
 const defaultProps = {
+  mode: 'tasks' as const,
   startDate: '2026-09-01',
   endDate: '2026-09-25',
   status: [],
@@ -17,6 +18,7 @@ const defaultProps = {
   onSourceCalendar: noop,
   onQ: noop,
 };
+const triageProps = { ...defaultProps, mode: 'triage' as const };
 
 describe('FilterBar', () => {
   it('renders the request count', () => {
@@ -49,40 +51,85 @@ describe('FilterBar', () => {
     vi.useRealTimers();
   });
 
+  it('triage shows the Période control with « Tout » active when no range is set', async () => {
+    const onDateRange = vi.fn();
+    render(<FilterBar {...triageProps} startDate="" endDate="" onDateRange={onDateRange} />);
+    expect(screen.getByTestId('quick-range-all').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('quick-range-7').getAttribute('aria-label')).toBe('7 derniers jours');
+    await userEvent.click(screen.getByTestId('quick-range-7'));
+    const [start, end] = onDateRange.mock.calls[0];
+    expect((Date.parse(end) - Date.parse(start)) / 86400000).toBe(6);
+    await userEvent.click(screen.getByTestId('quick-range-all'));
+    expect(onDateRange).toHaveBeenLastCalledWith('', '');
+  });
+
+  it('tasks also offers « Tout », inactive while a range is set', async () => {
+    const onDateRange = vi.fn();
+    render(<FilterBar {...defaultProps} onDateRange={onDateRange} />);
+    expect(screen.getByTestId('quick-range-all').getAttribute('aria-pressed')).toBe('false');
+    await userEvent.click(screen.getByTestId('quick-range-all'));
+    expect(onDateRange).toHaveBeenLastCalledWith('', '');
+  });
+
   it('status checkboxes live in a dropdown, hidden until opened', async () => {
-    render(<FilterBar {...defaultProps} />);
+    render(<FilterBar {...triageProps} />);
     expect(screen.queryByText('Reçu')).toBeNull();
     expect(screen.getByTestId('status-select').textContent).toMatch(/Tous les statuts/);
     await userEvent.click(screen.getByTestId('status-select'));
     expect(screen.getByText('Reçu')).toBeTruthy();
-    expect(screen.getByText('En triage')).toBeTruthy();
+    expect(screen.queryByText('En triage')).toBeNull();
+  });
+
+  it('triage offers call statuses incl. Proposition, never Ouvert or task statuses', async () => {
+    render(<FilterBar {...triageProps} />);
+    await userEvent.click(screen.getByTestId('status-select'));
+    expect(screen.getByLabelText('Proposition')).toBeTruthy();
+    expect(screen.queryByLabelText('Ouvert')).toBeNull();
+    expect(screen.queryByLabelText('À planifier')).toBeNull();
+  });
+
+  it('tasks offers task statuses, not call statuses', async () => {
+    render(<FilterBar {...defaultProps} />);
+    await userEvent.click(screen.getByTestId('status-select'));
+    for (const label of ['À planifier', 'Planifié', 'En route', 'Arrivé', 'Au travail', 'Terminé',
+      'Expertise requise', 'Retour requis', 'Annulé']) {
+      expect(screen.getByLabelText(label)).toBeTruthy();
+    }
+    expect(screen.queryByLabelText('Reçu')).toBeNull();
+    expect(screen.queryByLabelText('Trié')).toBeNull();
+  });
+
+  it('counts tasks and hides the source filter when asked', () => {
+    render(<FilterBar {...defaultProps} total={3} countUnit="task" showSourceFilter={false} />);
+    expect(screen.getByText(/3 tâches/)).toBeTruthy();
+    expect(screen.queryByLabelText('Source')).toBeNull();
   });
 
   it('checking a status in the dropdown calls onStatus', async () => {
     const onStatus = vi.fn();
-    render(<FilterBar {...defaultProps} status={['triaged']} onStatus={onStatus} />);
+    render(<FilterBar {...triageProps} status={['triaged']} onStatus={onStatus} />);
     await userEvent.click(screen.getByTestId('status-select'));
     await userEvent.click(screen.getByLabelText('Reçu'));
     expect(onStatus).toHaveBeenCalledWith(['triaged', 'intake_received']);
   });
 
   it('trigger summarises the selection', () => {
-    const { rerender } = render(<FilterBar {...defaultProps} status={['triaged']} />);
+    const { rerender } = render(<FilterBar {...triageProps} status={['triaged']} />);
     expect(screen.getByTestId('status-select').textContent).toMatch(/Trié/);
-    rerender(<FilterBar {...defaultProps} status={['triaged', 'closed']} />);
+    rerender(<FilterBar {...triageProps} status={['triaged', 'intake_received']} />);
     expect(screen.getByTestId('status-select').textContent).toMatch(/2 statuts/);
   });
 
   it('calls onStatus with cleared array when clear is clicked', async () => {
     const onStatus = vi.fn();
-    render(<FilterBar {...defaultProps} status={['triaged']} onStatus={onStatus} />);
+    render(<FilterBar {...triageProps} status={['triaged']} onStatus={onStatus} />);
     await userEvent.click(screen.getByTestId('status-select'));
     await userEvent.click(screen.getByText('Effacer'));
     expect(onStatus).toHaveBeenCalledWith([]);
   });
 
   it('closes the status dropdown on Escape', async () => {
-    render(<FilterBar {...defaultProps} />);
+    render(<FilterBar {...triageProps} />);
     await userEvent.click(screen.getByTestId('status-select'));
     expect(screen.getByText('Reçu')).toBeTruthy();
     await userEvent.keyboard('{Escape}');
@@ -198,14 +245,23 @@ describe('FilterBar', () => {
 });
 
 describe('phone filter toggle', () => {
-  beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
+  const store: Record<string, string> = {};
+  beforeEach(() => {
+    Object.keys(store).forEach((k) => delete store[k]);
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store[k] ?? null,
+      setItem: (k: string, v: string) => { store[k] = v; },
+      removeItem: (k: string) => { delete store[k]; },
+      clear: () => { Object.keys(store).forEach((k) => delete store[k]); },
+    });
+  });
 
   it('starts folded, summarises active filters, and opens/closes', async () => {
     render(
       <FilterBar
         {...defaultProps}
-        status={['triaged']}
-        urgency="AJD"
+        status={['scheduled']}
+        urgency="URGENT"
         sectors={[{ sector_id: 2, territoire: 'Haute-Ville', color_code: null }]}
         sectorId={2}
       />,
@@ -213,7 +269,7 @@ describe('phone filter toggle', () => {
     const toggle = screen.getByTestId('filters-toggle');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.textContent).toMatch(/Filtres\s*3/);
-    expect(screen.getByTestId('filters-summary').textContent).toBe('01/09 → 25/09 · Trié · AJD · Haute-Ville');
+    expect(screen.getByTestId('filters-summary').textContent).toBe('01/09 → 25/09 · Planifié · Urgent · Haute-Ville');
 
     await userEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
@@ -235,20 +291,20 @@ describe('phone filter toggle', () => {
 
 describe('quick date ranges', () => {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
-  const minus = (n: number) => {
+  const shift = (n: number) => {
     const [y, m, d] = today.split('-').map(Number);
-    return new Date(Date.UTC(y, m - 1, d - n)).toISOString().slice(0, 10);
+    return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
   };
 
-  it.each([[7, 6], [14, 13], [30, 29]])('%i jours sets both dates in one call, ending today', async (days, back) => {
+  it.each([[7, 6], [14, 13], [30, 29]])('%i jours on tasks looks ahead from today', async (days, ahead) => {
     const onDateRange = vi.fn();
     const onStartDate = vi.fn();
     render(<FilterBar {...defaultProps} onDateRange={onDateRange} onStartDate={onStartDate} />);
-    await userEvent.click(screen.getByRole('button', { name: `${days} derniers jours` }));
-    expect(onDateRange).toHaveBeenCalledWith(minus(back), today);
+    await userEvent.click(screen.getByRole('button', { name: `${days} prochains jours` }));
+    expect(onDateRange).toHaveBeenCalledWith(today, shift(ahead));
     expect(onStartDate).not.toHaveBeenCalled();
-    expect((screen.getByTestId('start-date-input') as HTMLInputElement).value).toBe(minus(back));
-    expect((screen.getByTestId('end-date-input') as HTMLInputElement).value).toBe(today);
+    expect((screen.getByTestId('start-date-input') as HTMLInputElement).value).toBe(today);
+    expect((screen.getByTestId('end-date-input') as HTMLInputElement).value).toBe(shift(ahead));
   });
 
   it('a custom range shows on the calendar button and is picked from the calendar', async () => {
@@ -281,7 +337,7 @@ describe('quick date ranges', () => {
   });
 
   it('marks the matching range as active', () => {
-    render(<FilterBar {...defaultProps} startDate={minus(13)} endDate={today} />);
+    render(<FilterBar {...defaultProps} startDate={today} endDate={shift(13)} />);
     expect(screen.getByTestId('quick-range-14').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByTestId('quick-range-7').getAttribute('aria-pressed')).toBe('false');
   });

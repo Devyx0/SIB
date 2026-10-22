@@ -35,7 +35,7 @@ def _decode_photos(body: ManualCreateBody) -> list[tuple[bytes, str]]:
     return out
 
 
-def _store_intake_photos(conn, request_id: int, employee_id: int,
+def _store_intake_photos(conn, request_id: int, employee_id: int | None,
                          photos: list[tuple[bytes, str]]) -> None:
     """File first, then row (like closeout). On any failure the files already
     uploaded are removed; the caller's transaction rolls back the rows."""
@@ -63,8 +63,6 @@ def _build_problems(body: ManualCreateBody) -> str:
     parts = [f"Problème : {body.problem}"]
     if body.access_details:
         parts.append(f"Précisions (accès) : {body.access_details}")
-    if body.animals == "oui" and body.animal_details:
-        parts.append(f"Animaux : {body.animal_details}")
     if body.phone_2:
         parts.append(f"Téléphone 2 : {body.phone_2}")
     if body.secondary_name or body.secondary_email:
@@ -203,14 +201,15 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
         "symptome": symptome,
         "composante": composante,
         "emplacement": emplacement,
-        "intake_urgent": body.intake_urgent,
         "secondary_name": body.secondary_name or None,
         "secondary_email": body.secondary_email or None,
         "phone_2": body.phone_2 or None,
     })
 
     from backend.core.utils import today_local
+    from .asnu import next_asnu
 
+    asnu = next_asnu(conn)
     row = conn.execute(
         """
         INSERT INTO maintenance_request (
@@ -218,9 +217,8 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
             building_id, unit_id, sector_id,
             caller_name, caller_phone, caller_email,
             entry_permission, animals,
-            problems, raw_title, category_raw,
+            problems, raw_title, category_raw, asnu,
             element, symptome, composante, emplacement,
-            intake_urgent,
             attachment_url,
             created_by_employee_id,
             raw_caller_body,
@@ -230,9 +228,8 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
             %(building_id)s, %(unit_id)s, %(sector_id)s,
             %(caller_name)s, %(phone_1)s, %(caller_email)s,
             %(entry_permission)s, %(animals)s,
-            %(problems)s, %(raw_title)s, %(category_raw)s,
+            %(problems)s, %(raw_title)s, %(category_raw)s, %(asnu)s,
             %(element)s, %(symptome)s, %(composante)s, %(emplacement)s,
-            %(intake_urgent)s,
             %(attachment_url)s,
             %(employee_id)s,
             %(raw_caller_body)s,
@@ -252,11 +249,11 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
             "problems":         problems_text,
             "raw_title":        _raw_title(body.problem),
             "category_raw":     category,
+            "asnu":             asnu,
             "element":          element,
             "symptome":         symptome,
             "composante":       composante,
             "emplacement":      emplacement,
-            "intake_urgent":    body.intake_urgent,
             "attachment_url":   body.attachment_url,
             "employee_id":      user.employee_id,
             "raw_caller_body":  raw_caller_body,
@@ -286,4 +283,5 @@ def create_manual(conn, body: ManualCreateBody, user: CurrentUser) -> ManualCrea
         building_id=row["building_id"],
         unit_id=row["unit_id"],
         match_status=match_status,
+        asnu=asnu,
     )

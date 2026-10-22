@@ -4,11 +4,70 @@ export type StatusValue =
   | 'intake_received'
   | 'triage_pending'
   | 'triaged'
+  | 'scheduled'
+  | 'awaiting_redispatch'
   | 'triage_clarify'
   | 'triage_proposal'
   | 'triage_failed'
   | 'en_route'
+  | 'arrived'
+  | 'open'
   | 'closed';
+
+export type TaskStatus =
+  | 'queued'
+  | 'scheduled'
+  | 'en_route'
+  | 'arrived'
+  | 'working'
+  | 'done'
+  | 'needs_expertise'
+  | 'return_visit'
+  | 'cancelled';
+
+export interface TaskOut {
+  task_id: number;
+  request_id: number;
+  description: string;
+  status: TaskStatus;
+  assigned_employee_id: number | null;
+  vendor_id: number | null;
+  subcontractor_name: string | null;
+  due_at: string | null;
+  urgency_tier: string | null;
+  source: string;
+  /** null = AI proposal, not yet accepted by a dispatcher. */
+  accepted_at: string | null;
+  parent_task_id: number | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** GET /tasks row: the task plus list context from its call. */
+export interface TaskListItem extends TaskOut {
+  assigned_employee_name: string | null;
+  request_title: string | null;
+  request_status: string | null;
+  request_asnu: string | null;
+  request_urgency_tier: string | null;
+  sector_id: number | null;
+  territoire: string | null;
+  building_address: string | null;
+  unit_label: string | null;
+  /** needs_expertise / return_visit task already has an accepted follow-up child. */
+  has_followup?: boolean;
+}
+
+export interface TaskListResponse {
+  total: number;
+  items: TaskListItem[];
+}
+
+export interface TaskCloseoutOut extends TaskOut {
+  follow_up_task: TaskOut | null;
+  request_status: string;
+}
 
 export type SortKey =
   | 'start_date'
@@ -43,6 +102,7 @@ export interface ListRow {
   raw_title: string | null;
   building_id: number | null;
   building_address: string | null;
+  building_full_address: string | null;
   building_name: string | null;
   sector_id: number | null;
   territoire: string | null;
@@ -64,6 +124,7 @@ export interface ListRow {
   unit_label: string | null;
   unique_unit_number: string | null;
   en_route_at: string | null;
+  arrived_at: string | null;
   closeout_outcome: string | null;
   closeout_urgent: boolean | null;
   duplicate_of_request_id: number | null;
@@ -72,11 +133,17 @@ export interface ListRow {
 
 export interface VisitEntry {
   visit_id: number;
+  task_id?: number | null;
   employee_id: number;
   employee_name: string | null;
   en_route_at: string;
+  arrived_at: string | null;
   closeout_at: string | null;
-  /** Whole minutes en route → closeout; set on close for tech KPIs. */
+  /** Whole minutes en_route → arrived; null if no arrived stamp. */
+  travel_minutes: number | null;
+  /** Whole minutes arrived → closeout; null if no arrived stamp. */
+  on_site_minutes: number | null;
+  /** Whole minutes en route → closeout (total). */
   duration_minutes: number | null;
   outcome: string | null;
   closeout_comment: string | null;
@@ -92,6 +159,18 @@ export interface JustificationEntry {
   input_method: string | null;
   created_at: string;
   employee_id: number;
+  /** Who made the decision. */
+  employee_name?: string | null;
+}
+
+/** A status transition made in the app (assignment, en route, arrival, closeout…). */
+export interface StatusChange {
+  id: number;
+  status_from: string | null;
+  status_to: string | null;
+  changed_at: string;
+  employee_id: number | null;
+  employee_name: string | null;
 }
 
 export interface RequestDetail extends ListRow {
@@ -99,6 +178,12 @@ export interface RequestDetail extends ListRow {
   triage_summary: string | null;
   work_performed: string | null;
   other_notes: string | null;
+  /** Structured AI Important bullets (preferred over parsing other_notes). */
+  ai_important_notes?: string[] | null;
+  /** Structured AI Next-step bullets. */
+  ai_next_steps?: string[] | null;
+  /** Short AI rationale for prefilled dispatch choices (urgency, routing, tasks). */
+  ai_reasoning?: string | null;
   delegable_notes: string | null;
   report_notes: string | null;
   tenant_agreement_notes: string | null;
@@ -113,7 +198,11 @@ export interface RequestDetail extends ListRow {
   caller_type: string | null;
   followup_log: FollowupEntry[];
   justification_log: JustificationEntry[];
+  /** Coordinator / director only, like justification_log. */
+  status_history?: StatusChange[];
   visits: VisitEntry[];
+  /** Proposals (accepted_at null) are dispatcher-only. */
+  tasks?: TaskOut[];
   /** Photos attached when the call was created. */
   intake_photo_ids?: number[];
   caller_name: string | null;
@@ -124,6 +213,11 @@ export interface RequestDetail extends ListRow {
   caller_tenant_id: number | null;
   raw_caller_body: { entry_permission: string | null; animals: string | null; problems: string | null } | null;
   problems: string | null;
+  category_raw: string | null;
+  element: string | null;
+  symptome: string | null;
+  composante: string | null;
+  emplacement: string | null;
   triage_model_version: string | null;
   ft_link: string | null;
   ft_name: string | null;
@@ -187,27 +281,6 @@ export interface ListResponse {
   total: number;
   items: ListRow[];
   unscheduled_items: ListRow[];
-}
-
-export interface DossierRow {
-  request_id: number;
-  last_en_route_at: string;
-  last_closeout_at: string | null;
-  unit_label: string | null;
-  raw_title: string | null;
-  territoire: string | null;
-  color_code: string | null;
-  employee_name: string | null;
-  last_outcome: string | null;
-  photo_count: number;
-  visit_count: number;
-  closeout_urgent: boolean | null;
-  status: string;
-}
-
-export interface DossierListResponse {
-  total: number;
-  items: DossierRow[];
 }
 
 export interface SectorLookup {
@@ -279,8 +352,8 @@ export interface DashboardResponse {
     sector_id: number;
     territoire: string;
     active: number;
-    AJD: number;
-    ajd: number;
+    urgent: number;
+    medium: number;
     untriaged: number;
     board_link: string;
   }>;
@@ -325,7 +398,22 @@ export interface UtilizationResponse {
     };
     capacity_minutes: number | null;
     utilization_pct: number | null;
+    avg_rating: number | null;
+    rating_count: number;
+    reviews: TechnicianReview[];
   }>;
+}
+
+export interface TechnicianReview {
+  survey_id: number;
+  request_id: number;
+  submitted_at: string;
+  /** 1–5; null for surveys submitted before the star rating existed */
+  rating: number | null;
+  polite: boolean | null;
+  problem_solved: boolean | null;
+  comments: string | null;
+  building_address: string | null;
 }
 
 // ── Portfolio browser (sector → project → building → unit → tenant) ─────────
@@ -366,9 +454,11 @@ export interface PortfolioBuildingSummary {
 export interface PortfolioUnitSummary {
   unit_id: number;
   numero_appartement: string | null;
+  unique_unit_number: string | null;
   rue: string | null;
   grandeur: string | null;
-  tenant_name: string | null;
+  /** Every occupant on the current lease, lease holder first. */
+  tenant_names: string[];
   occupant_count: number;
   lease_statut: string | null;
 }
@@ -407,6 +497,63 @@ export interface PortfolioBuildingDetail {
   nom_unique_projet: string | null;
   unit_count: number;
   units: PortfolioUnitSummary[];
+  /** What staff used to open Drive for, now kept and edited here. */
+  reference: BuildingReference;
+  fiche: FicheEntry[];
+  paint_specs: PaintSpec[];
+  documents: BuildingDocument[];
+}
+
+/** Typed building characteristics (table fondamentale). */
+export interface BuildingReference {
+  chauffage: string | null;
+  chauffage_details: string | null;
+  chauffe_eau: string | null;
+  systeme_incendie: string | null;
+  boite_a_cle_ext: string | null;
+  boite_a_cle_int: string | null;
+  internet: string | null;
+  furnished: string | null;
+  building_structure: string | null;
+  property_type: string | null;
+  ascenseur: boolean | null;
+  nb_elevateurs: number | null;
+  piscine: boolean | null;
+  sauna: boolean | null;
+  gym: boolean | null;
+  dogs_allowed: boolean | null;
+}
+
+/** One line of the building's fiche technique. */
+export interface FicheEntry {
+  label: string;
+  value: string;
+}
+
+export interface PaintSpec {
+  paint_spec_id: number;
+  zone: string | null;
+  surface_label: string | null;
+  product_interior: string | null;
+  product_exterior: string | null;
+  manufacturer: string | null;
+}
+
+export interface BuildingDocument {
+  document_id: number;
+  title: string | null;
+  category: string | null;
+  url: string | null;
+}
+
+/** Ids of what a create call made. */
+export interface PortfolioCreated {
+  project_id: number | null;
+  building_id: number | null;
+  unit_id: number | null;
+  sector_id: number | null;
+  paint_spec_id: number | null;
+  document_id: number | null;
 }
 
 export interface PortfolioLease {
@@ -440,8 +587,102 @@ export interface PortfolioUnitDetail {
   web_building_name: string | null;
   nom_unique_projet: string | null;
   territoire: string | null;
+  unique_unit_number: string | null;
   lease: PortfolioLease | null;
   tenants: PortfolioTenant[];
+  /** The building's paint: spec sheet rows plus fiche-technique paint notes. */
+  paint_specs: PaintSpec[];
+  paint_notes: FicheEntry[];
+}
+
+// ── Portfolio search & filtered unit list ────────────────────────────────────
+
+export interface PortfolioSearchUnitHit {
+  unit_id: number;
+  building_id: number;
+  numero_appartement: string | null;
+  unique_unit_number: string | null;
+  rue: string | null;
+  grandeur: string | null;
+  building_adresse: string | null;
+  tenant_names: string[];
+  occupant_count: number;
+}
+
+export interface PortfolioSearchBuildingHit {
+  building_id: number;
+  project_id: number;
+  sector_id: number;
+  adresse: string | null;
+  ville: string | null;
+  web_building_name: string | null;
+  nom_unique_projet: string | null;
+  territoire: string | null;
+}
+
+export interface PortfolioSearchProjectHit {
+  project_id: number;
+  /** A sector the project has a visible building in, for the link. */
+  sector_id: number;
+  nom_unique_projet: string | null;
+  adresse_quickbooks: string | null;
+  accounting_project_number: string | null;
+  building_count: number;
+}
+
+export interface PortfolioSearchTenantHit {
+  tenant_id: number;
+  nom_complet: string | null;
+  unit_id: number;
+  numero_appartement: string | null;
+  building_adresse: string | null;
+}
+
+/** A building reference fact: a fiche-technique entry or a paint spec. */
+export interface PortfolioSearchFactHit {
+  building_id: number;
+  building_adresse: string | null;
+  web_building_name: string | null;
+  label: string;
+  value: string;
+  source: 'fiche' | 'paint_spec';
+}
+
+export interface PortfolioSearchResult {
+  q: string;
+  units: PortfolioSearchUnitHit[];
+  buildings: PortfolioSearchBuildingHit[];
+  projects: PortfolioSearchProjectHit[];
+  tenants: PortfolioSearchTenantHit[];
+  facts: PortfolioSearchFactHit[];
+}
+
+export interface PortfolioUnitListRow {
+  unit_id: number;
+  building_id: number;
+  project_id: number;
+  sector_id: number;
+  numero_appartement: string | null;
+  unique_unit_number: string | null;
+  rue: string | null;
+  grandeur: string | null;
+  building_adresse: string | null;
+  nom_unique_projet: string | null;
+  territoire: string | null;
+  lease_statut: string | null;
+  fin_bail: string | null;
+  tenant_names: string[];
+  occupant_count: number;
+}
+
+export interface PortfolioUnitListPage {
+  items: PortfolioUnitListRow[];
+  total: number;
+  /** Vacant units under the same filters, ignoring the occupancy filter. */
+  vacant_total: number;
+  grandeur_options: string[];
+  page: number;
+  page_size: number;
 }
 
 export interface TurnoverSettlement {

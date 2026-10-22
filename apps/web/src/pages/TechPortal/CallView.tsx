@@ -1,13 +1,20 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRequest } from '../../hooks/useRequest';
-import { goEnRoute, ApiError, GENERIC_ERROR_FR } from '../../api/client';
-import type { MeResponse, RequestDetail } from '../../api/schema.d.ts';
+import { taskEnRoute, taskArrived, ApiError, apiErrorMessage } from '../../api/client';
+import type { MeResponse, RequestDetail, TaskOut } from '../../api/schema.d.ts';
 import type { Lang } from '../../i18n';
-import { t, statusLabel } from '../../i18n';
+import { t, statusLabel, timeEstimateLabel } from '../../i18n';
+import { formatEntryDate } from '../../components/HistoryTimeline';
+import { IntakePhotos } from '../../components/RequestSections';
+import AiNotesSections from '../../components/AiNotesSections';
+import { urgencyLabel } from '../../lib/urgencyLevels';
+import { dueDay } from '../../lib/taskDates';
+import { googleMapsUrl } from '../../lib/maps';
 import TechHeader from './TechHeader';
 import { elapsedLabel } from './elapsed';
+import { pickMyTask, taskIdParam } from './myTask';
 import styles from './TechPortal.module.css';
 
 interface Props {
@@ -43,41 +50,89 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
   const { id } = useParams();
   const requestId = Number(id);
   const { data: req, isPending, isError } = useRequest(Number.isFinite(requestId) ? requestId : null);
+  const [search] = useSearchParams();
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
-  const [enRouteError, setEnRouteError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const isAssignedToMe = me != null && req != null && req.assigned_employee_id === me.employee_id;
-  const canGoEnRoute = isAssignedToMe && req != null && req.status !== 'closed' && req.status !== 'en_route';
+  const task = pickMyTask(req, me?.employee_id, taskIdParam(search));
+  const status = task?.status ?? req?.status;
+  const canGoEnRoute = req?.status !== 'closed' && task?.status === 'scheduled';
+  const canMarkArrived = task?.status === 'en_route';
+  const canCloseout = task?.status === 'arrived' || task?.status === 'working';
   const noContact = req != null && !req.caller_phone && !req.caller_email;
+  const openVisit = task
+    ? (req?.visits ?? []).find((v) => v.task_id === task.task_id && !v.closeout_at)
+    : undefined;
+
+  // Show the new task status at once; the refetch brings the visit (elapsed time).
+  function applyTask(updated: TaskOut) {
+    qc.setQueryData<RequestDetail>(['request', requestId], (prev) => prev && {
+      ...prev,
+      tasks: (prev.tasks ?? []).map((x) => (x.task_id === updated.task_id ? updated : x)),
+    });
+    qc.invalidateQueries({ queryKey: ['request', requestId] });
+    qc.invalidateQueries({ queryKey: ['tasks'] });
+  }
 
   async function handleEnRoute() {
-    if (!req) return;
+    if (!task) return;
     setBusy(true);
-    setEnRouteError(null);
+    setActionError(null);
     const pos = await getPosition();
     try {
-      const updated = await goEnRoute(req.request_id, {
-        current_status: req.status,
-        current_start_date: req.start_date,
+      applyTask(await taskEnRoute(task.task_id, {
+        current_status: task.status,
         lat: pos?.lat ?? null,
         lng: pos?.lng ?? null,
-      });
-      qc.setQueryData(['request', req.request_id], updated);
-      qc.invalidateQueries({ queryKey: ['requests'] });
+      }));
     } catch (e) {
       if (e instanceof ApiError) {
         const d = e.details as { open_request_title?: string | null } | null;
-        setEnRouteError(d?.open_request_title ? `${e.message} (${d.open_request_title})` : e.message);
+        const base = apiErrorMessage(lang, e);
+        setActionError(d?.open_request_title ? `${base} (${d.open_request_title})` : base);
       } else {
-        setEnRouteError(GENERIC_ERROR_FR);
+        setActionError(apiErrorMessage(lang, e));
       }
     } finally {
       setBusy(false);
     }
   }
 
+  async function handleArrived() {
+    if (!task) return;
+    setBusy(true);
+    setActionError(null);
+    const pos = await getPosition();
+    try {
+      applyTask(await taskArrived(task.task_id, {
+        current_status: task.status,
+        lat: pos?.lat ?? null,
+        lng: pos?.lng ?? null,
+      }));
+    } catch (e) {
+      setActionError(apiErrorMessage(lang, e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const ft = req ? ftInfo(req) : { href: null, label: null };
+  const problemText = req
+    ? (req.raw_caller_body?.problems ?? req.problems)
+    : null;
+  const entryPermission = req
+    ? (req.raw_caller_body?.entry_permission ?? req.entry_permission)
+    : null;
+  const animals = req
+    ? (req.raw_caller_body?.animals ?? req.animals)
+    : null;
+  const hasTaxonomy = !!(
+    req?.element || req?.symptome || req?.composante || req?.emplacement || req?.category_raw
+  );
+  const buildingAddress = req
+    ? (req.building_full_address ?? req.building_address)
+    : null;
 
   return (
     <div className={styles.page}>
@@ -91,25 +146,64 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
         {req && (
           <>
             <div className={styles.callRowTop}>
-              <span className={styles.callDate}>{req.start_date ?? t(lang, 'Sans date', 'No date')}</span>
-              <span className={styles.statusBadge} data-status={req.status}>
-                {statusLabel(lang, req.status)}
+              <span className={styles.callDate}>
+                {(task ? dueDay(task.due_at) : req.start_date) ?? t(lang, 'Sans date', 'No date')}
+              </span>
+              <span className={styles.statusBadge} data-status={status}>
+                {statusLabel(lang, status!)}
               </span>
               {req.urgency_tier && req.urgency_tier !== 'none' && (
-                <span className={styles.urgencyBadge}>{req.urgency_tier}</span>
+                <span className={styles.urgencyBadge}>{urgencyLabel(lang, req.urgency_tier)}</span>
               )}
             </div>
             <h1 className={styles.callViewTitle}>{req.raw_title ?? `#${req.request_id}`}</h1>
+            {(req.asnu || req.time_estimate_bucket || req.next_follow_up_date) && (
+              <dl className={styles.callFacts} data-testid="call-facts">
+                {req.asnu && (
+                  <div>
+                    <dt>ASNU</dt>
+                    <dd className={styles.mono}>{req.asnu}</dd>
+                  </div>
+                )}
+                {req.time_estimate_bucket && (
+                  <div>
+                    <dt>{t(lang, 'Estimation', 'Estimate')}</dt>
+                    <dd>{timeEstimateLabel(lang, req.time_estimate_bucket)}</dd>
+                  </div>
+                )}
+                {req.next_follow_up_date && (
+                  <div>
+                    <dt>{t(lang, 'Suivi', 'Follow-up')}</dt>
+                    <dd>{req.next_follow_up_date}</dd>
+                  </div>
+                )}
+              </dl>
+            )}
 
-            {req.status === 'en_route' && (
+            {task && (
+              <section className={styles.card} data-testid="my-task">
+                <h2 className={styles.cardTitle}>{t(lang, 'Ma tâche', 'My task')}</h2>
+                <p className={styles.preWrap}>{task.description}</p>
+              </section>
+            )}
+
+            {task?.status === 'en_route' && (
               <div className={styles.openCallBannerCard}>
                 {t(lang, 'En route', 'En route')}
-                {elapsedLabel(req.en_route_at) && (
-                  <> {t(lang, 'depuis', 'for')} {elapsedLabel(req.en_route_at)}</>
+                {elapsedLabel(openVisit?.en_route_at ?? null) && (
+                  <> {t(lang, 'depuis', 'for')} {elapsedLabel(openVisit!.en_route_at)}</>
                 )}
               </div>
             )}
-            {req.status === 'en_route' && isAssignedToMe && noContact && (
+            {(task?.status === 'arrived' || task?.status === 'working') && (
+              <div className={styles.openCallBannerCard} data-status="arrived">
+                {t(lang, 'Arrivé', 'Arrived')}
+                {elapsedLabel(openVisit?.arrived_at ?? null) && (
+                  <> {t(lang, 'depuis', 'for')} {elapsedLabel(openVisit!.arrived_at)}</>
+                )}
+              </div>
+            )}
+            {task?.status === 'en_route' && noContact && (
               <p className={styles.warning} data-testid="no-contact-warning">
                 {t(lang, 'Aucun contact pour aviser le locataire', 'No contact to notify the tenant')}
               </p>
@@ -126,41 +220,129 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
                 {busy ? t(lang, 'Envoi…', 'Sending…') : t(lang, 'En route', 'En route')}
               </button>
             )}
-            {req.status === 'en_route' && isAssignedToMe && (
+            {canMarkArrived && (
+              <button
+                type="button"
+                className={styles.enRouteBtn}
+                onClick={handleArrived}
+                disabled={busy}
+                data-testid="arrived-btn"
+              >
+                {busy ? t(lang, 'Envoi…', 'Sending…') : t(lang, 'Arrivé', 'Arrived')}
+              </button>
+            )}
+            {canCloseout && (
               <Link
-                to={`/tech/appels/${req.request_id}/cloture`}
+                to={`/tech/appels/${req.request_id}/cloture?task=${task!.task_id}`}
                 className={`${styles.enRouteBtn} ${styles.btnLink}`}
                 data-testid="closeout-btn"
               >
                 {t(lang, 'Clôturer', 'Close out')}
               </Link>
             )}
-            {enRouteError && <p className={styles.error}>{enRouteError}</p>}
+            {actionError && <p className={styles.error}>{actionError}</p>}
 
             <section className={styles.card}>
               <h2 className={styles.cardTitle}>{t(lang, 'Adresse', 'Address')}</h2>
-              <p>
-                {req.building_address ?? '—'}
-                {req.unit_label ? `, app. ${req.unit_label}` : ''}
-              </p>
+              {buildingAddress ? (
+                <p>
+                  <a
+                    className={styles.mapLink}
+                    href={googleMapsUrl(buildingAddress)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={t(lang, 'Ouvrir dans Google Maps', 'Open in Google Maps')}
+                    data-testid="building-map-link"
+                  >
+                    {buildingAddress}
+                    <span aria-hidden="true"> ↗</span>
+                  </a>
+                  {req.unit_label ? `, app. ${req.unit_label}` : ''}
+                </p>
+              ) : (
+                <p>{req.unit_label ? `app. ${req.unit_label}` : '—'}</p>
+              )}
               {req.building_name && <p className={styles.muted}>{req.building_name}</p>}
             </section>
 
-            {req.raw_caller_body ? (
-              <section className={styles.card}>
-                <h2 className={styles.cardTitle}>
-                  {t(lang, 'Problème (version du locataire)', 'Problem (tenant version)')}
-                </h2>
-                <p className={styles.preWrap}>{req.raw_caller_body.problems ?? '—'}</p>
-                <h2 className={styles.cardTitle}>{t(lang, "Permission d'entrer", 'Entry permission')}</h2>
-                <p>{req.raw_caller_body.entry_permission ?? '—'}</p>
-                <h2 className={styles.cardTitle}>{t(lang, 'Animaux', 'Animals')}</h2>
-                <p>{req.raw_caller_body.animals ?? '—'}</p>
+            {((req.ai_important_notes && req.ai_important_notes.length > 0)
+              || (req.ai_next_steps && req.ai_next_steps.length > 0)
+              || req.other_notes) && (
+              <section className={styles.card} data-testid="call-ai-notes">
+                <h2 className={styles.cardTitle}>{t(lang, 'Notes IA', 'AI notes')}</h2>
+                <AiNotesSections
+                  embedded
+                  lang={lang}
+                  otherNotes={req.other_notes}
+                  aiImportantNotes={req.ai_important_notes}
+                  aiNextSteps={req.ai_next_steps}
+                />
               </section>
-            ) : (
-              <section className={styles.card}>
-                <h2 className={styles.cardTitle}>{t(lang, 'Problème', 'Problem')}</h2>
-                <p className={styles.preWrap}>{req.problems ?? '—'}</p>
+            )}
+
+            <section className={styles.card} data-testid="call-problem">
+              <h2 className={styles.cardTitle}>
+                {req.raw_caller_body
+                  ? t(lang, 'Problème (version du locataire)', 'Problem (tenant version)')
+                  : t(lang, 'Problème', 'Problem')}
+              </h2>
+              <p className={styles.preWrap}>{problemText ?? '—'}</p>
+              <IntakePhotos requestId={req.request_id} ids={req.intake_photo_ids ?? []} lang={lang} />
+              <h2 className={styles.cardTitle}>{t(lang, "Permission d'entrer", 'Entry permission')}</h2>
+              <p>{entryPermission ?? '—'}</p>
+              <h2 className={styles.cardTitle}>{t(lang, 'Animaux', 'Animals')}</h2>
+              <p>{animals ?? '—'}</p>
+            </section>
+
+            {hasTaxonomy && (
+              <section className={styles.card} data-testid="call-taxonomy">
+                <h2 className={styles.cardTitle}>{t(lang, 'Taxonomie', 'Taxonomy')}</h2>
+                <dl className={styles.taxonomyList}>
+                  {req.element && (
+                    <div>
+                      <dt>{t(lang, 'Élément', 'Element')}</dt>
+                      <dd>{req.element}</dd>
+                    </div>
+                  )}
+                  {req.symptome && (
+                    <div>
+                      <dt>{t(lang, 'Symptôme', 'Symptom')}</dt>
+                      <dd>{req.symptome}</dd>
+                    </div>
+                  )}
+                  {req.composante && (
+                    <div>
+                      <dt>{t(lang, 'Composante', 'Component')}</dt>
+                      <dd>{req.composante}</dd>
+                    </div>
+                  )}
+                  {req.emplacement && (
+                    <div>
+                      <dt>{t(lang, 'Emplacement', 'Location')}</dt>
+                      <dd>{req.emplacement}</dd>
+                    </div>
+                  )}
+                  {req.category_raw && !req.element && (
+                    <div>
+                      <dt>{t(lang, 'Catégorie', 'Category')}</dt>
+                      <dd>{req.category_raw}</dd>
+                    </div>
+                  )}
+                </dl>
+              </section>
+            )}
+
+            {req.next_steps && (
+              <section className={styles.card} data-testid="call-next-steps">
+                <h2 className={styles.cardTitle}>{t(lang, 'Prochaines étapes', 'Next steps')}</h2>
+                <p className={styles.preWrap}>{req.next_steps}</p>
+              </section>
+            )}
+
+            {req.work_performed && (
+              <section className={styles.card} data-testid="call-work-performed">
+                <h2 className={styles.cardTitle}>{t(lang, 'Travail effectué', 'Work performed')}</h2>
+                <p className={styles.preWrap}>{req.work_performed}</p>
               </section>
             )}
 
@@ -200,7 +382,7 @@ export default function TechCallView({ lang, me, onSignOut, onToggleLang }: Prop
               {req.followup_log.map((f) => (
                 <div key={f.followup_id} className={styles.followupEntry}>
                   <span className={styles.muted}>
-                    {f.entry_date ?? '—'} {f.entered_by_initials ? `· ${f.entered_by_initials}` : ''}
+                    {formatEntryDate(f.entry_date, lang)} {f.entered_by_initials ? `· ${f.entered_by_initials}` : ''}
                   </span>
                   <p className={styles.preWrap}>{f.entry_text}</p>
                 </div>

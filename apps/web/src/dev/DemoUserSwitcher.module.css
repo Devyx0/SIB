@@ -1,0 +1,182 @@
+/* DEMO ONLY — delete with DemoUserSwitcher.tsx */
+
+.root {
+  position: relative;
+  min-width: 0;
+}
+
+.static,
+.compactStatic {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.compactStatic {
+  flex-direction: row;
+  align-items: center;
+}
+
+.trigger {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  min-width: 0;
+}
+
+.trigger:hover .name,
+.trigger:focus-visible .name {
+  color: var(--navy-800);
+}
+
+.trigger:focus-visible {
+  outline: none;
+}
+
+.trigger:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.triggerText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.role {
+  font-size: 12px;
+  color: var(--color-neutral-600);
+  text-transform: capitalize;
+}
+
+.chevron {
+  flex-shrink: 0;
+  margin-top: 4px;
+  color: var(--color-neutral-600);
+}
+
+.compact .trigger {
+  align-items: center;
+}
+
+.compact .triggerText {
+  flex-direction: row;
+}
+
+.compact .chevron {
+  margin-top: 0;
+}
+
+/* Same language as FilterBar / StatusSelect popover */
+.popover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  width: max(100%, 240px);
+  max-height: min(360px, 50vh);
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-pop);
+  padding: 6px;
+  animation: popIn 0.14s var(--ease-out);
+}
+
+.compact .popover {
+  bottom: auto;
+  top: calc(100% + 8px);
+  right: 0;
+  left: auto;
+}
+
+.group + .group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--color-divider);
+}
+
+.groupLabel {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+.option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  min-height: 40px;
+  margin: 0;
+  padding: 6px 10px;
+  border: none;
+  border-radius: var(--r-md);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.option:hover {
+  background: var(--navy-50);
+}
+
+.optionSelected {
+  background: var(--navy-50);
+}
+
+.optionSelected .optionName {
+  color: var(--navy-800);
+  font-weight: 600;
+}
+
+.optionName {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.optionRole {
+  font-size: 12px;
+  color: var(--color-neutral-600);
+}
+
+.err {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--color-danger, #b91c1c);
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}

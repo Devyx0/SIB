@@ -111,7 +111,7 @@ def test_drill_sector_to_tenant(ac, db_conn):
     building = client.get(f"/api/v1/portfolio/buildings/{seed['building_id']}")
     assert building.status_code == 200
     unit = next(u for u in building.json()["units"] if u["unit_id"] == seed["unit_id"])
-    assert unit["tenant_name"] == "Ada Portfolio"
+    assert unit["tenant_names"] == ["Ada Portfolio"]
     assert unit["occupant_count"] == 1
     assert unit["numero_appartement"] == "404"
 
@@ -141,11 +141,32 @@ def test_ended_lease_is_not_current_tenant(ac, db_conn):
     client = ac(_user(_DIRECTOR, "director"))
     building = client.get(f"/api/v1/portfolio/buildings/{seed['building_id']}")
     unit = next(u for u in building.json()["units"] if u["unit_id"] == seed["unit_id"])
-    assert unit["tenant_name"] is None
+    assert unit["tenant_names"] == []
     assert unit["occupant_count"] == 0
     detail = client.get(f"/api/v1/portfolio/units/{seed['unit_id']}")
     assert detail.json()["lease"] is None
     assert detail.json()["tenants"] == []
+
+
+def _add_occupant(db_conn, lease_id: int, name: str, capacite: str = "named_on_lease") -> int:
+    with db_conn.cursor() as cur:
+        tenant_id = _nxt(cur, "tenant", "tenant_id")
+        cur.execute("INSERT INTO tenant (tenant_id, nom_complet) VALUES (%s, %s)", (tenant_id, name))
+        cur.execute(
+            "INSERT INTO tenancy_record (tenancy_id, lease_id, tenant_id, capacite) VALUES (%s, %s, %s, %s)",
+            (_nxt(cur, "tenancy_record", "tenancy_id"), lease_id, tenant_id, capacite),
+        )
+    return tenant_id
+
+
+def test_unit_row_lists_every_occupant(ac, db_conn):
+    seed = _seed(db_conn)
+    _add_occupant(db_conn, seed["lease_id"], "Bob Roommate", "took_over")
+    building = ac(_user(_DIRECTOR, "director")).get(f"/api/v1/portfolio/buildings/{seed['building_id']}")
+    unit = next(u for u in building.json()["units"] if u["unit_id"] == seed["unit_id"])
+    # Lease holder first, then whoever took over.
+    assert unit["tenant_names"] == ["Ada Portfolio", "Bob Roommate"]
+    assert unit["occupant_count"] == 2
 
 
 def test_missing_unit_404(ac):
@@ -216,3 +237,120 @@ def test_tenant_turnover_404_for_tenant_not_on_unit(ac, db_conn):
 def test_tenant_turnover_403_technician(ac):
     r = ac(_user(_TECH, "technician")).get("/api/v1/portfolio/units/1/tenants/1/turnover")
     assert r.status_code == 403
+
+
+# ── Search ────────────────────────────────────────────────────────────────────
+
+def _set_fiche(db_conn, building_id: int, label: str, value: str) -> None:
+    db_conn.execute(
+        """
+        UPDATE building
+        SET raw_fiche_technique = COALESCE(
+                CASE WHEN jsonb_typeof(raw_fiche_technique) = 'object' THEN raw_fiche_technique END,
+                '{}'::jsonb) || jsonb_build_object(%s::text, %s::text)
+        WHERE building_id = %s
+        """,
+        (label, value, building_id),
+    )
+
+
+def test_search_finds_paint_fact_by_address_and_label(ac, db_conn):
+    seed = _seed(db_conn)
+    db_conn.execute("UPDATE building SET adresse = '77 rue Zébulon' WHERE building_id = %s",
+                    (seed["building_id"],))
+    _set_fiche(db_conn, seed["building_id"], "Code de peinture", "SW 7005 Pure White")
+    client = ac(_user(_DIRECTOR, "director"))
+
+    # Accents and language don't matter: "paint" → peinture, "zebulon" → Zébulon.
+    body = client.get("/api/v1/portfolio/search", params={"q": "paint zebulon"}).json()
+    fact = next(f for f in body["facts"] if f["label"] == "Code de peinture")
+    assert fact == {
+        "building_id": seed["building_id"], "building_adresse": "77 rue Zébulon",
+        "web_building_name": fact["web_building_name"], "label": "Code de peinture",
+        "value": "SW 7005 Pure White", "source": "fiche",
+    }
+    # Every word must match: a word that matches nothing empties the facts.
+    body = client.get("/api/v1/portfolio/search", params={"q": "peinture zebulon xyzzy"}).json()
+    assert body["facts"] == []
+
+
+def test_search_finds_unit_and_current_tenant(ac, db_conn):
+    seed = _seed(db_conn)
+    client = ac(_user(_DIRECTOR, "director"))
+    body = client.get("/api/v1/portfolio/search", params={"q": "ada portfolio"}).json()
+    assert any(t["tenant_id"] == seed["tenant_id"] and t["unit_id"] == seed["unit_id"]
+               for t in body["tenants"])
+    assert any(u["unit_id"] == seed["unit_id"] for u in body["units"])
+    # A tenant whose lease ended is no longer found.
+    db_conn.execute("UPDATE lease SET fin_bail = '2020-12-31', debut_bail = '2020-01-01' WHERE lease_id = %s",
+                    (seed["lease_id"],))
+    body = client.get("/api/v1/portfolio/search", params={"q": "ada portfolio"}).json()
+    assert all(t["tenant_id"] != seed["tenant_id"] for t in body["tenants"])
+
+
+def test_search_short_query_returns_nothing(ac):
+    body = ac(_user(_DIRECTOR, "director")).get("/api/v1/portfolio/search", params={"q": "a"}).json()
+    assert body == {"q": "a", "units": [], "buildings": [], "projects": [], "tenants": [], "facts": []}
+
+
+def test_search_scoped_to_coordinator_sectors(ac, db_conn):
+    seed = _seed(db_conn)
+    other = db_conn.execute(
+        "SELECT sector_id FROM sector WHERE sector_id <> %s ORDER BY sector_id LIMIT 1",
+        (seed["sector_id"],),
+    ).fetchone()
+    if other is None:
+        pytest.skip("need two sectors")
+    db_conn.execute("DELETE FROM employee_building_assignment WHERE employee_id = %s", (_COORD,))
+    db_conn.execute("UPDATE employee SET sector_id = %s WHERE employee_id = %s", (other["sector_id"], _COORD))
+    body = ac(_user(_COORD, "coordinator")).get(
+        "/api/v1/portfolio/search", params={"q": "ada portfolio"}).json()
+    assert all(u["unit_id"] != seed["unit_id"] for u in body["units"])
+    assert all(t["tenant_id"] != seed["tenant_id"] for t in body["tenants"])
+
+
+# ── Filtered unit list ────────────────────────────────────────────────────────
+
+def test_units_list_vacancy_matches_sector_totals(ac, db_conn):
+    seed = _seed(db_conn)
+    client = ac(_user(_DIRECTOR, "director"))
+    sector = next(s for s in client.get("/api/v1/portfolio/sectors").json()
+                  if s["sector_id"] == seed["sector_id"])
+    vacant = client.get("/api/v1/portfolio/units",
+                        params={"sector_id": seed["sector_id"], "occupancy": "vacant"}).json()
+    assert vacant["total"] == sector["unit_count"] - sector["occupied_unit_count"]
+    assert vacant["vacant_total"] == vacant["total"]
+    assert all(u["occupant_count"] == 0 for u in vacant["items"])
+
+    occupied = client.get("/api/v1/portfolio/units",
+                          params={"building_id": seed["building_id"], "occupancy": "occupied"}).json()
+    row = next(u for u in occupied["items"] if u["unit_id"] == seed["unit_id"])
+    assert row["tenant_names"] == ["Ada Portfolio"]
+    assert row["fin_bail"] == "2027-06-30"
+    # The vacant count ignores the occupancy filter, so the chip keeps its number.
+    assert occupied["vacant_total"] == client.get(
+        "/api/v1/portfolio/units", params={"building_id": seed["building_id"]}).json()["vacant_total"]
+
+
+def test_units_list_grandeur_and_lease_end_filters(ac, db_conn):
+    seed = _seed(db_conn)
+    client = ac(_user(_DIRECTOR, "director"))
+    page = client.get("/api/v1/portfolio/units",
+                      params={"building_id": seed["building_id"], "grandeur": "3 1/2"}).json()
+    assert "3 1/2" in page["grandeur_options"]
+    assert all(u["grandeur"] == "3 1/2" for u in page["items"])
+    assert any(u["unit_id"] == seed["unit_id"] for u in page["items"])
+
+    db_conn.execute("UPDATE lease SET fin_bail = CURRENT_DATE + 20 WHERE lease_id = %s", (seed["lease_id"],))
+    soon = client.get("/api/v1/portfolio/units",
+                      params={"building_id": seed["building_id"], "lease_ending_within_days": 30}).json()
+    assert seed["unit_id"] in [u["unit_id"] for u in soon["items"]]
+    assert all(u["fin_bail"] is not None for u in soon["items"])
+
+
+def test_units_list_pages(ac, db_conn):
+    client = ac(_user(_DIRECTOR, "director"))
+    first = client.get("/api/v1/portfolio/units", params={"page_size": 5}).json()
+    second = client.get("/api/v1/portfolio/units", params={"page_size": 5, "page": 2}).json()
+    assert len(first["items"]) == 5 and first["total"] > 5
+    assert not {u["unit_id"] for u in first["items"]} & {u["unit_id"] for u in second["items"]}

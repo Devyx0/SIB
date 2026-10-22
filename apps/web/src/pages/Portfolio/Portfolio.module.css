@@ -1,6 +1,10 @@
+/* flex-shrink: 0 — the app's main area is a column flexbox that scrolls; the
+   page must grow with its content, not be squeezed to the screen height
+   (which shrank long tables like Tous les logements to a tiny inner scroller). */
 .page {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   min-height: 100%;
   padding: 24px 28px 36px;
 }
@@ -56,15 +60,227 @@
   overflow-wrap: anywhere;
 }
 
+/* Phone: « ‹ parent » + home instead of the full trail (see Breadcrumbs). */
+.crumbsCompact {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .crumbs { display: none; }
+
+  .crumbsCompact {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 12px;
+  }
+
+  /* The page's « + » button, right-aligned on the back / home row. */
+  .crumbsAction {
+    margin-left: auto;
+    flex: none;
+  }
+
+  .crumbsAction .btn { min-height: 44px; white-space: nowrap; }
+
+  .backLink,
+  .homeLink {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--r-md);
+    background: var(--color-surface);
+    color: var(--navy-800);
+    text-decoration: none;
+  }
+
+  /* Just as wide as its label (long names still shorten with « … »). */
+  .backLink {
+    flex: 0 1 auto;
+    min-width: 0;
+    gap: 4px;
+    padding: 0 12px 0 6px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .backLabel {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .homeLink {
+    flex: none;
+    justify-content: center;
+    width: 40px;
+  }
+
+  .backLink:active,
+  .homeLink:active {
+    background: var(--navy-50);
+  }
+
+  .backLink:focus-visible,
+  .homeLink:focus-visible {
+    outline: none;
+    box-shadow: var(--ring);
+  }
+}
+
 /* ── Level header ───────────────────────────────────────────────────────── */
 
 .header {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px 20px;
+  gap: 12px 24px;
   margin-bottom: 22px;
+}
+
+.header > div:first-child {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+/* Right column, pinned top and the same width on every level: the portfolio
+   search, then the page's buttons under it, right-aligned. Top-pinned so a
+   subtitle or extra chips on the left never push it down. */
+/* What the level holds: icon facts in a row, split by thin dividers. */
+.levelFacts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 0;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.factItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  font-size: 15px;
+  color: var(--color-neutral-800);
+  white-space: nowrap;
+}
+
+.factItem:first-child { padding-left: 0; }
+
+.factItem + .factItem { border-left: 1px solid var(--color-border); }
+
+.factIcon {
+  display: inline-flex;
+  color: var(--color-neutral-700);
+}
+
+.factLink {
+  color: var(--navy-700);
+  text-decoration: underline;
+  text-decoration-color: var(--navy-300);
+  text-underline-offset: 3px;
+}
+
+.factLink:hover { text-decoration-color: currentColor; }
+
+.factLink:focus-visible {
+  outline: none;
+  border-radius: var(--r-sm);
+  box-shadow: var(--ring);
+}
+
+@media (max-width: 639px) {
+  /* Phone: facts wrap freely, no dividers (they would dangle at line ends). */
+  .levelFacts { gap: 8px 18px; }
+  .factItem { padding: 0; font-size: 14.5px; }
+  .factItem + .factItem { border-left: none; }
+  .factIcon { flex: none; }
+}
+
+/* Portfolio home: the search row lines up with the « Secteurs » title
+   (skips the eyebrow above it, centred on the title's line). */
+.headerHome .headerSide {
+  margin-top: 24px;
+}
+
+@media (max-width: 1023px) {
+  .headerHome .headerSide { margin-top: 20px; }
+}
+
+@media (max-width: 639px) {
+  .headerHome .headerSide { margin-top: 0; }
+}
+
+/* Unit page (desktop): its button sits under the heading. */
+.headerBelow {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+/* Stacked, the title block takes only its own height. */
+.headerBelow > div:first-child {
+  flex: none;
+}
+
+/* Toolbar above a list: search, then the page's buttons, then filters. */
+.unitTools .headerActions {
+  justify-content: flex-start;
+}
+
+.headerSide {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Portfolio home: the portfolio-wide search on one row, left of the button. */
+.headerSideSearch {
+  flex: 0 1 640px;
+  flex-direction: row;
+  align-items: center;
+}
+
+.headerSearch {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@media (max-width: 1023px) {
+  .headerSideSearch { flex-basis: 480px; }
+}
+
+@media (max-width: 639px) {
+  .headerSide { flex-basis: 100%; }
+  /* Search and its button share one row. */
+  .headerSideSearch { flex-wrap: nowrap; gap: 8px; }
+  .headerSearch { flex: 1 1 auto; min-width: 0; }
+  .headerSideSearch .headerActions > * { white-space: nowrap; }
+  .headerSide .headerActions { justify-content: flex-start; }
+
+  /* Phone: the header's buttons sit beside the title, never on a row of their own. */
+  .headerBelow { flex-direction: row; flex-wrap: nowrap; align-items: flex-start; }
+  .headerBelow > div:first-child { flex: 1 1 0; min-width: 0; }
+  .headerBelow .headerSide { flex: none; }
+
+  /* A single header button (the unit's pencil) sits beside the title
+     instead of taking a row of its own. */
+  .header:has(.headerSide:not(.headerSideSearch) .headerActions > :only-child) {
+    flex-wrap: nowrap;
+  }
+  .header:has(.headerSide:not(.headerSideSearch) .headerActions > :only-child) > div:first-child {
+    flex: 1 1 0;
+  }
+  .header:has(.headerSide:not(.headerSideSearch) .headerActions > :only-child) .headerSide {
+    flex: none;
+  }
 }
 
 .eyebrow {
@@ -145,6 +361,31 @@
 
 .search:hover { border-color: var(--color-neutral-400); }
 
+.filterBox {
+  position: relative;
+  display: flex;
+  flex: 0 1 400px;
+  min-width: 0;
+}
+
+.filterBox > .search {
+  flex: 1;
+  padding-left: 34px;
+}
+
+.filterIcon {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  transform: translateY(-50%);
+  color: var(--color-neutral-500);
+  pointer-events: none;
+}
+
+@media (max-width: 639px) {
+  .filterBox { flex-basis: 100%; }
+}
+
 .search:focus {
   outline: none;
   border-color: var(--navy-800);
@@ -186,6 +427,17 @@ a.card:focus-visible {
   outline: none;
   border-color: var(--navy-800);
   box-shadow: var(--ring);
+}
+
+/* Project number, bold and larger, above the project name. */
+.cardTop {
+  margin: 0;
+  padding-right: 64px; /* clear of the eye / pencil tools */
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--navy-800);
+  font-variant-numeric: tabular-nums;
 }
 
 .cardTitle {
@@ -255,6 +507,252 @@ a.card:hover .arrow {
   border-color: var(--color-divider);
 }
 
+/* A card whose title is the link: the link's ::after covers the card, and
+   the view / edit tools sit above it in the corner. */
+.itemCard:hover {
+  border-color: var(--navy-300);
+  box-shadow: var(--sh-raised);
+}
+
+.itemCard .cardTitle { padding-right: 64px; }
+
+.cardLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.cardLink::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.cardLink:focus-visible { outline: none; }
+.cardLink:focus-visible::after { box-shadow: var(--ring); }
+
+.cardTools {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  display: flex;
+  gap: 2px;
+}
+
+.toolBtn {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--color-neutral-500);
+  cursor: pointer;
+}
+
+.toolBtn:hover {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--navy-800);
+}
+
+.toolBtn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* ── Project cards (sector page) ─────────────────────────────────────────── */
+
+.projectGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+/* Four per row on wide screens, then three, two, one. */
+@media (max-width: 1499px) {
+  .projectGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 1199px) {
+  .projectGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 899px) {
+  .projectGrid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.projectCard {
+  gap: 4px;
+  padding: 16px 20px 12px;
+}
+
+.projectNo {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--navy-800);
+  font-variant-numeric: tabular-nums;
+}
+
+.projectCard .cardTitle {
+  padding-right: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.projectCard .cardLink { font-weight: inherit; }
+
+/* Long multi-street addresses stop at two lines. */
+.projectAddr {
+  font-size: 13.5px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Count on the left, edit and open on the right, under a divider. */
+.projectFoot {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-divider);
+}
+
+/* At least 12px between the text and the footer, more when a neighbour is taller. */
+.projectCard > .projectAddr,
+.projectCard > .cardTitle:last-of-type { margin-bottom: 8px; }
+
+.projectCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  font-size: 14px;
+  color: var(--color-neutral-700);
+  pointer-events: none;
+}
+
+.projectCount svg { color: var(--color-neutral-700); }
+
+.projectFoot .toolBtn {
+  width: 40px;
+  height: 40px;
+  color: var(--color-neutral-700);
+}
+
+.itemCard:hover .projectFoot a.toolBtn { color: var(--navy-800); }
+
+/* Sector page toolbar: count filter, sort and grid / list on the right. */
+.listControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.viewToggle {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.viewToggle button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 38px;
+  border: none;
+  background: transparent;
+  color: var(--color-neutral-600);
+  cursor: pointer;
+}
+
+.viewToggle button + button { border-left: 1px solid var(--color-border); }
+.viewToggle button:hover { color: var(--navy-800); background: var(--navy-50); }
+.viewToggle button[aria-pressed='true'] { background: var(--navy-100); color: var(--navy-800); }
+.viewToggle button:focus-visible { outline: none; box-shadow: inset var(--ring); }
+
+.rowLink {
+  font-weight: 600;
+  color: var(--navy-800);
+  text-decoration: none;
+}
+
+.rowLink:hover { text-decoration: underline; }
+
+.addrCell {
+  color: var(--color-neutral-600);
+}
+
+@media (max-width: 639px) {
+  /* Both dropdowns share one row. */
+  .listControls { margin-left: 0; width: 100%; flex-wrap: nowrap; }
+  .listControls > * { flex: 1 1 0; min-width: 0; }
+  .listControls .select { width: 100%; min-width: 0; }
+}
+
+.listCount {
+  margin: 14px 0 0;
+  font-size: 13.5px;
+  color: var(--color-neutral-600);
+}
+
+.rowActions {
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.btnPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-color: var(--navy-800);
+  background: var(--navy-800);
+  color: #fff;
+}
+
+/* `.btn.btnPrimary` beats `.btn` (declared further down): on hover the
+   label and the + icon turn white with the navy fill. */
+.btn.btnPrimary {
+  border-color: var(--navy-800);
+  background: var(--navy-800);
+  color: #fff;
+}
+
+.btn.btnPrimary:hover {
+  background: var(--navy-700);
+  border-color: var(--navy-700);
+  color: #fff;
+}
+
+.btnIcon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 /* ── Sectors overview ───────────────────────────────────────────────────── */
 
 .totals {
@@ -268,8 +766,18 @@ a.card:hover .arrow {
 }
 
 .totals > div {
-  padding: 14px 18px;
+  position: relative;
+  padding: 18px 20px 18px 66px;
   min-width: 0;
+}
+
+/* Icon on the left of each figure, spanning label and value. */
+.totalIcon {
+  position: absolute;
+  top: 18px;
+  left: 22px;
+  display: inline-flex;
+  color: var(--navy-800);
 }
 
 .totals > div + div {
@@ -286,10 +794,38 @@ a.card:hover .arrow {
 
 .totals dd {
   margin: 4px 0 0;
-  font-size: 24px;
-  font-weight: 600;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--color-text);
   font-variant-numeric: tabular-nums;
+}
+
+/* « 97 % » with « 119 vacants » on the same line. */
+.occLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.occLine .totalsNote {
+  font-size: 13px;
+}
+
+.occBar {
+  display: block;
+  height: 4px;
+  margin: 8px 0 6px;
+  border-radius: 999px;
+  background: var(--navy-100);
+  overflow: hidden;
+}
+
+.occBar > span {
+  display: block;
+  height: 100%;
+  background: var(--navy-700);
 }
 
 .totalsNote {
@@ -297,25 +833,68 @@ a.card:hover .arrow {
   color: var(--color-neutral-600);
 }
 
+.allSectorsTitle {
+  margin: 8px 0 14px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+
+.sectionCount {
+  font-weight: 600;
+  color: var(--color-neutral-600);
+}
+
 .sectorGrid {
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+/* Three per row on desktop, two on small laptops, one on tablets and phones
+   (the sidebar still takes room on tablets, so two would be too narrow). */
+@media (max-width: 1199px) {
+  .sectorGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 899px) {
+  .sectorGrid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Tablets and small laptops: the five totals as 3 + 2 (occupancy wider), so
+   « 96 % · 57 vacants » never breaks. */
+@media (min-width: 640px) and (max-width: 1199px) {
+  .totals { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .totals > div:nth-child(4) { border-left: none; }
+  .totals > div:nth-child(n + 4) { border-top: 1px solid var(--color-divider); }
+  .totals > div:last-child { grid-column: span 2; }
+}
+
+/* Sector card: name and chevron, a divider, three figures, a divider, projects. */
+.sectorCard {
+  gap: 14px;
+  padding: 18px 20px 20px;
+}
+
+.sectorHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--color-divider);
 }
 
-/* Navy top rule and a larger navy name set the sector apart from its stats. */
-.sectorGrid .card {
-  gap: 10px;
-  padding: 14px 16px;
-  border-top: 3px solid var(--navy-800);
+.sectorHead .arrow {
+  position: static;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  color: var(--navy-800);
 }
 
-.sectorGrid a.card:hover {
-  border-top-color: var(--navy-800);
-}
-
-.sectorGrid .cardTitle {
-  padding-right: 20px;
-  font-size: 18px;
+.sectorCard .cardTitle {
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--navy-800);
@@ -325,8 +904,7 @@ a.card:hover .arrow {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 0;
-  padding: 8px 0;
-  border-top: 1px solid var(--color-divider);
+  padding: 0 0 14px;
   border-bottom: 1px solid var(--color-divider);
 }
 
@@ -337,7 +915,7 @@ a.card:hover .arrow {
 }
 
 .miniStats > div + div {
-  padding-left: 12px;
+  padding-left: 16px;
   border-left: 1px solid var(--color-divider);
 }
 
@@ -345,14 +923,15 @@ a.card:hover .arrow {
 .miniStats dd {
   order: -1;
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 19px;
+  font-weight: 700;
   color: var(--color-text);
   font-variant-numeric: tabular-nums;
 }
 
 .miniStats dt {
-  font-size: 12px;
+  margin-top: 2px;
+  font-size: 14px;
   color: var(--color-neutral-600);
 }
 
@@ -360,18 +939,19 @@ a.card:hover .arrow {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: auto;
+  /* Straight under the stats, so « Principaux projets » lines up across cards. */
+  margin-top: 0;
 }
 
 .topLabel {
-  font-size: 12px;
-  color: var(--color-neutral-600);
+  font-size: 13.5px;
+  color: var(--color-neutral-700);
 }
 
 .tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .tag {
@@ -379,22 +959,27 @@ a.card:hover .arrow {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
-  padding: 2px 8px;
-  border-radius: var(--r-sm);
+  padding: 4px 10px;
+  border-radius: var(--r-md);
   background: var(--color-bg-alt);
-  border: 1px solid var(--color-divider);
+  border: 1px solid var(--color-border);
   color: var(--color-neutral-800);
 }
 
 .tagMore {
+  background: var(--color-surface);
   color: var(--color-neutral-600);
 }
 
 /* ── Unit table ─────────────────────────────────────────────────────────── */
 
+/* position: relative anchors absolutely-positioned bits inside (the .srOnly
+   header label) so they can't escape the sideways scroller and widen the
+   whole page on phones. */
 .tableWrap {
+  position: relative;
   overflow-x: auto;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -465,12 +1050,118 @@ a.card:hover .arrow {
   font-style: italic;
 }
 
+/* Several tenants in a table cell: one per line, lettered A, B, C. */
+.tenantNames {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tenantNames li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.tenantLetter {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-sm);
+  background: var(--navy-50);
+  border: 1px solid var(--navy-100);
+  color: var(--navy-800);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
+.vacantBadge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--color-warning-t);
+  color: var(--color-warning-ink);
+}
+
+/* Lease on the left, building paint on the right when there is room. */
+.leaseGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (min-width: 900px) {
+  .leaseGrid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* ── Lease card: months left up front, then the timeline ───────────── */
+
+.leaseSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.leaseBig {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+
+.leaseSub {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--color-neutral-600);
+}
+
+.leaseIcon {
+  flex: none;
+  color: var(--navy-800);
+}
+
+.leaseDates {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0 0;
+}
+
+.leaseDates dt {
+  font-size: 13px;
+  color: var(--color-neutral-600);
+}
+
+.leaseDates dd {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
 /* ── Unit detail ────────────────────────────────────────────────────────── */
 
+/* Unit page: tenants first, then the lease and building paint — stacked, full width. */
 .unitLayout {
   display: grid;
-  grid-template-columns: minmax(240px, 320px) 1fr;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
   align-items: start;
 }
 
@@ -491,9 +1182,11 @@ a.card:hover .arrow {
   color: var(--color-neutral-700);
 }
 
+/* Label column capped so a long label (e.g. a paint zone · surface) can't
+   squeeze the value into a one-letter column. */
 .facts {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: fit-content(45%) minmax(0, 1fr);
   gap: 8px 14px;
   margin: 0;
   font-size: 13.5px;
@@ -511,12 +1204,8 @@ a.card:hover .arrow {
   white-space: pre-line;
 }
 
-.progress {
-  margin-top: 14px;
-}
-
 .progressTrack {
-  height: 6px;
+  height: 8px;
   border-radius: 999px;
   background: var(--navy-100);
   overflow: hidden;
@@ -525,12 +1214,6 @@ a.card:hover .arrow {
 .progressFill {
   height: 100%;
   background: var(--navy-600);
-}
-
-.progressLabel {
-  margin: 6px 0 0;
-  font-size: 12.5px;
-  color: var(--color-neutral-600);
 }
 
 /* One white panel, one row per tenant. The whole row opens the turnover
@@ -550,10 +1233,10 @@ a.card:hover .arrow {
 .tenantRow {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1.6fr) auto;
   align-items: center;
-  gap: 4px 16px;
-  padding: 12px 16px;
+  gap: 6px 16px;
+  padding: 14px 18px;
   transition: background var(--dur) var(--ease-out);
 }
 
@@ -565,16 +1248,31 @@ a.card:hover .arrow {
   background: var(--navy-50);
 }
 
+/* Initials disc: tells the rows apart at a glance. */
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--navy-100);
+  color: var(--navy-800);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .tenantName {
   display: flex;
   flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
 
 .tenantOpen {
   all: unset;
   align-self: flex-start;
-  font-size: 14.5px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--color-text);
   cursor: pointer;
@@ -603,7 +1301,7 @@ a.card:hover .arrow {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   padding: 1px 8px;
   border-radius: 999px;
@@ -614,21 +1312,78 @@ a.card:hover .arrow {
 }
 
 .tenantRole {
-  font-size: 12.5px;
+  font-size: 13.5px;
   color: var(--color-neutral-600);
 }
 
-.contact {
+/* Phone and email side by side, each behind its icon. */
+.tenantContacts {
+  display: grid;
+  grid-template-columns: minmax(max-content, 0.8fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: 6px 24px;
+  min-width: 0;
+}
+
+.contact,
+.contactNone {
   position: relative;
   z-index: 1;
   justify-self: start;
-  font-size: 13.5px;
-  color: var(--navy-700);
-  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  min-width: 0;
+  font-size: 15px;
   overflow-wrap: anywhere;
 }
 
+.contact {
+  color: var(--navy-700);
+  font-weight: 500;
+}
+
+/* A phone number never breaks across lines. */
+.contact[href^='tel:'] {
+  white-space: nowrap;
+  text-decoration: none;
+}
+
 .contact:hover { text-decoration: underline; }
+
+.contact:focus-visible {
+  outline: none;
+  border-radius: var(--r-sm);
+  box-shadow: var(--ring);
+}
+
+.contactNone {
+  color: var(--color-neutral-600);
+  font-size: 14px;
+}
+
+.contactIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--navy-50);
+  color: var(--navy-700);
+  border: 1px solid var(--navy-100);
+}
+
+.contactNone .contactIcon {
+  background: var(--color-bg-alt);
+  color: var(--color-neutral-400);
+  border-color: var(--color-divider);
+}
+
+.tenantRow:hover .contactIcon {
+  background: var(--color-surface);
+}
 
 .muted {
   font-size: 13.5px;
@@ -724,8 +1479,8 @@ a.card:hover .arrow {
 .dialog {
   display: flex;
   flex-direction: column;
-  width: min(640px, 100%);
-  max-height: min(760px, calc(100vh - 48px));
+  width: min(880px, 100%);
+  max-height: min(820px, calc(100dvh - 48px));
   overflow: hidden;
   background: var(--color-bg-alt);
   border: 1px solid var(--color-border);
@@ -740,6 +1495,10 @@ a.card:hover .arrow {
 
 @keyframes popIn {
   from { opacity: 0; transform: translateY(8px) scale(0.98); }
+}
+
+@keyframes sheetIn {
+  from { transform: translateY(24px); opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -762,11 +1521,19 @@ a.card:hover .arrow {
   overflow-wrap: anywhere;
 }
 
+.dialogRole {
+  margin: 2px 0 0;
+  font-size: 14px;
+  color: var(--color-neutral-600);
+}
+
+/* Phone and email on their own line under the role, each behind its icon. */
 .dialogContacts {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
-  margin-top: 6px;
+  align-items: center;
+  gap: 4px 24px;
+  margin-top: 10px;
 }
 
 .close {
@@ -867,24 +1634,84 @@ a.card:hover .arrow {
 }
 
 .sideTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--color-neutral-700);
 }
 
-/* Narrow columns: label above value instead of side by side. */
-.side .facts {
-  grid-template-columns: 1fr;
-  gap: 1px;
+/* Label and value side by side; the date carries its time ("· 10:00"). */
+.side .sideFacts {
+  grid-template-columns: minmax(0, 9.5em) minmax(0, 1fr);
+  gap: 6px 12px;
+  font-size: 13px;
 }
 
-.side .facts dt {
-  margin-top: 7px;
+.side .sideFacts dt {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+/* Which side of the move this tenant is on. */
+.mineTag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--navy-100);
+  color: var(--navy-800);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Yes / No answers as pills: a column of them scans at a glance. */
+.yn {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 9px;
+  border-radius: 999px;
   font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
-.side .facts dt:first-child { margin-top: 0; }
+.ynYes {
+  background: var(--color-success-t);
+  color: var(--color-success);
+}
+
+.ynNo {
+  background: var(--color-bg-alt);
+  color: var(--color-neutral-700);
+  border: 1px solid var(--color-divider);
+}
+
+/* Logistics, appliances, settlement: side by side when the window is wide. */
+.extras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px 28px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-divider);
+}
+
+.extras .extra {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.extras .facts {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 7px 12px;
+  font-size: 13px;
+}
+
+.extraWide { grid-column: 1 / -1; }
 
 .sideName {
   margin: 0 0 8px;
@@ -914,12 +1741,31 @@ a.card:hover .arrow {
 }
 
 .others summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  min-height: 40px;
+  padding: 6px 12px 6px 8px;
+  border-radius: var(--r-md);
+  list-style: none;
   cursor: pointer;
   font-size: 13.5px;
   font-weight: 600;
   color: var(--navy-700);
-  padding: 4px 0;
+  transition: background var(--dur) var(--ease-out);
 }
+
+.others summary::-webkit-details-marker { display: none; }
+.others summary:hover { background: var(--navy-50); }
+.others summary:focus-visible { outline: none; box-shadow: var(--ring); }
+
+.othersChevron {
+  flex: none;
+  transition: transform var(--dur) var(--ease-out);
+}
+
+.others[open] .othersChevron { transform: rotate(90deg); }
 
 .others[open] summary { margin-bottom: 10px; }
 
@@ -929,10 +1775,293 @@ a.card:hover .arrow {
   gap: 12px;
 }
 
+.unitPaint {
+  /* Its own card now (beside the lease), so no divider above it. */
+  display: block;
+}
+
+/* Paint codes grouped by zone; one row per surface: what is painted on the
+   left, the product (and maker under it) on the right. */
+.paintGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.paintGroup + .paintGroup {
+  padding-top: 14px;
+  border-top: 1px solid var(--color-divider);
+}
+
+.paintZone {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--navy-800);
+}
+
+.paintHere {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--navy-50);
+  border: 1px solid var(--navy-100);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--navy-700);
+}
+
+.paintList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.paintItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 2px 16px;
+  padding: 7px 0;
+}
+
+.paintItem + .paintItem {
+  border-top: 1px dashed var(--color-divider);
+}
+
+.paintSurface {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.paintProduct {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.paintCode {
+  font-size: 14px;
+  color: var(--color-neutral-800);
+  overflow-wrap: anywhere;
+}
+
+.paintMaker {
+  font-size: 12.5px;
+  color: var(--color-neutral-600);
+}
+
+.panelLink {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--navy-700);
+  text-decoration: none;
+}
+
+.panelLink:hover { text-decoration: underline; }
+
+/* ── Unit list filters ──────────────────────────────────────────────────── */
+
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-card);
+}
+
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+}
+
+.filterField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.filterField .search { flex: none; width: 260px; }
+
+/* Search + 4 dropdowns share the row evenly (search a bit wider), so they stay
+   on one line at laptop widths instead of wrapping by content width. */
+.filterGrid {
+  display: grid;
+  /* Recherche · Secteur · Projet · Grandeur · Fin de bail (short values get less). */
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.9fr);
+  gap: 10px 14px;
+  align-items: end;
+}
+
+.filterGrid .filterField { min-width: 0; }
+
+.filterGrid .filterField .search,
+.filterGrid .select {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Narrower windows: 3 + 2 rather than 4 + a lone one; phones: one per row. */
+@media (max-width: 1279px) {
+  .filterGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 639px) {
+  .filterGrid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.filterLabel {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+.select {
+  min-width: 160px;
+  min-height: 38px;
+  font-size: 14px;
+}
+
+.selectActive {
+  border-color: var(--navy-700);
+  background: var(--navy-50);
+}
+
+.chipGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filterChip {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-neutral-800);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.filterChip:hover { border-color: var(--color-neutral-400); }
+
+.filterChip:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.filterChipActive,
+.filterChipActive:hover {
+  background: var(--navy-800);
+  border-color: var(--navy-800);
+  color: #fff;
+}
+
+.filterCount {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-neutral-700);
+  font-variant-numeric: tabular-nums;
+}
+
+.linkBtn {
+  all: unset;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--navy-700);
+  cursor: pointer;
+}
+
+.linkBtn:hover { text-decoration: underline; }
+.linkBtn:focus-visible { box-shadow: var(--ring); border-radius: var(--r-sm); }
+
+.refreshing { opacity: 0.6; transition: opacity var(--dur) var(--ease-out); }
+
+.cellSub {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--color-neutral-600);
+}
+
+.table a {
+  color: var(--navy-700);
+  text-decoration: none;
+}
+
+.table a:hover { text-decoration: underline; }
+
+/* A link to the filtered unit list (« 5 vacants »), inside a card or totals. */
+.vacantLink {
+  position: relative;
+  z-index: 1;
+  color: var(--navy-700);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.vacantLink:hover { text-decoration: underline; }
+
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Buttons in a header line up at one height. */
+.headerActions > * {
+  min-height: 38px;
+}
+
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.unitTools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
+/* Building page: the occupancy filters sit at the right end of the toolbar. */
+.unitTools .chipGroup { margin-left: auto; }
+
+@media (max-width: 639px) {
+  .unitTools .chipGroup { margin-left: 0; }
+  /* « Voir les logements » above the search on phones. */
+  .unitTools .headerActions { order: -1; }
+}
+
 @media (max-width: 1023px) {
   .page { padding: 20px 16px 28px; }
-  .unitLayout { grid-template-columns: 1fr; }
-  .totals > div { padding: 12px 14px; }
+
+  .totals > div { padding: 14px 14px 14px 50px; }
+  .totalIcon { top: 14px; left: 16px; }
+  .totalIcon svg { width: 22px; height: 22px; }
   .title { font-size: 32px; }
   .totals dd { font-size: 20px; }
 }
@@ -942,18 +2071,46 @@ a.card:hover .arrow {
   .title { font-size: 28px; }
   .subtitle { font-size: 15px; }
   .search { flex: 1 1 100%; }
+  .filterField, .filterField .search, .select { width: 100%; min-width: 0; }
+  .filterCount { margin-left: 0; }
   .sides { grid-template-columns: 1fr; }
   .grid { grid-template-columns: 1fr; }
   .totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .totals > div:nth-child(odd) { border-left: none; }
   .totals > div:nth-child(n + 3) { border-top: 1px solid var(--color-divider); }
   .totals > div:last-child { grid-column: 1 / -1; }
-  .tenantRow { grid-template-columns: minmax(0, 1fr) auto; }
-  .tenantRow .contact, .tenantRow .muted { grid-column: 1; }
-  .tenantRow .muted { display: none; }
-  .rowArrow { grid-column: 2; grid-row: 1; }
-  .scrim { padding: 12px; }
-  .dialog { max-height: calc(100vh - 24px); }
+  .tenantRow { grid-template-columns: 40px minmax(0, 1fr) auto; padding: 12px 14px; column-gap: 12px; }
+  .avatar { width: 40px; height: 40px; font-size: 14px; }
+  .tenantContacts { grid-column: 2 / -1; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .contactNone { display: none; }
+  .rowArrow { grid-column: 3; grid-row: 1; }
+  .leaseDates { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .paintItem { grid-template-columns: minmax(0, 1fr); }
+  /* Phone: the turnover window rises as a sheet from the bottom edge. */
+  .scrim { padding: 0; place-items: end stretch; }
+  .dialog {
+    width: 100%;
+    max-height: 92dvh;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    border-bottom: none;
+    animation-name: sheetIn;
+  }
+  .dialogHead { padding: 14px 16px 12px; }
+  .close { width: 40px; height: 40px; }
+  .dialogBody { padding: 14px 14px calc(24px + env(safe-area-inset-bottom)); }
+  .turnover { padding: 12px; }
   /* Same street on most rows — drop it so the tenant column fits. */
   .hideNarrow { display: none; }
+  .btnText { display: none; }
+  /* Tighter cells so the unit tables fit the phone without sideways scroll. */
+  .table thead th { padding: 9px 8px; letter-spacing: 0.02em; }
+  .table tbody td { padding: 10px 8px; }
+  /* Label above value: there is no room for two columns. */
+  .facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .facts dd + dt { margin-top: 8px; }
+  /* Short lease labels (Début, Fin…) still fit beside their value. */
+  .leaseGrid .facts { grid-template-columns: fit-content(42%) minmax(0, 1fr); gap: 6px 14px; }
+  .leaseGrid .facts dd + dt { margin-top: 0; }
+  .side .sideFacts { gap: 6px 12px; }
+  .extras .facts dd + dt { margin-top: 0; }
 }

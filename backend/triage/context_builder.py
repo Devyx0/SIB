@@ -154,7 +154,7 @@ def _one(cur) -> dict | None:
 
 
 def _is_pest(request: dict) -> bool:
-    for field in ("problems", "problem_summary", "triage_summary", "animals"):
+    for field in ("problems", "problem_summary", "triage_summary"):
         if _PEST_RE.search(request.get(field) or ""):
             return True
     return False
@@ -246,18 +246,6 @@ def _fold(text: str) -> str:
 
 
 _EN_LANG = re.compile(r"anglais|english|\ben\b", re.IGNORECASE)
-_YES_PET = re.compile(r"oui|yes|chien|chat|animal|dog|cat|oiseau|poisson")
-
-
-def _declared_pets(animals: str | None) -> bool | None:
-    folded = _fold(animals or "")
-    if not folded:
-        return None
-    if _YES_PET.search(folded):
-        return True
-    if folded.startswith("non") or folded.startswith("no") or "aucun" in folded or folded in {"sans", "none"}:
-        return False
-    return True
 
 
 def _caller_on_lease(request: dict, occupants: list[dict]) -> bool | None:
@@ -294,7 +282,6 @@ def rentroll_checks(request: dict, unit: dict | None) -> dict:
             "vacant": False,
             "langue_en": False,
             "recent_move_in": False,
-            "pet_mismatch": False,
             "caller_mismatch": False,
             "required_notes": [],
         }
@@ -305,7 +292,6 @@ def rentroll_checks(request: dict, unit: dict | None) -> dict:
             "vacant": False,
             "langue_en": False,
             "recent_move_in": False,
-            "pet_mismatch": False,
             "caller_mismatch": False,
             "required_notes": [],
         }
@@ -320,13 +306,9 @@ def rentroll_checks(request: dict, unit: dict | None) -> dict:
         and debut <= ref < _plus_months(debut, 3)
     )
     langue_en = bool(_EN_LANG.search(unit.get("langue_bail") or ""))
-    pets = _declared_pets(request.get("animals"))
-    pet_mismatch = pets is True and unit.get("droit_animaux") is not True
     occupants = unit.get("occupants") or []
     on_lease = _caller_on_lease(request, occupants)
     notes: list[str] = []
-    if pet_mismatch:
-        notes.append("ÉCART ANIMAUX")
     if on_lease is False:
         notes.append("RÉQUÉRANT ABSENT")
     if recent:
@@ -341,7 +323,6 @@ def rentroll_checks(request: dict, unit: dict | None) -> dict:
         "vacant": not occupants,
         "langue_en": langue_en,
         "recent_move_in": recent,
-        "pet_mismatch": pet_mismatch,
         "caller_mismatch": on_lease is False,
         "required_notes": notes,
     }
