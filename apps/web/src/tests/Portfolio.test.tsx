@@ -328,6 +328,18 @@ describe('Portfolio', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/portfolio/batiments/100');
   });
 
+  it('shows the global search on the sectors page only', async () => {
+    wrap('/portfolio');
+    expect(screen.getByTestId('portfolio-global-search')).toBeTruthy();
+    expect(screen.getByTestId('all-units-link')).toBeTruthy();
+  });
+
+  it('has no global search on an inner page', async () => {
+    wrap('/portfolio/batiments/100');
+    expect(await screen.findAllByTestId('unit-row')).not.toHaveLength(0);
+    expect(screen.queryByTestId('portfolio-global-search')).toBeNull();
+  });
+
   it('moves through search results with the arrow keys', async () => {
     const user = userEvent.setup();
     wrap('/portfolio');
@@ -373,7 +385,7 @@ describe('Portfolio', () => {
   it('shows the building info and saves an edited fiche line', async () => {
     vi.mocked(setFicheEntry).mockReset().mockResolvedValue(undefined);
     const user = userEvent.setup();
-    wrap('/portfolio/batiments/100');
+    wrap('/portfolio/batiments/100/informations');
     const fiche = await screen.findByTestId('building-fiche');
     expect(within(fiche).getByText('Membrane avec gravier')).toBeTruthy();
     expect(within(screen.getByTestId('building-paint')).getByText('promar200 sw7017')).toBeTruthy();
@@ -393,7 +405,7 @@ describe('Portfolio', () => {
   it('shows a stale-data message when the fiche changed meanwhile', async () => {
     vi.mocked(setFicheEntry).mockReset().mockRejectedValue(Object.assign(new Error('x'), { code: 'STALE_DATA' }));
     const user = userEvent.setup();
-    wrap('/portfolio/batiments/100');
+    wrap('/portfolio/batiments/100/informations');
     const fiche = await screen.findByTestId('building-fiche');
     await user.click(within(within(fiche).getAllByTestId('fiche-row')[1]).getByTestId('edit-fiche'));
     await user.type(within(fiche).getByRole('textbox'), '!');
@@ -405,7 +417,7 @@ describe('Portfolio', () => {
     vi.mocked(createPaintSpec).mockReset().mockResolvedValue({} as never);
     vi.mocked(updateBuilding).mockReset().mockResolvedValue(undefined);
     const user = userEvent.setup();
-    wrap('/portfolio/batiments/100');
+    wrap('/portfolio/batiments/100/informations');
     const paint = await screen.findByTestId('building-paint');
     await user.click(within(paint).getByTestId('add-paint'));
     const form = within(paint).getByTestId('paint-form');
@@ -457,6 +469,22 @@ describe('Portfolio', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/portfolio/secteurs/1');
   });
 
+  it('opens a building\'s units from its title and its information from the eye', async () => {
+    wrap('/portfolio/secteurs/1/projets/10');
+    const card = (await screen.findAllByTestId('building-card'))[0];
+    expect(within(card).getByRole('heading').querySelector('a'))
+      .toHaveAttribute('href', '/portfolio/batiments/100');
+    expect(within(card).getByTestId('building-card-view'))
+      .toHaveAttribute('href', '/portfolio/batiments/100/informations');
+  });
+
+  it('shows units only on the building page, information on its own page', async () => {
+    wrap('/portfolio/batiments/100');
+    expect(await screen.findAllByTestId('unit-row')).not.toHaveLength(0);
+    expect(screen.queryByTestId('building-fiche')).toBeNull();
+    expect(screen.getByTestId('building-info-link')).toHaveAttribute('href', '/portfolio/batiments/100/informations');
+  });
+
   it('edits a unit from its row without opening it', async () => {
     vi.mocked(updateUnit).mockReset().mockResolvedValue(undefined);
     const user = userEvent.setup();
@@ -491,6 +519,6 @@ describe('Portfolio', () => {
     wrap('/portfolio/unites/1000');
     const paint = await screen.findByTestId('unit-paint');
     expect(within(paint).getByText('SW 7005')).toBeTruthy();
-    expect(within(paint).getByRole('link')).toHaveAttribute('href', '/portfolio/batiments/100#fiche-technique');
+    expect(within(paint).getByRole('link')).toHaveAttribute('href', '/portfolio/batiments/100/informations#fiche-technique');
   });
 });

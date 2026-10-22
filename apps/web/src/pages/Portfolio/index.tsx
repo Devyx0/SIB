@@ -28,15 +28,18 @@ import styles from './Portfolio.module.css';
 
 export { portfolioPath } from './shared';
 
-/** A project / building card: the title links to it; eye and pencil sit top right. */
-function ItemCard({ to, title, testId, lang, onEdit, children }: {
-  to: string; title: string; testId: string; lang: Lang; onEdit: () => void; children: React.ReactNode;
+/** A project / building card: the title links to it; eye and pencil sit top right.
+ *  `viewTo` sends the eye somewhere else (a building's information page). */
+function ItemCard({ to, viewTo, viewLabel, title, testId, lang, onEdit, children }: {
+  to: string; viewTo?: string; viewLabel?: string; title: string; testId: string; lang: Lang;
+  onEdit: () => void; children: React.ReactNode;
 }) {
   return (
     <div className={`${styles.card} ${styles.itemCard}`} data-testid={testId}>
       <div className={styles.cardTools}>
-        <Link to={to} className={styles.toolBtn} aria-label={t(lang, `Voir ${title}`, `View ${title}`)}
-              title={t(lang, 'Voir', 'View')}>
+        <Link to={viewTo ?? to} className={styles.toolBtn} data-testid={`${testId}-view`}
+              aria-label={viewLabel ? `${viewLabel} — ${title}` : t(lang, `Voir ${title}`, `View ${title}`)}
+              title={viewLabel ?? t(lang, 'Voir', 'View')}>
           <EyeIcon />
         </Link>
         <button type="button" className={styles.toolBtn} onClick={onEdit} data-testid={`${testId}-edit`}
@@ -100,9 +103,12 @@ function SectorsView({ lang }: { lang: Lang }) {
         subtitle={t(lang, 'Choisissez un secteur pour voir ses projets, bâtiments et logements.',
                           'Pick a sector to browse its projects, buildings and units.')}
         search={
-          <Link className={styles.btn} to={unitsPath()} data-testid="all-units-link">
-            {t(lang, 'Tous les logements', 'All units')}
-          </Link>
+          <div className={styles.headerTools}>
+            <PortfolioSearch lang={lang} />
+            <Link className={styles.btn} to={unitsPath()} data-testid="all-units-link">
+              {t(lang, 'Tous les logements', 'All units')}
+            </Link>
+          </div>
         }
       />
       {data && data.length > 0 && (
@@ -181,18 +187,17 @@ function SectorView({ lang }: { lang: Lang }) {
           plural(data.building_count, lang, BUILDING_FR, BUILDING_EN),
         ] : []}
         search={
-          <div className={styles.headerActions}>
+          <div className={styles.headerTools}>
             {data && data.projects.length > 6 && (
               <SearchBox value={q} onChange={setQ}
                          placeholder={t(lang, 'Rechercher un projet…', 'Search projects…')} />
             )}
-            <Link className={styles.btn} to={unitsPath({ secteur: sectorId })}>
-              {t(lang, 'Voir les logements', 'View units')}
-            </Link>
-            <Link className={styles.btn} to={unitsPath({ secteur: sectorId, occupation: 'vacant' })}>
-              {t(lang, 'Vacants', 'Vacant')}
-            </Link>
-            <AddButton label={t(lang, 'Projet', 'Project')} onClick={() => setDialog('new')} testId="add-project" />
+            <div className={styles.headerActions}>
+              <Link className={styles.btn} to={unitsPath({ secteur: sectorId })}>
+                {t(lang, 'Voir les logements', 'View units')}
+              </Link>
+              <AddButton label={t(lang, 'Projet', 'Project')} onClick={() => setDialog('new')} testId="add-project" />
+            </div>
           </div>
         }
       />
@@ -280,6 +285,8 @@ function ProjectView({ lang }: { lang: Lang }) {
         <div className={styles.grid}>
           {data.buildings.map((b) => (
             <ItemCard key={b.building_id} to={portfolioPath.building(b.building_id)}
+                      viewTo={portfolioPath.buildingInfo(b.building_id)}
+                      viewLabel={t(lang, 'Informations du bâtiment', 'Building information')}
                       title={buildingName(lang, b)} testId="building-card"
                       lang={lang} onEdit={() => setDialog({ edit: b.building_id })}>
               <p className={styles.cardSub}>
@@ -355,14 +362,20 @@ function BuildingView({ lang }: { lang: Lang }) {
           data.annee_construction ? t(lang, `Construit en ${data.annee_construction}`, `Built ${data.annee_construction}`) : null,
         ] : []}
         search={data && (
-          <div className={styles.headerActions}>
+          <div className={`${styles.headerTools} ${styles.headerToolsWide}`}>
             {data.units.length > 8 && (
               <SearchBox value={q} onChange={setQ}
                          placeholder={t(lang, 'Logement, locataire, grandeur…', 'Unit, tenant, size…')} />
             )}
-            <EditButton label={t(lang, 'Modifier le bâtiment', 'Edit building')} testId="edit-building"
-                        onClick={() => setDialog('building')} />
-            <AddButton label={t(lang, 'Logement', 'Unit')} onClick={() => setDialog('new')} testId="add-unit" />
+            <div className={styles.headerActions}>
+              <Link className={`${styles.btn} ${styles.btnIcon}`} to={portfolioPath.buildingInfo(buildingId)}
+                    data-testid="building-info-link" title={t(lang, 'Informations du bâtiment', 'Building information')}>
+                <EyeIcon /> <span className={styles.btnText}>{t(lang, 'Informations du bâtiment', 'Building information')}</span>
+              </Link>
+              <EditButton label={t(lang, 'Modifier le bâtiment', 'Edit building')} testId="edit-building"
+                          onClick={() => setDialog('building')} />
+              <AddButton label={t(lang, 'Logement', 'Unit')} onClick={() => setDialog('new')} testId="add-unit" />
+            </div>
           </div>
         )}
       />
@@ -397,9 +410,9 @@ function BuildingView({ lang }: { lang: Lang }) {
                 <th className={styles.hideNarrow}>{t(lang, 'Adresse', 'Address')}</th>
                 <th>{t(lang, 'Grandeur', 'Size')}</th>
                 <th>{t(lang, 'Locataire', 'Tenant')}</th>
-                <th className={`${styles.num} ${styles.fit}`}>{t(lang, 'Occupants', 'Occupants')}</th>
+                <th className={`${styles.num} ${styles.fit} ${styles.hideNarrow}`}>{t(lang, 'Occupants', 'Occupants')}</th>
                 <th>{t(lang, 'Bail', 'Lease')}</th>
-                <th className={styles.fit}><span className={styles.srOnly}>{t(lang, 'Actions', 'Actions')}</span></th>
+                <th className={`${styles.fit} ${styles.hideNarrow}`}><span className={styles.srOnly}>{t(lang, 'Actions', 'Actions')}</span></th>
               </tr>
             </thead>
             <tbody>
@@ -413,9 +426,9 @@ function BuildingView({ lang }: { lang: Lang }) {
                   <td>{u.tenant_names.length > 0
                     ? u.tenant_names.join(', ')
                     : <span className={styles.vacant}>{t(lang, 'Aucun locataire', 'No tenant')}</span>}</td>
-                  <td className={`${styles.num} ${styles.fit}`}>{u.occupant_count}</td>
+                  <td className={`${styles.num} ${styles.fit} ${styles.hideNarrow}`}>{u.occupant_count}</td>
                   <td className={styles.nowrap}>{u.lease_statut ?? (u.occupant_count > 0 ? t(lang, 'En cours', 'Current') : '—')}</td>
-                  <td className={`${styles.fit} ${styles.rowActions}`} onClick={(e) => e.stopPropagation()}
+                  <td className={`${styles.fit} ${styles.rowActions} ${styles.hideNarrow}`} onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}>
                     <Link to={portfolioPath.unit(u.unit_id)} className={styles.toolBtn}
                           aria-label={t(lang, `Voir le logement ${u.numero_appartement ?? ''}`, `View unit ${u.numero_appartement ?? ''}`)}
@@ -434,7 +447,6 @@ function BuildingView({ lang }: { lang: Lang }) {
           </table>
         </div>
       )}
-      {data && <BuildingInfo building={data} lang={lang} />}
       {dialog === 'building' && (
         <BuildingDialog mode="edit" buildingId={buildingId} lang={lang} onClose={() => setDialog(null)} />
       )}
@@ -449,6 +461,55 @@ function BuildingView({ lang }: { lang: Lang }) {
                       onClose={() => setDialog(null)} />
         );
       })()}
+    </>
+  );
+}
+
+// ── Level 4b: the building's information (eye icon on a building card) ──────
+
+function BuildingInfoView({ lang }: { lang: Lang }) {
+  const buildingId = Number(useParams().buildingId);
+  const [editing, setEditing] = useState(false);
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['portfolio', 'building', buildingId],
+    queryFn: () => fetchPortfolioBuilding(buildingId),
+  });
+  const name = data ? buildingName(lang, data) : '…';
+  const infoLabel = t(lang, 'Informations', 'Information');
+
+  return (
+    <>
+      <Breadcrumbs items={data ? [
+        rootCrumb(lang),
+        { label: sectorName(lang, data.territoire, data.sector_id), to: portfolioPath.sector(data.sector_id) },
+        { label: projectName(lang, data.nom_unique_projet, data.project_id), to: portfolioPath.project(data.sector_id, data.project_id) },
+        { label: name, to: portfolioPath.building(buildingId) },
+        { label: infoLabel },
+      ] : [rootCrumb(lang), { label: '…' }]} lang={lang} />
+      <Header
+        eyebrow={t(lang, 'Bâtiment', 'Building')}
+        title={name}
+        subtitle={data && buildingPlace(data)}
+        chips={data ? [
+          plural(data.unit_count, lang, UNIT_FR, UNIT_EN),
+          data.nb_etages ? t(lang, `${data.nb_etages} étages`, `${data.nb_etages} floors`) : null,
+          data.annee_construction ? t(lang, `Construit en ${data.annee_construction}`, `Built ${data.annee_construction}`) : null,
+        ] : []}
+        search={data && (
+          <div className={styles.headerActions}>
+            <Link className={styles.btn} to={portfolioPath.building(buildingId)} data-testid="building-units-link">
+              {t(lang, 'Voir les logements', 'View units')}
+            </Link>
+            <EditButton label={t(lang, 'Modifier le bâtiment', 'Edit building')} testId="edit-building"
+                        onClick={() => setEditing(true)} />
+          </div>
+        )}
+      />
+      <LevelState isLoading={isLoading} error={error} lang={lang} onRetry={refetch} rows={3} />
+      {data && <BuildingInfo building={data} lang={lang} />}
+      {editing && (
+        <BuildingDialog mode="edit" buildingId={buildingId} lang={lang} onClose={() => setEditing(false)} />
+      )}
     </>
   );
 }
@@ -499,7 +560,7 @@ function UnitPaint({ unit, lang }: { unit: PortfolioUnitDetail; lang: Lang }) {
           ))}
         </dl>
       )}
-      <Link className={styles.panelLink} to={`${portfolioPath.building(unit.building_id)}#fiche-technique`}>
+      <Link className={styles.panelLink} to={`${portfolioPath.buildingInfo(unit.building_id)}#fiche-technique`}>
         {t(lang, 'Modifier sur la fiche du bâtiment', 'Edit on the building sheet')}
       </Link>
     </div>
@@ -557,24 +618,6 @@ function UnitView({ lang }: { lang: Lang }) {
       <LevelState isLoading={isLoading} error={error} lang={lang} onRetry={refetch} rows={2} />
       {data && (
         <div className={styles.unitLayout}>
-          <section className={styles.panel} aria-labelledby="lease-title">
-            <h2 id="lease-title" className={styles.panelTitle}>{t(lang, 'Bail en cours', 'Current lease')}</h2>
-            {lease ? (
-              <>
-                <dl className={styles.facts}>
-                  <dt>{t(lang, 'Début', 'Start')}</dt><dd>{fmtDate(lease.debut_bail, lang) ?? '—'}</dd>
-                  <dt>{t(lang, 'Fin', 'End')}</dt><dd>{fmtDate(lease.fin_bail, lang) ?? '—'}</dd>
-                  {lease.statut && <><dt>{t(lang, 'Statut', 'Status')}</dt><dd>{lease.statut}</dd></>}
-                  {lease.langue_bail && <><dt>{t(lang, 'Langue', 'Language')}</dt><dd>{lease.langue_bail}</dd></>}
-                </dl>
-                <LeaseProgress lease={lease} lang={lang} />
-              </>
-            ) : (
-              <p className={styles.cardSub}>{t(lang, 'Aucun bail en cours pour ce logement.', 'No current lease for this unit.')}</p>
-            )}
-            <UnitPaint unit={data} lang={lang} />
-          </section>
-
           <section aria-labelledby="tenants-title">
             <h2 id="tenants-title" className={styles.panelTitle}>
               {t(lang, 'Locataires', 'Tenants')}
@@ -621,6 +664,24 @@ function UnitView({ lang }: { lang: Lang }) {
               </ul>
             )}
           </section>
+
+          <section className={styles.panel} aria-labelledby="lease-title">
+            <h2 id="lease-title" className={styles.panelTitle}>{t(lang, 'Bail en cours', 'Current lease')}</h2>
+            {lease ? (
+              <>
+                <dl className={styles.facts}>
+                  <dt>{t(lang, 'Début', 'Start')}</dt><dd>{fmtDate(lease.debut_bail, lang) ?? '—'}</dd>
+                  <dt>{t(lang, 'Fin', 'End')}</dt><dd>{fmtDate(lease.fin_bail, lang) ?? '—'}</dd>
+                  {lease.statut && <><dt>{t(lang, 'Statut', 'Status')}</dt><dd>{lease.statut}</dd></>}
+                  {lease.langue_bail && <><dt>{t(lang, 'Langue', 'Language')}</dt><dd>{lease.langue_bail}</dd></>}
+                </dl>
+                <LeaseProgress lease={lease} lang={lang} />
+              </>
+            ) : (
+              <p className={styles.cardSub}>{t(lang, 'Aucun bail en cours pour ce logement.', 'No current lease for this unit.')}</p>
+            )}
+            <UnitPaint unit={data} lang={lang} />
+          </section>
         </div>
       )}
 
@@ -640,13 +701,13 @@ function UnitView({ lang }: { lang: Lang }) {
 export default function Portfolio({ lang = 'fr' }: { lang?: Lang }) {
   return (
     <div className={styles.page}>
-      <PortfolioSearch lang={lang} />
       <Routes>
         <Route index element={<SectorsView lang={lang} />} />
         <Route path="logements" element={<UnitsListView lang={lang} />} />
         <Route path="secteurs/:sectorId" element={<SectorView lang={lang} />} />
         <Route path="secteurs/:sectorId/projets/:projectId" element={<ProjectView lang={lang} />} />
         <Route path="batiments/:buildingId" element={<BuildingView lang={lang} />} />
+        <Route path="batiments/:buildingId/informations" element={<BuildingInfoView lang={lang} />} />
         <Route path="unites/:unitId" element={<UnitView lang={lang} />} />
         <Route path="*" element={<Navigate to="/portfolio" replace />} />
       </Routes>

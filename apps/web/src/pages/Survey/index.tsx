@@ -46,7 +46,7 @@ function StarRating({
   const [hover, setHover] = useState<number | null>(null);
   const shown = hover ?? value ?? 0;
   return (
-    <>
+    <div className={styles.ratingRow}>
       <div className={styles.stars} role="radiogroup" aria-labelledby={labelledBy}
         onMouseLeave={() => setHover(null)}>
         {[1, 2, 3, 4, 5].map((n) => (
@@ -68,7 +68,7 @@ function StarRating({
       <span className={styles.ratingHint} aria-live="polite">
         {shown > 0 ? t(lang, RATING_LABELS[shown - 1][0], RATING_LABELS[shown - 1][1]) : ''}
       </span>
-    </>
+    </div>
   );
 }
 
@@ -150,28 +150,29 @@ export default function SurveyPage({ lang }: { lang: Lang }) {
               {[survey.technician_name, survey.building_address].filter(Boolean).join(' · ') || '—'}
             </p>
 
-            <div className={styles.question}>
-              <span className={styles.questionLabel}>
-                {t(lang, 'La personne était-elle polie?', 'Was the person polite?')}
-              </span>
-              <YesNo lang={lang} value={polite} onChange={setPolite} />
-            </div>
-
-            <div className={styles.question} style={{ marginTop: 16 }}>
+            {/* 1) overall rating · 2) the two yes/no questions · 3) comments */}
+            <div className={styles.question} style={{ marginTop: 24 }}>
               <span className={styles.questionLabel} id="survey-rating-label">
                 {t(lang, "Dans l'ensemble, quelle note donnez-vous?", 'Overall, how would you rate the visit?')}
               </span>
               <StarRating lang={lang} value={rating} onChange={setRating} labelledBy="survey-rating-label" />
             </div>
 
-            <div className={styles.question} style={{ marginTop: 16 }}>
+            <div className={styles.question} style={{ marginTop: 24}}>
+              <span className={styles.questionLabel}>
+                {t(lang, 'La personne était-elle polie?', 'Was the person polite?')}
+              </span>
+              <YesNo lang={lang} value={polite} onChange={setPolite} />
+            </div>
+
+            <div className={styles.question} style={{ marginTop: 24 }}>
               <span className={styles.questionLabel}>
                 {t(lang, 'Le problème a-t-il été résolu?', 'Was the problem solved?')}
               </span>
               <YesNo lang={lang} value={solved} onChange={setSolved} />
             </div>
 
-            <div className={styles.question} style={{ marginTop: 16 }}>
+            <div className={styles.question} style={{ marginTop: 24 }}>
               <label className={styles.questionLabel} htmlFor="survey-comments">
                 {t(lang, 'Commentaires (optionnel)', 'Comments (optional)')}
               </label>
