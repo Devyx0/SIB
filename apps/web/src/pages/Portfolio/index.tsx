@@ -21,6 +21,7 @@ import {
 } from './icons';
 import TurnoverDialog, { capaciteLabel } from './TurnoverDialog';
 import UnitsListView, { unitsPath } from './UnitsList';
+import TenantsListView from './TenantsList';
 import { fmtDate, matches, parseDate, plural, sentenceCase } from './format';
 import type { Fact } from './shared';
 import {
@@ -176,6 +177,10 @@ function SectorsView({ lang }: { lang: Lang }) {
           <div className={styles.headerActions}>
             <Link className={styles.btn} to={unitsPath()} data-testid="all-units-link">
               {t(lang, 'Tous les logements', 'All units')}
+            </Link>
+            {/* TEMP — scratch link for GET /portfolio/tenants; revert with TenantsList */}
+            <Link className={styles.btn} to="/portfolio/locataires" data-testid="all-tenants-link">
+              {t(lang, 'Locataires (test)', 'Tenants (test)')}
             </Link>
           </div>
         }
@@ -985,6 +990,8 @@ export default function Portfolio({ lang = 'fr' }: { lang?: Lang }) {
       <Routes>
         <Route index element={<SectorsView lang={lang} />} />
         <Route path="logements" element={<UnitsListView lang={lang} />} />
+        {/* TEMP — revert with TenantsList.tsx */}
+        <Route path="locataires" element={<TenantsListView lang={lang} />} />
         <Route path="secteurs/:sectorId" element={<SectorView lang={lang} />} />
         <Route path="secteurs/:sectorId/projets/:projectId" element={<ProjectView lang={lang} />} />
         <Route path="batiments/:buildingId" element={<BuildingView lang={lang} />} />

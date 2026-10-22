@@ -52,7 +52,7 @@ const CAN_CANCEL = new Set(['queued', 'scheduled', 'needs_expertise', 'return_vi
 // « Créer suivi » (POST /tasks/{id}/follow-up) is also open on done tasks (backend _FOLLOW_UP_PARENTS).
 const CAN_FOLLOW_UP = new Set(['needs_expertise', 'return_visit', 'done']);
 // Task creation opens the call (also from triage_proposal); refused before triage is done.
-const NO_NEW_TASK = new Set([
+export const NO_NEW_TASK = new Set([
   'intake_received', 'triage_pending', 'triage_clarify', 'triage_failed', 'closed',
 ]);
 
@@ -405,7 +405,7 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
         </p>
       )}
 
-      {accepted.map((task) => {
+      {accepted.map((task, index) => {
         const d = drafts[task.task_id] ?? {};
         const editable = !isClosed && EDITABLE.has(task.status);
         const assignee = d.assignee !== undefined ? d.assignee : task.assigned_employee_id;
@@ -414,6 +414,7 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
         const dirty = taskFieldChanges(task, d).length > 0;
         const setDraft = (patch: Draft) =>
           setDrafts((prev) => ({ ...prev, [task.task_id]: { ...prev[task.task_id], ...patch } }));
+        const n = index + 1;
         return (
           <div
             key={task.task_id}
@@ -421,6 +422,7 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
             data-testid={`task-${task.task_id}`}
           >
             <span className={styles.editLabel}>
+              <span className={styles.taskNum} data-testid={`task-num-${task.task_id}`}>{n}</span>
               <span className={styles.taskRowName} title={splitTask(task.description).name}>{splitTask(task.description).name}</span>
               {' · '}{statusLabel(lang, task.status)}
               {splitTask(task.description).details && (
@@ -521,16 +523,21 @@ const TaskEditor = forwardRef<TaskEditorHandle, Props>(function TaskEditor({
       {proposals.length > 0 && !isClosed && (
         <div className={styles.editField} data-testid="task-proposals">
           <span className={styles.editLabel}>{t(lang, 'Propositions IA (à accepter)', 'AI proposals (to accept)')}</span>
-          {proposals.map((p) => {
+          {proposals.map((p, index) => {
             const v = proposalView(p);
+            const n = index + 1;
             return (
             <div key={p.task_id} className={styles.editField} data-testid={`proposal-${p.task_id}`}>
+              <span className={styles.editLabel}>
+                <span className={styles.taskNum} data-testid={`proposal-num-${p.task_id}`}>{n}</span>
+                {t(lang, 'Proposition IA', 'AI proposal')}
+              </span>
               <textarea
                 className={styles.editTextarea}
                 value={v.description}
                 rows={2}
                 disabled={busy}
-                aria-label={t(lang, 'Proposition IA', 'AI proposal')}
+                aria-label={t(lang, `Proposition IA ${n}`, `AI proposal ${n}`)}
                 data-testid={`proposal-desc-${p.task_id}`}
                 onChange={(e) => setProposal(p.task_id, { description: e.target.value })}
               />

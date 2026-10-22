@@ -63,6 +63,21 @@ class StaleDataError(ConflictError):
     detail = "Request was modified by another user"
 
 
+class NoCurrentLeaseError(ConflictError):
+    code = "NO_CURRENT_LEASE"
+    detail = "No current lease on this unit"
+
+
+class AlreadyOnLeaseError(ConflictError):
+    code = "ALREADY_ON_LEASE"
+    detail = "Tenant is already on this lease"
+
+
+class TenancyNotActiveError(ConflictError):
+    code = "TENANCY_NOT_ACTIVE"
+    detail = "Tenancy is not active"
+
+
 class RequestClosedError(ConflictError):
     code = "REQUEST_CLOSED"
     detail = "No changes allowed on a closed request"

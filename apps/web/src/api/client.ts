@@ -1,5 +1,5 @@
-import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse, TaskOut, TaskListResponse, TaskCloseoutOut } from './schema.d.ts';
-export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse };
+import type { ListResponse, RequestDetail, SectorLookup, EmployeeLookup, BuildingLookup, UnitLookup, MeResponse, JustificationEntry, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioTenantListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse, TaskOut, TaskListResponse, TaskCloseoutOut } from './schema.d.ts';
+export type { JustificationEntry, BuildingLookup, UnitLookup, TriageFeedback, TriageFeedbackEdit, WeatherEvaluation, DashboardResponse, UtilizationResponse, PortfolioSectorSummary, PortfolioSectorDetail, PortfolioProjectDetail, PortfolioBuildingDetail, PortfolioUnitDetail, PortfolioSearchResult, PortfolioUnitListPage, PortfolioTenantListPage, PortfolioCreated, BuildingReference, FicheEntry, PaintSpec, BuildingDocument, PortfolioLease, PortfolioTenant, Turnover, TenantTurnover, SurveyPublic, AlertListResponse };
 import { supabase } from '../lib/supabase';
 import { t, type Lang } from '../i18n';
 
@@ -678,6 +678,26 @@ export function fetchPortfolioUnits(params: PortfolioUnitListParams): Promise<Po
     if (v != null && v !== '') q.set(k, String(v));
   }
   return apiFetch(`/api/v1/portfolio/units?${q.toString()}`);
+}
+
+export interface PortfolioTenantListParams {
+  sector_id?: number | null;
+  project_id?: number | null;
+  building_id?: number | null;
+  unit_id?: number | null;
+  capacite?: 'named_on_lease' | 'added_occupant' | 'took_over' | null;
+  lease_ending_within_days?: number | null;
+  q?: string | null;
+  page?: number;
+  page_size?: number;
+}
+
+export function fetchPortfolioTenants(params: PortfolioTenantListParams): Promise<PortfolioTenantListPage> {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== '') q.set(k, String(v));
+  }
+  return apiFetch(`/api/v1/portfolio/tenants?${q.toString()}`);
 }
 
 // ── Portfolio editing ────────────────────────────────────────────────────────

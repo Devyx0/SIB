@@ -503,6 +503,10 @@ export interface PortfolioBuildingDetail {
   annee_construction: string | null;
   territoire: string | null;
   nom_unique_projet: string | null;
+  /** WGS84 from geocoding — does not replace adresse. */
+  latitude: number | null;
+  longitude: number | null;
+  geocode_status: string | null;
   unit_count: number;
   units: PortfolioUnitSummary[];
   /** What staff used to open Drive for, now kept and edited here. */
@@ -574,6 +578,7 @@ export interface PortfolioLease {
 
 export interface PortfolioTenant {
   tenant_id: number;
+  tenancy_id?: number | null;
   nom_complet: string | null;
   telephone: string | null;
   telephone_international: string | null;
@@ -689,6 +694,38 @@ export interface PortfolioUnitListPage {
   /** Vacant units under the same filters, ignoring the occupancy filter. */
   vacant_total: number;
   grandeur_options: string[];
+  page: number;
+  page_size: number;
+}
+
+/** Current-occupant row from GET /portfolio/tenants. */
+export interface PortfolioTenantListRow {
+  tenant_id: number;
+  tenancy_id: number;
+  nom_complet: string | null;
+  telephone: string | null;
+  telephone_international: string | null;
+  courriel: string | null;
+  capacite: string | null;
+  unit_id: number;
+  building_id: number;
+  project_id: number;
+  sector_id: number;
+  numero_appartement: string | null;
+  unique_unit_number: string | null;
+  building_adresse: string | null;
+  nom_unique_projet: string | null;
+  territoire: string | null;
+  lease_id: number;
+  lease_statut: string | null;
+  debut_bail: string | null;
+  fin_bail: string | null;
+  has_turnover: boolean;
+}
+
+export interface PortfolioTenantListPage {
+  items: PortfolioTenantListRow[];
+  total: number;
   page: number;
   page_size: number;
 }

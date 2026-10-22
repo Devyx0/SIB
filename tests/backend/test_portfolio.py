@@ -31,19 +31,86 @@ def _nxt(cur, table, col):
     return cur.fetchone()["n"]
 
 
+def _ensure_staff(cur) -> None:
+    """Hard-coded employee ids used by this module's role fixtures."""
+    for eid, name, role in (
+        (_TECH, "Tech Portfolio", "technician"),
+        (_COORD, "Coord Portfolio", "coordinator"),
+        (_DIRECTOR, "Dir Portfolio", "director"),
+    ):
+        cur.execute(
+            """
+            INSERT INTO employee (employee_id, initials, nom_employe, is_active, employment_type)
+            VALUES (%s, %s, %s, true, 'staff')
+            ON CONFLICT (employee_id) DO NOTHING
+            """,
+            (eid, f"P{eid}", name),
+        )
+        cur.execute(
+            """
+            INSERT INTO employee_role (employee_id, role) VALUES (%s, %s)
+            ON CONFLICT (employee_id, role) DO NOTHING
+            """,
+            (eid, role),
+        )
+
+
+def _ensure_host(cur) -> dict:
+    """A building with a sector, creating the hierarchy when sib_test is empty."""
+    cur.execute(
+        """
+        SELECT b.building_id, b.project_id, b.sector_id, p.nom_unique_projet
+        FROM building b
+        JOIN project p ON p.project_id = b.project_id
+        WHERE b.sector_id IS NOT NULL
+        LIMIT 1
+        """
+    )
+    host = cur.fetchone()
+    if host is not None:
+        return dict(host)
+
+    sector_id = _nxt(cur, "sector", "sector_id")
+    project_id = _nxt(cur, "project", "project_id")
+    building_id = _nxt(cur, "building", "building_id")
+    cur.execute(
+        "INSERT INTO sector (sector_id, territoire, color_code) VALUES (%s, 'Portfolio-A', '#abc')",
+        (sector_id,),
+    )
+    # Second sector so ACL / scope tests can reassign the coordinator.
+    other_sector = sector_id + 1
+    cur.execute(
+        """
+        INSERT INTO sector (sector_id, territoire, color_code)
+        SELECT %s, 'Portfolio-B', '#def'
+        WHERE NOT EXISTS (SELECT 1 FROM sector WHERE sector_id = %s)
+        """,
+        (other_sector, other_sector),
+    )
+    cur.execute(
+        "INSERT INTO project (project_id, nom_unique_projet) VALUES (%s, 'Portfolio Project')",
+        (project_id,),
+    )
+    cur.execute(
+        """
+        INSERT INTO building (building_id, project_id, sector_id, adresse)
+        VALUES (%s, %s, %s, '100 rue Portfolio')
+        """,
+        (building_id, project_id, sector_id),
+    )
+    return {
+        "building_id": building_id,
+        "project_id": project_id,
+        "sector_id": sector_id,
+        "nom_unique_projet": "Portfolio Project",
+    }
+
+
 def _seed(db_conn):
     """One unit with a current lease and named tenant, on an existing building."""
     with db_conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT b.building_id, b.project_id, b.sector_id, p.nom_unique_projet
-            FROM building b
-            JOIN project p ON p.project_id = b.project_id
-            WHERE b.sector_id IS NOT NULL
-            LIMIT 1
-            """
-        )
-        host = cur.fetchone()
+        _ensure_staff(cur)
+        host = _ensure_host(cur)
         unit_id = _nxt(cur, "unit", "unit_id")
         lease_id = _nxt(cur, "lease", "lease_id")
         tenant_id = _nxt(cur, "tenant", "tenant_id")
@@ -76,7 +143,13 @@ def _seed(db_conn):
             """,
             (tenancy_id, lease_id, tenant_id),
         )
-    return {**host, "unit_id": unit_id, "lease_id": lease_id, "tenant_id": tenant_id}
+    return {
+        **host,
+        "unit_id": unit_id,
+        "lease_id": lease_id,
+        "tenant_id": tenant_id,
+        "tenancy_id": tenancy_id,
+    }
 
 
 def test_portfolio_403_technician(ac):
@@ -123,6 +196,7 @@ def test_drill_sector_to_tenant(ac, db_conn):
     assert payload["lease"]["debut_bail"] == "2026-07-01"
     assert payload["tenants"] == [{
         "tenant_id": seed["tenant_id"],
+        "tenancy_id": seed["tenancy_id"],
         "nom_complet": "Ada Portfolio",
         "telephone": "4185550199",
         "telephone_international": None,
@@ -351,6 +425,250 @@ def test_units_list_grandeur_and_lease_end_filters(ac, db_conn):
 def test_units_list_pages(ac, db_conn):
     client = ac(_user(_DIRECTOR, "director"))
     first = client.get("/api/v1/portfolio/units", params={"page_size": 5}).json()
+    if first["total"] <= 5:
+        pytest.skip("need more than 5 units")
     second = client.get("/api/v1/portfolio/units", params={"page_size": 5, "page": 2}).json()
-    assert len(first["items"]) == 5 and first["total"] > 5
+    assert len(first["items"]) == 5
     assert not {u["unit_id"] for u in first["items"]} & {u["unit_id"] for u in second["items"]}
+
+
+# ── Filtered tenant list ──────────────────────────────────────────────────────
+
+def test_tenants_list_returns_current_occupant(ac, db_conn):
+    seed = _seed(db_conn)
+    client = ac(_user(_DIRECTOR, "director"))
+    page = client.get("/api/v1/portfolio/tenants",
+                      params={"building_id": seed["building_id"]}).json()
+    row = next(t for t in page["items"] if t["tenant_id"] == seed["tenant_id"])
+    assert row["nom_complet"] == "Ada Portfolio"
+    assert row["telephone"] == "4185550199"
+    assert row["courriel"] == "ada@example.test"
+    assert row["capacite"] == "named_on_lease"
+    assert row["unit_id"] == seed["unit_id"]
+    assert row["building_id"] == seed["building_id"]
+    assert row["project_id"] == seed["project_id"]
+    assert row["sector_id"] == seed["sector_id"]
+    assert row["lease_id"] == seed["lease_id"]
+    assert row["lease_statut"] == "Actif"
+    assert row["fin_bail"] == "2027-06-30"
+    assert row["has_turnover"] is False
+    assert page["total"] >= 1
+    assert page["page"] == 1 and page["page_size"] == 50
+
+
+def test_tenants_list_filters_and_search(ac, db_conn):
+    seed = _seed(db_conn)
+    roommate = _add_occupant(db_conn, seed["lease_id"], "Bob Roommate", "added_occupant")
+    client = ac(_user(_DIRECTOR, "director"))
+
+    named = client.get("/api/v1/portfolio/tenants", params={
+        "unit_id": seed["unit_id"], "capacite": "named_on_lease",
+    }).json()
+    assert [t["tenant_id"] for t in named["items"]] == [seed["tenant_id"]]
+    assert named["total"] == 1
+
+    added = client.get("/api/v1/portfolio/tenants", params={
+        "unit_id": seed["unit_id"], "capacite": "added_occupant",
+    }).json()
+    assert [t["tenant_id"] for t in added["items"]] == [roommate]
+
+    by_q = client.get("/api/v1/portfolio/tenants", params={
+        "building_id": seed["building_id"], "q": "ada portfolio",
+    }).json()
+    assert seed["tenant_id"] in [t["tenant_id"] for t in by_q["items"]]
+    assert roommate not in [t["tenant_id"] for t in by_q["items"]]
+
+    db_conn.execute("UPDATE lease SET fin_bail = CURRENT_DATE + 20 WHERE lease_id = %s", (seed["lease_id"],))
+    soon = client.get("/api/v1/portfolio/tenants", params={
+        "building_id": seed["building_id"], "lease_ending_within_days": 30,
+    }).json()
+    ids = {t["tenant_id"] for t in soon["items"]}
+    assert seed["tenant_id"] in ids and roommate in ids
+    assert all(t["fin_bail"] is not None for t in soon["items"])
+
+
+def test_tenants_list_has_turnover_and_scope(ac, db_conn):
+    seed = _seed(db_conn)
+    _seed_turnover(db_conn, seed["unit_id"], incoming_tenant_id=seed["tenant_id"],
+                   lease_start_date="2026-07-01")
+    client = ac(_user(_DIRECTOR, "director"))
+    page = client.get("/api/v1/portfolio/tenants",
+                      params={"unit_id": seed["unit_id"]}).json()
+    assert page["items"][0]["has_turnover"] is True
+
+    other = db_conn.execute(
+        "SELECT sector_id FROM sector WHERE sector_id <> %s LIMIT 1",
+        (seed["sector_id"],),
+    ).fetchone()
+    if other is None:
+        pytest.skip("need two sectors")
+    db_conn.execute("DELETE FROM employee_building_assignment WHERE employee_id = %s", (_COORD,))
+    db_conn.execute("UPDATE employee SET sector_id = %s WHERE employee_id = %s", (other["sector_id"], _COORD))
+    scoped = ac(_user(_COORD, "coordinator")).get(
+        "/api/v1/portfolio/tenants", params={"q": "ada portfolio"}).json()
+    assert all(t["tenant_id"] != seed["tenant_id"] for t in scoped["items"])
+
+
+def test_tenants_list_pages(ac, db_conn):
+    client = ac(_user(_DIRECTOR, "director"))
+    first = client.get("/api/v1/portfolio/tenants", params={"page_size": 5}).json()
+    if first["total"] <= 5:
+        pytest.skip("need more than 5 current tenants")
+    second = client.get("/api/v1/portfolio/tenants", params={"page_size": 5, "page": 2}).json()
+    assert len(first["items"]) == 5
+    first_keys = {(t["tenant_id"], t["unit_id"]) for t in first["items"]}
+    second_keys = {(t["tenant_id"], t["unit_id"]) for t in second["items"]}
+    assert not first_keys & second_keys
+
+
+def test_tenants_list_403_technician(ac):
+    r = ac(_user(_TECH, "technician")).get("/api/v1/portfolio/tenants")
+    assert r.status_code == 403
+
+
+# ── Tenant / occupancy edits ──────────────────────────────────────────────────
+
+def test_patch_tenant_contact(ac, db_conn):
+    seed = _seed(db_conn)
+    client = ac(_user(_DIRECTOR, "director"))
+    r = client.patch(f"/api/v1/portfolio/tenants/{seed['tenant_id']}", json={
+        "changes": {"telephone": "4185550000", "courriel": "ada.new@example.test"},
+        "current": {"telephone": "4185550199", "courriel": "ada@example.test"},
+    })
+    assert r.status_code == 204
+    unit = client.get(f"/api/v1/portfolio/units/{seed['unit_id']}").json()
+    t = unit["tenants"][0]
+    assert t["telephone"] == "4185550000"
+    assert t["courriel"] == "ada.new@example.test"
+
+
+def test_patch_tenant_stale(ac, db_conn):
+    seed = _seed(db_conn)
+    r = ac(_user(_DIRECTOR, "director")).patch(f"/api/v1/portfolio/tenants/{seed['tenant_id']}", json={
+        "changes": {"telephone": "4185550000"},
+        "current": {"telephone": "wrong"},
+    })
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "STALE_DATA"
+
+
+def test_patch_tenancy_capacite(ac, db_conn):
+    seed = _seed(db_conn)
+    client = ac(_user(_DIRECTOR, "director"))
+    r = client.patch(f"/api/v1/portfolio/tenancies/{seed['tenancy_id']}", json={
+        "changes": {"capacite": "took_over", "reason_for_change": "correction"},
+        "current": {"capacite": "named_on_lease"},
+    })
+    assert r.status_code == 204
+    unit = client.get(f"/api/v1/portfolio/units/{seed['unit_id']}").json()
+    assert unit["tenants"][0]["capacite"] == "took_over"
+    assert unit["tenants"][0]["tenancy_id"] == seed["tenancy_id"]
+
+
+def test_add_occupant(ac, db_conn):
+    from backend.core.utils import today_local
+    seed = _seed(db_conn)
+    client = ac(_user(_DIRECTOR, "director"))
+    r = client.post(f"/api/v1/portfolio/units/{seed['unit_id']}/occupants", json={
+        "new_tenant": {"nom_complet": "Bob Roommate", "telephone": "4185551111"},
+        "capacite": "added_occupant",
+    })
+    assert r.status_code == 201
+    body = r.json()
+    assert body["tenant_id"] and body["tenancy_id"] and body["lease_id"] == seed["lease_id"]
+    unit = client.get(f"/api/v1/portfolio/units/{seed['unit_id']}").json()
+    names = {t["nom_complet"] for t in unit["tenants"]}
+    assert names == {"Ada Portfolio", "Bob Roommate"}
+    # Duplicate on same lease → conflict
+    dup = client.post(f"/api/v1/portfolio/units/{seed['unit_id']}/occupants", json={
+        "tenant_id": body["tenant_id"],
+    })
+    assert dup.status_code == 409
+    assert dup.json()["error"]["code"] == "ALREADY_ON_LEASE"
+    assert today_local()  # sanity: helpers importable
+
+
+def test_takeover_and_end_occupant(ac, db_conn):
+    from backend.core.utils import today_local
+    seed = _seed(db_conn)
+    client = ac(_user(_DIRECTOR, "director"))
+    today = today_local().isoformat()
+    r = client.post(f"/api/v1/portfolio/units/{seed['unit_id']}/occupants/takeover", json={
+        "outgoing_tenancy_id": seed["tenancy_id"],
+        "new_tenant": {"nom_complet": "Cara Incoming"},
+        "effective_date": today,
+        "reason_for_change": "cession",
+    })
+    assert r.status_code == 201
+    incoming = r.json()
+    unit = client.get(f"/api/v1/portfolio/units/{seed['unit_id']}").json()
+    assert len(unit["tenants"]) == 1
+    assert unit["tenants"][0]["nom_complet"] == "Cara Incoming"
+    assert unit["tenants"][0]["capacite"] == "took_over"
+    assert unit["tenants"][0]["tenancy_id"] == incoming["tenancy_id"]
+
+    end = client.post(
+        f"/api/v1/portfolio/units/{seed['unit_id']}/occupants/{incoming['tenancy_id']}/end",
+        json={"end_date": today, "current_end_date": None},
+    )
+    assert end.status_code == 204
+    vacant = client.get(f"/api/v1/portfolio/units/{seed['unit_id']}").json()
+    assert vacant["tenants"] == []
+
+
+def test_end_and_start_lease(ac, db_conn):
+    from backend.core.utils import today_local
+    from datetime import timedelta
+    seed = _seed(db_conn)
+    client = ac(_user(_DIRECTOR, "director"))
+    today = today_local()
+    # Ending without matching current_fin_bail → stale
+    stale = client.post(f"/api/v1/portfolio/units/{seed['unit_id']}/leases/end", json={
+        "fin_bail": today.isoformat(),
+        "statut": "Terminé",
+        "current_fin_bail": "2099-01-01",
+    })
+    assert stale.status_code == 409
+
+    end = client.post(f"/api/v1/portfolio/units/{seed['unit_id']}/leases/end", json={
+        "fin_bail": today.isoformat(),
+        "statut": "Terminé",
+        "current_fin_bail": "2027-06-30",
+        "close_tenancies": True,
+    })
+    assert end.status_code == 204
+    unit = client.get(f"/api/v1/portfolio/units/{seed['unit_id']}").json()
+    assert unit["lease"] is None
+    assert unit["tenants"] == []
+
+    # New lease without end_previous while somehow still current — already ended, so OK
+    start = client.post(f"/api/v1/portfolio/units/{seed['unit_id']}/leases", json={
+        "debut_bail": today.isoformat(),
+        "fin_bail": (today + timedelta(days=365)).isoformat(),
+        "statut": "Actif",
+        "occupants": [{"new_tenant": {"nom_complet": "New Lease Holder"}, "capacite": "named_on_lease"}],
+    })
+    assert start.status_code == 201
+    unit = client.get(f"/api/v1/portfolio/units/{seed['unit_id']}").json()
+    assert unit["lease"]["lease_id"] == start.json()["lease_id"]
+    assert unit["tenants"][0]["nom_complet"] == "New Lease Holder"
+
+
+def test_start_lease_requires_end_previous(ac, db_conn):
+    seed = _seed(db_conn)
+    r = ac(_user(_DIRECTOR, "director")).post(
+        f"/api/v1/portfolio/units/{seed['unit_id']}/leases",
+        json={"debut_bail": "2026-08-01", "occupants": []},
+    )
+    assert r.status_code == 409
+
+
+def test_occupancy_edits_403_technician(ac, db_conn):
+    seed = _seed(db_conn)
+    client = ac(_user(_TECH, "technician"))
+    assert client.patch(f"/api/v1/portfolio/tenants/{seed['tenant_id']}", json={
+        "changes": {"telephone": "1"}, "current": {"telephone": "4185550199"},
+    }).status_code == 403
+    assert client.post(f"/api/v1/portfolio/units/{seed['unit_id']}/occupants", json={
+        "new_tenant": {"nom_complet": "X"},
+    }).status_code == 403

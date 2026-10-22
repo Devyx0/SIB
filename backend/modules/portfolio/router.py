@@ -10,22 +10,30 @@ from backend.core.permissions import require_role
 
 from . import edit_service, service
 from .schemas import (
+    AddOccupantBody,
     BuildingCreateBody,
     BuildingDetail,
     BuildingPatch,
     CreatedOut,
     DocumentCreateBody,
+    EndLeaseBody,
+    EndOccupantBody,
     FicheEntryBody,
     PaintSpecFields,
     PaintSpecPatch,
     ProjectCreateBody,
     ProjectPatch,
+    StartLeaseBody,
+    TakeoverBody,
+    TenantPatch,
+    TenancyPatch,
     UnitCreateBody,
     UnitPatch,
     PortfolioSearchResult,
     ProjectDetail,
     SectorDetail,
     SectorSummary,
+    TenantListPage,
     TenantTurnover,
     UnitDetail,
     UnitListPage,
@@ -89,6 +97,29 @@ def portfolio_list_units(
         conn, user,
         sector_id=sector_id, project_id=project_id, building_id=building_id,
         occupancy=occupancy, grandeur=grandeur, lease_ending_within_days=lease_ending_within_days,
+        q=q, page=page, page_size=page_size,
+    )
+
+
+@router.get("/tenants", operation_id="portfolio_list_tenants", response_model=TenantListPage)
+def portfolio_list_tenants(
+    sector_id: Optional[int] = Query(default=None),
+    project_id: Optional[int] = Query(default=None),
+    building_id: Optional[int] = Query(default=None),
+    unit_id: Optional[int] = Query(default=None),
+    capacite: Optional[Literal["named_on_lease", "added_occupant", "took_over"]] = Query(default=None),
+    lease_ending_within_days: Optional[int] = Query(default=None, ge=1, le=730),
+    q: Optional[str] = Query(default=None, max_length=200),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    user=_COORD_DIR,
+    conn=Depends(get_db_conn),
+) -> TenantListPage:
+    return service.list_tenants_filtered(
+        conn, user,
+        sector_id=sector_id, project_id=project_id, building_id=building_id,
+        unit_id=unit_id, capacite=capacite,
+        lease_ending_within_days=lease_ending_within_days,
         q=q, page=page, page_size=page_size,
     )
 
@@ -178,3 +209,71 @@ def portfolio_create_unit(body: UnitCreateBody, user=_COORD_DIR, conn=Depends(ge
 @router.patch("/units/{unit_id}", operation_id="portfolio_update_unit", **_NO_CONTENT)
 def portfolio_update_unit(unit_id: int, body: UnitPatch, user=_COORD_DIR, conn=Depends(get_db_conn)):
     edit_service.patch_unit(conn, unit_id, body, user)
+
+
+@router.patch("/tenants/{tenant_id}", operation_id="portfolio_update_tenant", **_NO_CONTENT)
+def portfolio_update_tenant(tenant_id: int, body: TenantPatch, user=_COORD_DIR, conn=Depends(get_db_conn)):
+    edit_service.patch_tenant(conn, tenant_id, body, user)
+
+
+@router.patch("/tenancies/{tenancy_id}", operation_id="portfolio_update_tenancy", **_NO_CONTENT)
+def portfolio_update_tenancy(tenancy_id: int, body: TenancyPatch, user=_COORD_DIR, conn=Depends(get_db_conn)):
+    edit_service.patch_tenancy(conn, tenancy_id, body, user)
+
+
+@router.post(
+    "/units/{unit_id}/occupants",
+    operation_id="portfolio_add_occupant",
+    response_model=CreatedOut,
+    status_code=201,
+)
+def portfolio_add_occupant(
+    unit_id: int, body: AddOccupantBody, user=_COORD_DIR, conn=Depends(get_db_conn),
+) -> CreatedOut:
+    return edit_service.add_occupant(conn, unit_id, body, user)
+
+
+@router.post(
+    "/units/{unit_id}/occupants/takeover",
+    operation_id="portfolio_takeover_occupant",
+    response_model=CreatedOut,
+    status_code=201,
+)
+def portfolio_takeover_occupant(
+    unit_id: int, body: TakeoverBody, user=_COORD_DIR, conn=Depends(get_db_conn),
+) -> CreatedOut:
+    return edit_service.takeover_occupant(conn, unit_id, body, user)
+
+
+@router.post(
+    "/units/{unit_id}/occupants/{tenancy_id}/end",
+    operation_id="portfolio_end_occupant",
+    **_NO_CONTENT,
+)
+def portfolio_end_occupant(
+    unit_id: int, tenancy_id: int, body: EndOccupantBody, user=_COORD_DIR, conn=Depends(get_db_conn),
+):
+    edit_service.end_occupant(conn, unit_id, tenancy_id, body, user)
+
+
+@router.post(
+    "/units/{unit_id}/leases/end",
+    operation_id="portfolio_end_lease",
+    **_NO_CONTENT,
+)
+def portfolio_end_lease(
+    unit_id: int, body: EndLeaseBody, user=_COORD_DIR, conn=Depends(get_db_conn),
+):
+    edit_service.end_lease(conn, unit_id, body, user)
+
+
+@router.post(
+    "/units/{unit_id}/leases",
+    operation_id="portfolio_start_lease",
+    response_model=CreatedOut,
+    status_code=201,
+)
+def portfolio_start_lease(
+    unit_id: int, body: StartLeaseBody, user=_COORD_DIR, conn=Depends(get_db_conn),
+) -> CreatedOut:
+    return edit_service.start_lease(conn, unit_id, body, user)

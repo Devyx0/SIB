@@ -11,6 +11,7 @@ vi.mock('../api/client', async (importOriginal) => ({
   fetchSectors: vi.fn().mockResolvedValue([]),
   fetchEmployees: vi.fn().mockResolvedValue([]),
   fetchBuildings: vi.fn().mockResolvedValue([]),
+  fetchTasks: vi.fn().mockResolvedValue({ total: 0, items: [] }),
 }));
 
 const me = { employee_id: 4, nom_employe: 'Coordo', roles: ['coordinator'] };
@@ -33,6 +34,13 @@ function wrap(initial: string) {
 }
 
 describe('DispatchBoard ?nouvel-appel=1', () => {
+  it('header button opens the new-call modal', async () => {
+    wrap('/triage');
+    await waitFor(() => expect(screen.getByTestId('nouvel-appel-btn')).toBeTruthy());
+    await userEvent.click(screen.getByTestId('nouvel-appel-btn'));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
   it('opens the modal when the param is present', async () => {
     wrap('/triage?nouvel-appel=1');
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
