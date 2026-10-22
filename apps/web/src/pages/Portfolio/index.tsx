@@ -228,6 +228,11 @@ function SectorView({ lang }: { lang: Lang }) {
     queryKey: ['portfolio', 'sector', sectorId],
     queryFn: () => fetchPortfolioSector(sectorId),
   });
+  // total / vacant_total for the whole sector, from the unit list (one row is enough).
+  const { data: occ } = useQuery({
+    queryKey: ['portfolio', 'sector-occupancy', sectorId],
+    queryFn: () => fetchPortfolioUnits({ sector_id: sectorId, page_size: 1 }),
+  });
   const editing = dialog && dialog !== 'new' ? data?.projects.find((p) => p.project_id === dialog.edit) : null;
   const [size, setSize] = useState<'all' | '1' | '2-3' | '4+'>('all');
   const [sort, setSort] = useState<'name' | 'number' | 'buildings'>('name');
@@ -262,6 +267,11 @@ function SectorView({ lang }: { lang: Lang }) {
         facts={data && [
           { key: 'projects', icon: <FolderIcon />, label: plural(data.project_count, lang, PROJECT_FR, PROJECT_EN) },
           { key: 'buildings', icon: <BuildingIcon />, label: plural(data.building_count, lang, BUILDING_FR, BUILDING_EN) },
+          occ && occ.total > 0 && {
+            key: 'occupancy', icon: <PieIcon />,
+            label: t(lang, `${pct(occ.total - occ.vacant_total, occ.total)} % occupé`, `${pct(occ.total - occ.vacant_total, occ.total)} % occupied`),
+            to: unitsPath({ secteur: sectorId, occupation: 'vacant' }),
+          },
         ]}
         actions={!phone && data && <div className={styles.headerActions}>{viewUnits}{addProject}</div>}
       />
