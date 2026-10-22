@@ -30,6 +30,13 @@
   flex-shrink: 0;
 }
 
+/* Global search sits between the brand and the nav; its results panel is
+   anchored to this box and overlays the main content. */
+.search {
+  flex-shrink: 0;
+  padding: 12px 10px 0;
+}
+
 /* Nav grows to fill remaining space; scrolls internally if it ever overflows. */
 .nav {
   flex: 1;
