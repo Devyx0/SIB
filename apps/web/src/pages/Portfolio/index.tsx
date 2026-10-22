@@ -7,6 +7,7 @@ import {
   fetchPortfolioSector,
   fetchPortfolioSectors,
   fetchPortfolioUnit,
+  fetchPortfolioUnits,
 } from '../../api/client';
 import type { PortfolioBuildingDetail, PortfolioLease, PortfolioUnitDetail } from '../../api/client';
 import type { PortfolioSectorSummary, PortfolioUnitSummary } from '../../api/schema.d.ts';
@@ -116,6 +117,41 @@ const unitFields = (u: Pick<PortfolioUnitSummary, 'numero_appartement' | 'rue' |
 
 function pct(part: number, whole: number): number {
   return whole > 0 ? Math.round((part / whole) * 100) : 0;
+}
+
+/** Overall occupancy for a project or building: the same figure as the portfolio totals,
+ *  with the vacant count linking (or switching the unit filter) to the vacant units. */
+function OccupancyCard({ lang, units, occupied, vacantTo, onVacant }: {
+  lang: Lang; units: number; occupied: number; vacantTo?: string; onVacant?: () => void;
+}) {
+  if (units <= 0) return null;
+  const n = (v: number) => v.toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA');
+  const vacant = units - occupied;
+  const vacantLabel = t(lang, `${n(vacant)} vacant${vacant === 1 ? '' : 's'}`, `${n(vacant)} vacant`);
+  return (
+    <dl className={`${styles.totals} ${styles.totalsSingle}`} data-testid="occupancy-card">
+      <div>
+        <dt><span className={styles.totalIcon}><PieIcon size={32} /></span>{t(lang, 'Occupation', 'Occupancy')}</dt>
+        <dd className={styles.occLine}>
+          <span>{pct(occupied, units)} %</span>
+          {vacantTo ? (
+            <Link className={`${styles.totalsNote} ${styles.vacantLink}`} to={vacantTo} data-testid="occupancy-vacant">{vacantLabel}</Link>
+          ) : onVacant ? (
+            <button type="button" className={`${styles.totalsNote} ${styles.vacantLink} ${styles.linkBtn}`}
+                    onClick={onVacant} data-testid="occupancy-vacant">{vacantLabel}</button>
+          ) : (
+            <span className={styles.totalsNote}>{vacantLabel}</span>
+          )}
+        </dd>
+        <span className={styles.occBar} aria-hidden="true">
+          <span style={{ width: `${pct(occupied, units)}%` }} />
+        </span>
+        <span className={styles.totalsNote}>
+          {t(lang, `${n(occupied)} sur ${n(units)} logements occupés`, `${n(occupied)} of ${n(units)} units occupied`)}
+        </span>
+      </div>
+    </dl>
+  );
 }
 
 /** A sector: name and chevron, then projects / buildings / units, then its largest projects. */
@@ -392,6 +428,11 @@ function ProjectView({ lang }: { lang: Lang }) {
     queryKey: ['portfolio', 'project', projectId, sectorId],
     queryFn: () => fetchPortfolioProject(projectId, sectorId),
   });
+  // total / vacant_total for the whole project, from the unit list (one row is enough).
+  const { data: occ } = useQuery({
+    queryKey: ['portfolio', 'project-occupancy', projectId],
+    queryFn: () => fetchPortfolioUnits({ project_id: projectId, page_size: 1 }),
+  });
   const [dialog, setDialog] = useState<'project' | 'new' | { edit: number } | null>(null);
   const [q, setQ] = useState('');
   const name = data ? projectName(lang, data.nom_unique_projet, data.project_id) : '…';
@@ -430,6 +471,10 @@ function ProjectView({ lang }: { lang: Lang }) {
         ))}
       />
       <LevelState isLoading={isLoading} error={error} lang={lang} onRetry={refetch} rows={3} />
+      {data && occ && (
+        <OccupancyCard lang={lang} units={occ.total} occupied={occ.total - occ.vacant_total}
+                       vacantTo={unitsPath({ secteur: sectorId, projet: projectId, occupation: 'vacant' })} />
+      )}
       {data && (
         <div className={styles.unitTools}>
           {data.buildings.length > 0 && (
@@ -546,6 +591,9 @@ function BuildingView({ lang }: { lang: Lang }) {
         actions={data && <div className={styles.headerActions}>{buildingButtons}{!phone && addUnit}</div>}
       />
       <LevelState isLoading={isLoading} error={error} lang={lang} onRetry={refetch} rows={3} />
+      {data && (
+        <OccupancyCard lang={lang} units={data.units.length} occupied={occupied} onVacant={() => setOcc('vacant')} />
+      )}
       {data && (
         <div className={styles.unitTools}>
           {data.units.length > 0 && (
