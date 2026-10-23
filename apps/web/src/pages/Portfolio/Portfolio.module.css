@@ -253,11 +253,38 @@
   min-width: 0;
 }
 
-/* Portfolio home: the portfolio-wide search on one row, left of the button. */
+/*
+ * Portfolio home header: size the layout from the content column (sidebar
+ * eats ~232px), not the viewport — iPad Pro 13 is 1032px wide but still
+ * too tight for title + search on one row.
+ */
+.headerHome {
+  container-type: inline-size;
+}
+
+/* Desktop: « Sectors » left, search + quick links far right. */
+.headerHome .headerTitleRow {
+  justify-content: space-between;
+  gap: 16px 48px;
+}
+
+/* Never let « Sectors » / « Secteurs » crush into letter-per-line wrapping. */
+.headerHome .headerTitleRow .title {
+  flex: 0 0 auto;
+  min-width: auto;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+/* Portfolio home: search + quick links share one row, pinned to the right. */
 .headerSideSearch {
-  flex: 0 1 640px;
+  flex: 0 1 560px;
   flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  min-width: min(100%, 280px);
 }
 
 .headerSearch {
@@ -265,26 +292,156 @@
   min-width: 0;
 }
 
-@media (max-width: 1023px) {
-  .headerSideSearch { flex-basis: 480px; }
+/* Keep « All units » / « Tenants » side-by-side — never stack beside the search. */
+.headerSideSearch .headerActions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+}
+
+/* Joined navy quick-nav (matches search height + viewToggle look). */
+.quickLinks {
+  display: inline-flex;
+  flex: none;
+  align-items: stretch;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  box-shadow: var(--sh-card);
+  overflow: hidden;
+}
+
+.quickLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 0 14px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--navy-800);
+  text-decoration: none;
+  white-space: nowrap;
+  background: transparent;
+  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+}
+
+.quickLink + .quickLink {
+  border-left: 1px solid var(--color-border);
+}
+
+.quickLink svg {
+  flex: none;
+  color: var(--navy-700);
+}
+
+.quickLink:hover {
+  background: var(--navy-50);
+  color: var(--navy-900);
+  text-decoration: none;
+}
+
+.quickLink:hover svg {
+  color: var(--navy-800);
+}
+
+.quickLink:focus-visible {
+  outline: none;
+  box-shadow: inset var(--ring);
+  z-index: 1;
+}
+
+/*
+ * Narrow content column (iPad Pro with sidebar ≈ 800px): title alone,
+ * search + quick links full-width on the next row.
+ */
+@container (max-width: 900px) {
+  .headerTitleRow .title {
+    flex: 1 1 100%;
+  }
+  .headerSideSearch {
+    flex: 1 1 100%;
+    max-width: none;
+    min-width: 0;
+    margin-left: 0;
+  }
 }
 
 @media (max-width: 639px) {
   .headerSide { flex-basis: 100%; }
-  /* Search and its button share one row. */
-  .headerSideSearch { flex-wrap: nowrap; gap: 8px; }
-  .headerSearch { flex: 1 1 auto; min-width: 0; }
-  .headerSideSearch .headerActions > * { white-space: nowrap; }
+  /*
+   * Phone: search on top, labeled All Units / All Tenants full-width under it.
+   */
+  .headerSideSearch {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .headerSearch {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+  }
+  .headerSideSearch .headerActions {
+    flex: none;
+    width: 100%;
+    flex-wrap: nowrap;
+    justify-content: stretch;
+  }
   .headerSide .headerActions { justify-content: flex-start; }
 
-  /* Phone: the header's buttons sit beside the title, never on a row of their own. */
-  .headerBelow .headerTitleRow { flex-direction: row; flex-wrap: nowrap; align-items: center; }
-  .headerBelow .headerTitleRow .title { flex: 1 1 0; min-width: 0; }
+  .quickLinks {
+    display: flex;
+    width: 100%;
+  }
+  .quickLink {
+    flex: 1 1 0;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+  .quickLinkText {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /*
+   * Phone: edit / info sit flush against the h1 (not space-between to the
+   * far right) so the pencil clearly edits this building.
+   */
+  .headerBelow .headerTitleRow {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 2px 4px;
+  }
+  .headerBelow .headerTitleRow .title {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
   .headerBelow .headerSide { flex: none; }
 
-  /* A single header button (the unit's pencil) stays on the title row. */
+  /* Lone pencil (unit page, building info) — same tight pairing. */
   .headerTitleRow:has(.headerSide:not(.headerSideSearch) .headerActions > :only-child) {
     flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 2px 4px;
+  }
+  .headerTitleRow:has(.headerSide:not(.headerSideSearch) .headerActions > :only-child) .title {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow-wrap: normal;
   }
   .headerTitleRow:has(.headerSide:not(.headerSideSearch) .headerActions > :only-child) .headerSide {
     flex: none;
@@ -750,6 +907,41 @@ a.card:hover .arrow {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Title-row edit / info: ghost control so it sits quietly on the page bg. */
+.headerSide .btn.btnIcon,
+.headerBelow .btn.btnIcon {
+  border-color: transparent;
+  background: transparent;
+  color: var(--navy-700);
+  box-shadow: none;
+  min-height: 40px;
+  padding: 0 10px;
+}
+
+.headerSide .btn.btnIcon:hover,
+.headerBelow .btn.btnIcon:hover {
+  border-color: transparent;
+  background: var(--navy-50);
+  color: var(--navy-900);
+}
+
+.headerSide .btn.btnIcon:focus-visible,
+.headerBelow .btn.btnIcon:focus-visible {
+  border-color: transparent;
+  background: var(--navy-50);
+}
+
+@media (max-width: 639px) {
+  /* Phone: icon-only — square hit target, no white chip beside the h1. */
+  .headerSide .btn.btnIcon,
+  .headerBelow .btn.btnIcon {
+    justify-content: center;
+    width: 40px;
+    min-width: 40px;
+    padding: 0;
+  }
 }
 
 .srOnly {
@@ -1955,7 +2147,7 @@ a.card:hover .arrow {
 
 .panelLink:hover { text-decoration: underline; }
 
-/* ── Unit list filters ──────────────────────────────────────────────────── */
+/* ── Unit / tenant list filters ─────────────────────────────────────────── */
 
 .filters {
   display: flex;
@@ -1967,6 +2159,73 @@ a.card:hover .arrow {
   border: 1px solid var(--color-border);
   border-radius: var(--r-lg);
   box-shadow: var(--sh-card);
+}
+
+/* Narrow screens: search + Filters toggle. Hidden on desktop. */
+.filterCompact {
+  display: none;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.filterCompact .filterFieldSearch {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.filterToggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--navy-800);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.filterToggle:hover {
+  border-color: var(--color-neutral-400);
+  background: var(--navy-50);
+}
+
+.filterToggle:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.filterToggleActive {
+  border-color: var(--navy-700);
+  background: var(--navy-50);
+  color: var(--navy-900);
+}
+
+.filterBadge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border-radius: 999px;
+  background: var(--navy-800);
+  color: #fff;
+}
+
+.filterFull {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .filterRow {
@@ -1995,21 +2254,49 @@ a.card:hover .arrow {
   align-items: end;
 }
 
+/* Tenants list: Recherche · Secteur · Projet · Fin de bail (capacity is chips). */
+.filterGridTenants {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
 .filterGrid .filterField { min-width: 0; }
 
 .filterGrid .filterField .search,
-.filterGrid .select {
+.filterGrid .select,
+.filterCompact .filterFieldSearch .search {
   width: 100%;
   min-width: 0;
 }
 
-/* Narrower windows: 3 + 2 rather than 4 + a lone one; phones: one per row. */
+/* Narrower windows: 3 + 2 rather than 4 + a lone one. */
 @media (max-width: 1279px) {
   .filterGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .filterGridTenants { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-@media (max-width: 639px) {
-  .filterGrid { grid-template-columns: minmax(0, 1fr); }
+/*
+ * Phone / small tablet: only search + Filters button.
+ * Extra filters expand under the toggle; search in the panel is hidden
+ * (the compact bar already has it).
+ */
+@media (max-width: 879px) {
+  .filterCompact { display: flex; }
+  .filterFull { display: none; }
+  .filterFullOpen { display: flex; }
+  .filterFullOpen .filterFieldSearch { display: none; }
+
+  .filterGrid,
+  .filterGridTenants { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Unit / tenant tables: keep every column; scroll sideways on small screens. */
+.listTableWrap {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.listTable {
+  min-width: 760px;
 }
 
 .filterLabel {
@@ -2142,8 +2429,10 @@ a.btn {
 
 @media (max-width: 639px) {
   .unitTools .chipGroup { margin-left: 0; }
-  /* « Voir les logements » above the search on phones. */
-  .unitTools .headerActions { order: -1; }
+  /* « View Units » above the search on phones — full-width labeled control. */
+  .unitTools .headerActions { order: -1; width: 100%; }
+  .unitTools .quickLinks { width: 100%; display: flex; }
+  .unitTools .quickLink { flex: 1 1 0; justify-content: center; }
 }
 
 @media (max-width: 1023px) {

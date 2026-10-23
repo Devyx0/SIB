@@ -7,6 +7,7 @@ import Select from '../../components/Select';
 import { t } from '../../i18n';
 import type { Lang } from '../../i18n';
 import { fmtDate } from './format';
+import { FilterIcon } from './icons';
 import { Breadcrumbs, Empty, Header, LevelState, TenantNames, portfolioPath, rootCrumb, sectorName } from './shared';
 import styles from './Portfolio.module.css';
 
@@ -58,6 +59,7 @@ export default function UnitsListView({ lang }: { lang: Lang }) {
     });
 
   const [draft, setDraft] = useState(q);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   useEffect(() => { setDraft(q); }, [q]);
   useEffect(() => {
     if (draft === q) return;
@@ -82,14 +84,27 @@ export default function UnitsListView({ lang }: { lang: Lang }) {
     placeholderData: keepPreviousData,
   });
 
-  const active = [sectorId, projectId, occupancy, grandeur || null, leaseDays, q || null]
-    .some((v) => v != null);
+  // Badge on the Filters button — search stays visible, so it isn't counted.
+  const advancedCount = [sectorId, projectId, occupancy, grandeur || null, leaseDays]
+    .filter((v) => v != null).length;
+  const active = advancedCount > 0 || !!q;
   const n = (v: number) => v.toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA');
   const occChips: { value: string | null; label: string }[] = [
     { value: null, label: t(lang, 'Tous', 'All') },
     { value: 'vacant', label: t(lang, 'Vacants', 'Vacant') + (data ? ` (${n(data.vacant_total)})` : '') },
     { value: 'occupe', label: t(lang, 'Occupés', 'Occupied') },
   ];
+
+  const searchField = (key: string) => (
+    <label key={key} className={`${styles.filterField} ${styles.filterFieldSearch}`}>
+      <span className={styles.filterLabel}>{t(lang, 'Recherche', 'Search')}</span>
+      <input type="search" className={styles.search} value={draft}
+             placeholder={t(lang, 'Adresse, logement, locataire…', 'Address, unit, tenant…')}
+             onChange={(e) => setDraft(e.target.value)}
+             data-testid={key === 'compact' ? 'units-q' : undefined}
+             aria-label={t(lang, 'Recherche', 'Search')} />
+    </label>
+  );
 
   return (
     <>
@@ -102,80 +117,96 @@ export default function UnitsListView({ lang }: { lang: Lang }) {
       />
 
       <div className={styles.filters} data-testid="units-filters">
-        <div className={styles.filterGrid}>
-          <label className={styles.filterField}>
-            <span className={styles.filterLabel}>{t(lang, 'Recherche', 'Search')}</span>
-            <input type="search" className={styles.search} value={draft}
-                   placeholder={t(lang, 'Adresse, logement, locataire…', 'Address, unit, tenant…')}
-                   onChange={(e) => setDraft(e.target.value)} data-testid="units-q" />
-          </label>
-          <div className={styles.filterField}>
-            <label className={styles.filterLabel} htmlFor="units-sector">{t(lang, 'Secteur', 'Sector')}</label>
-            <Select id="units-sector" className={`${styles.select} ${sectorId != null ? styles.selectActive : ''}`}
-                    value={sectorId ?? ''} onChange={(e) => set('secteur', e.target.value || null)}
-                    data-testid="units-sector">
-              <option value="">{t(lang, 'Tous les secteurs', 'All sectors')}</option>
-              {sectors?.map((s) => (
-                <option key={s.sector_id} value={s.sector_id}>{sectorName(lang, s.territoire, s.sector_id)}</option>
-              ))}
-            </Select>
-          </div>
-          <div className={styles.filterField}>
-            <label className={styles.filterLabel} htmlFor="units-project">{t(lang, 'Projet', 'Project')}</label>
-            <Select id="units-project" className={`${styles.select} ${projectId != null ? styles.selectActive : ''}`}
-                    value={projectId ?? ''} disabled={sectorId == null}
-                    onChange={(e) => set('projet', e.target.value || null)} data-testid="units-project">
-              <option value="">
-                {sectorId == null ? t(lang, 'Choisir un secteur', 'Pick a sector') : t(lang, 'Tous les projets', 'All projects')}
-              </option>
-              {sector?.projects.map((p) => (
-                <option key={p.project_id} value={p.project_id}>{p.nom_unique_projet ?? `#${p.project_id}`}</option>
-              ))}
-            </Select>
-          </div>
-          <div className={styles.filterField}>
-            <label className={styles.filterLabel} htmlFor="units-size">{t(lang, 'Grandeur', 'Size')}</label>
-            <Select id="units-size" className={`${styles.select} ${grandeur ? styles.selectActive : ''}`}
-                    value={grandeur} onChange={(e) => set('grandeur', e.target.value || null)}
-                    data-testid="units-size">
-              <option value="">{t(lang, 'Toutes', 'Any')}</option>
-              {grandeur && !data?.grandeur_options.includes(grandeur) && <option value={grandeur}>{grandeur}</option>}
-              {data?.grandeur_options.map((g) => <option key={g} value={g}>{g}</option>)}
-            </Select>
-          </div>
-          <div className={styles.filterField}>
-            <label className={styles.filterLabel} htmlFor="units-lease">{t(lang, 'Fin de bail', 'Lease ends')}</label>
-            <Select id="units-lease" className={`${styles.select} ${leaseDays != null ? styles.selectActive : ''}`}
-                    value={leaseDays ?? ''} onChange={(e) => set('bail', e.target.value || null)}
-                    data-testid="units-lease">
-              <option value="">{t(lang, 'Peu importe', 'Any time')}</option>
-              {LEASE_END_DAYS.map((d) => (
-                <option key={d} value={d}>{t(lang, `D'ici ${d} jours`, `Within ${d} days`)}</option>
-              ))}
-            </Select>
-          </div>
+        <div className={styles.filterCompact}>
+          {searchField('compact')}
+          <button
+            type="button"
+            className={`${styles.filterToggle} ${filtersOpen || advancedCount > 0 ? styles.filterToggleActive : ''}`}
+            aria-expanded={filtersOpen}
+            aria-controls="units-filter-panel"
+            data-testid="units-filter-toggle"
+            onClick={() => setFiltersOpen((o) => !o)}
+          >
+            <FilterIcon size={16} />
+            <span>{t(lang, 'Filtres', 'Filters')}</span>
+            {advancedCount > 0 && <span className={styles.filterBadge}>{advancedCount}</span>}
+          </button>
         </div>
-        <div className={styles.filterRow}>
-          <div className={styles.chipGroup} role="group" aria-label={t(lang, 'Occupation', 'Occupancy')}>
-            {occChips.map((c) => (
-              <button key={c.label} type="button" data-testid={`occ-${c.value ?? 'all'}`}
-                      className={`${styles.filterChip} ${occupation === c.value || (!occupation && !c.value) ? styles.filterChipActive : ''}`}
-                      aria-pressed={occupation === c.value || (!occupation && !c.value)}
-                      onClick={() => set('occupation', c.value)}>
-                {c.label}
-              </button>
-            ))}
+
+        <div
+          id="units-filter-panel"
+          className={`${styles.filterFull} ${filtersOpen ? styles.filterFullOpen : ''}`}
+        >
+          <div className={styles.filterGrid}>
+            {searchField('full')}
+            <div className={styles.filterField}>
+              <label className={styles.filterLabel} htmlFor="units-sector">{t(lang, 'Secteur', 'Sector')}</label>
+              <Select id="units-sector" className={`${styles.select} ${sectorId != null ? styles.selectActive : ''}`}
+                      value={sectorId ?? ''} onChange={(e) => set('secteur', e.target.value || null)}
+                      data-testid="units-sector">
+                <option value="">{t(lang, 'Tous les secteurs', 'All sectors')}</option>
+                {sectors?.map((s) => (
+                  <option key={s.sector_id} value={s.sector_id}>{sectorName(lang, s.territoire, s.sector_id)}</option>
+                ))}
+              </Select>
+            </div>
+            <div className={styles.filterField}>
+              <label className={styles.filterLabel} htmlFor="units-project">{t(lang, 'Projet', 'Project')}</label>
+              <Select id="units-project" className={`${styles.select} ${projectId != null ? styles.selectActive : ''}`}
+                      value={projectId ?? ''} disabled={sectorId == null}
+                      onChange={(e) => set('projet', e.target.value || null)} data-testid="units-project">
+                <option value="">
+                  {sectorId == null ? t(lang, 'Choisir un secteur', 'Pick a sector') : t(lang, 'Tous les projets', 'All projects')}
+                </option>
+                {sector?.projects.map((p) => (
+                  <option key={p.project_id} value={p.project_id}>{p.nom_unique_projet ?? `#${p.project_id}`}</option>
+                ))}
+              </Select>
+            </div>
+            <div className={styles.filterField}>
+              <label className={styles.filterLabel} htmlFor="units-size">{t(lang, 'Grandeur', 'Size')}</label>
+              <Select id="units-size" className={`${styles.select} ${grandeur ? styles.selectActive : ''}`}
+                      value={grandeur} onChange={(e) => set('grandeur', e.target.value || null)}
+                      data-testid="units-size">
+                <option value="">{t(lang, 'Toutes', 'Any')}</option>
+                {grandeur && !data?.grandeur_options.includes(grandeur) && <option value={grandeur}>{grandeur}</option>}
+                {data?.grandeur_options.map((g) => <option key={g} value={g}>{g}</option>)}
+              </Select>
+            </div>
+            <div className={styles.filterField}>
+              <label className={styles.filterLabel} htmlFor="units-lease">{t(lang, 'Fin de bail', 'Lease ends')}</label>
+              <Select id="units-lease" className={`${styles.select} ${leaseDays != null ? styles.selectActive : ''}`}
+                      value={leaseDays ?? ''} onChange={(e) => set('bail', e.target.value || null)}
+                      data-testid="units-lease">
+                <option value="">{t(lang, 'Peu importe', 'Any time')}</option>
+                {LEASE_END_DAYS.map((d) => (
+                  <option key={d} value={d}>{t(lang, `D'ici ${d} jours`, `Within ${d} days`)}</option>
+                ))}
+              </Select>
+            </div>
           </div>
-          <span className={styles.filterCount} aria-live="polite" data-testid="units-count">
-            {data && t(lang, `${n(data.total)} logement${data.total === 1 ? '' : 's'}`,
-                             `${n(data.total)} unit${data.total === 1 ? '' : 's'}`)}
-          </span>
-          {active && (
-            <button type="button" className={styles.linkBtn} onClick={() => setParams(new URLSearchParams())}
-                    data-testid="units-reset">
-              {t(lang, 'Réinitialiser', 'Reset')}
-            </button>
-          )}
+          <div className={styles.filterRow}>
+            <div className={styles.chipGroup} role="group" aria-label={t(lang, 'Occupation', 'Occupancy')}>
+              {occChips.map((c) => (
+                <button key={c.label} type="button" data-testid={`occ-${c.value ?? 'all'}`}
+                        className={`${styles.filterChip} ${occupation === c.value || (!occupation && !c.value) ? styles.filterChipActive : ''}`}
+                        aria-pressed={occupation === c.value || (!occupation && !c.value)}
+                        onClick={() => set('occupation', c.value)}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+            <span className={styles.filterCount} aria-live="polite" data-testid="units-count">
+              {data && t(lang, `${n(data.total)} logement${data.total === 1 ? '' : 's'}`,
+                               `${n(data.total)} unit${data.total === 1 ? '' : 's'}`)}
+            </span>
+            {active && (
+              <button type="button" className={styles.linkBtn} onClick={() => setParams(new URLSearchParams())}
+                      data-testid="units-reset">
+                {t(lang, 'Réinitialiser', 'Reset')}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -184,16 +215,16 @@ export default function UnitsListView({ lang }: { lang: Lang }) {
         <Empty>{t(lang, 'Aucun logement ne correspond à ces filtres.', 'No unit matches these filters.')}</Empty>
       )}
       {data && data.items.length > 0 && (
-        <div className={`${styles.tableWrap} ${isFetching ? styles.refreshing : ''}`}>
-          <table className={styles.table}>
+        <div className={`${styles.tableWrap} ${styles.listTableWrap} ${isFetching ? styles.refreshing : ''}`}>
+          <table className={`${styles.table} ${styles.listTable}`}>
             <thead>
               <tr>
                 <th>{t(lang, 'Logement', 'Unit')}</th>
                 <th>{t(lang, 'Bâtiment', 'Building')}</th>
-                <th className={styles.hideNarrow}>{t(lang, 'Secteur', 'Sector')}</th>
+                <th>{t(lang, 'Secteur', 'Sector')}</th>
                 <th>{t(lang, 'Grandeur', 'Size')}</th>
                 <th>{t(lang, 'Locataires', 'Tenants')}</th>
-                <th className={styles.hideNarrow}>{t(lang, 'Fin du bail', 'Lease end')}</th>
+                <th>{t(lang, 'Fin du bail', 'Lease end')}</th>
               </tr>
             </thead>
             <tbody>
@@ -208,12 +239,12 @@ export default function UnitsListView({ lang }: { lang: Lang }) {
                     </Link>
                     {u.nom_unique_projet && <div className={styles.cellSub}>{u.nom_unique_projet}</div>}
                   </td>
-                  <td className={`${styles.nowrap} ${styles.hideNarrow}`}>{sectorName(lang, u.territoire, u.sector_id)}</td>
+                  <td className={styles.nowrap}>{sectorName(lang, u.territoire, u.sector_id)}</td>
                   <td className={styles.nowrap}>{u.grandeur ?? '—'}</td>
                   <td>{u.tenant_names.length > 0
                     ? <TenantNames names={u.tenant_names} />
                     : <span className={styles.vacant}>{t(lang, 'Vacant', 'Vacant')}</span>}</td>
-                  <td className={`${styles.nowrap} ${styles.hideNarrow}`}>{fmtDate(u.fin_bail, lang) ?? '—'}</td>
+                  <td className={styles.nowrap}>{fmtDate(u.fin_bail, lang) ?? '—'}</td>
                 </tr>
               ))}
             </tbody>

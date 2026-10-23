@@ -415,16 +415,17 @@ export default function HistoryTimeline({ requestId, visits, followups, decision
                   <li key={item.key} className={`${styles.item} ${styles[item.kind]}`}
                       data-testid="history-item" data-kind={item.kind}>
                     <span className={styles.dot} aria-hidden="true" />
+                    <div className={styles.itemBody}>
                     <div className={styles.meta}>
                       <span className={styles.kind}>{L(lang, KIND_LABEL[item.kind], item.kind)}</span>
-                      {item.time && <span>{item.time}</span>}
+                      {item.time && <span className={styles.when}>{item.time}</span>}
                       {item.who && (
                         // Follow-ups only store initials: the disc alone says it.
                         <span className={styles.who} title={item.who}>
                           <Avatar name={item.who} size="xs" />
                           {/^[A-ZÀ-Ý]{1,4}$/.test(item.who.trim())
                             ? <span className={styles.srOnly}>{item.who}</span>
-                            : item.who}
+                            : <span className={styles.whoName}>{item.who}</span>}
                         </span>
                       )}
                     </div>
@@ -455,6 +456,7 @@ export default function HistoryTimeline({ requestId, visits, followups, decision
                         {item.photos.map((pid) => <VisitPhoto key={pid} requestId={requestId} attachmentId={pid} />)}
                       </div>
                     )}
+                    </div>
                   </li>
                 ))}
               </ol>

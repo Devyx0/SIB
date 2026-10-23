@@ -13,7 +13,7 @@ import Select from '../../components/Select';
 import { useJustify } from '../../components/Justification';
 import { roleLabel, statusLabel, t, type Lang } from '../../i18n';
 import { dueAtFromDay } from '../../lib/taskDates';
-import { NO_NEW_TASK } from './TaskEditor';
+import { NO_NEW_TASK } from './taskCreation';
 import styles from './NouvelAppelModal.module.css';
 
 const ELIGIBLE_STATUSES = STATUS_VALUES.filter((s) => !NO_NEW_TASK.has(s));
@@ -25,6 +25,15 @@ interface Props {
   lang?: Lang;
   /** After create: parent opens that call's detail. */
   onCreated?: (requestId: number) => void;
+  /**
+   * When set (call detail « New task »), the service-call picker is hidden and
+   * this request is used. Board flow leaves it unset.
+   */
+  lockedRequestId?: number | null;
+  /** Redispatch from an existing task on the locked call. */
+  parentTaskId?: number | null;
+  /** Prefill the work description (e.g. redispatch copies the parent wording). */
+  initialDescription?: string | null;
 }
 
 function callLabel(row: ListRow, lang: Lang): string {
@@ -42,10 +51,14 @@ function callHaystack(row: ListRow): string {
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
-export default function NewTaskModal({ open, onClose, lang = 'fr', onCreated }: Props) {
+export default function NewTaskModal({
+  open, onClose, lang = 'fr', onCreated,
+  lockedRequestId = null, parentTaskId = null, initialDescription = null,
+}: Props) {
   const qc = useQueryClient();
   const justify = useJustify();
   const wrapRef = useRef<HTMLDivElement>(null);
+  const locked = lockedRequestId != null;
 
   const [callQuery, setCallQuery] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
@@ -63,12 +76,12 @@ export default function NewTaskModal({ open, onClose, lang = 'fr', onCreated }: 
     setDebouncedQ('');
     setCallOpen(false);
     setSelected(null);
-    setDescription('');
+    setDescription(initialDescription?.trim() ?? '');
     setAssignee(null);
     setDay('');
     setBusy(false);
     setErrorMsg(null);
-  }, [open]);
+  }, [open, initialDescription]);
 
   useEffect(() => {
     if (callQuery === debouncedQ) return;
@@ -93,7 +106,7 @@ export default function NewTaskModal({ open, onClose, lang = 'fr', onCreated }: 
     enabled: open,
   });
 
-  // Load eligible calls; optional server filter when typing.
+  // Load eligible calls; optional server filter when typing. Skipped when the call is locked.
   const { data: callsPage, isFetching: callsLoading } = useQuery({
     queryKey: ['requests', 'new-task-picker', { q: debouncedQ, status: ELIGIBLE_STATUSES }],
     queryFn: () => fetchRequests({
@@ -104,7 +117,7 @@ export default function NewTaskModal({ open, onClose, lang = 'fr', onCreated }: 
       sort_by: 'start_date',
       sort_dir: 'desc',
     }),
-    enabled: open,
+    enabled: open && !locked,
   });
 
   const calls = useMemo(() => {
@@ -144,17 +157,20 @@ export default function NewTaskModal({ open, onClose, lang = 'fr', onCreated }: 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const desc = description.trim();
-    const requestId = selected?.request_id;
+    const requestId = locked ? lockedRequestId! : selected?.request_id;
     if (!requestId || !desc || busy) return;
     setErrorMsg(null);
+    const isRedispatch = parentTaskId != null;
     const j = await justify({
-      decision: t(lang, 'Nouvelle tâche', 'New task'),
+      decision: isRedispatch
+        ? t(lang, 'Redispatcher', 'Redispatch')
+        : t(lang, 'Nouvelle tâche', 'New task'),
       changes: [
-        {
+        ...(!locked && selected ? [{
           label: t(lang, 'Appel', 'Call'),
           before: NONE,
           after: callLabel(selected, lang),
-        },
+        }] : []),
         { label: t(lang, 'Tâche', 'Task'), before: NONE, after: desc },
         { label: t(lang, 'Assignation', 'Assignment'), before: NONE, after: nameOf(assignee) },
         { label: t(lang, 'Date prévue', 'Due date'), before: NONE, after: day || NONE },
@@ -168,6 +184,7 @@ export default function NewTaskModal({ open, onClose, lang = 'fr', onCreated }: 
         description: desc,
         assigned_employee_id: assignee,
         due_at: day ? dueAtFromDay(day) : null,
+        parent_task_id: parentTaskId ?? null,
         justification: j,
       });
       await Promise.all([
@@ -184,22 +201,30 @@ export default function NewTaskModal({ open, onClose, lang = 'fr', onCreated }: 
     }
   }
 
+  const heading = parentTaskId != null
+    ? t(lang, 'Redispatcher', 'Redispatch')
+    : t(lang, 'Nouvelle tâche', 'New task');
+  const subheading = locked
+    ? (parentTaskId != null
+      ? t(lang, 'Nouvelle tâche de redispatch sur cet appel.', 'New redispatch task on this call.')
+      : t(lang, 'Décrivez le travail pour cet appel.', 'Describe the work for this call.'))
+    : t(lang, 'Choisissez un appel existant, puis décrivez le travail.',
+             'Pick an existing call, then describe the work.');
+  const canSubmit = !!description.trim() && (locked || !!selected);
+
   return (
     <div
       className={styles.overlay}
       role="dialog"
       aria-modal="true"
-      aria-label={t(lang, 'Nouvelle tâche', 'New task')}
+      aria-label={heading}
       data-testid="nouvelle-tache-modal"
     >
       <div className={styles.modal} style={{ maxWidth: 560 }}>
         <div className={styles.headRow}>
           <div>
-            <h2 className={styles.heading}>{t(lang, 'Nouvelle tâche', 'New task')}</h2>
-            <p className={styles.subheading}>
-              {t(lang, 'Choisissez un appel existant, puis décrivez le travail.',
-                      'Pick an existing call, then describe the work.')}
-            </p>
+            <h2 className={styles.heading}>{heading}</h2>
+            <p className={styles.subheading}>{subheading}</p>
           </div>
           <button
             type="button"
@@ -216,89 +241,91 @@ export default function NewTaskModal({ open, onClose, lang = 'fr', onCreated }: 
 
         <form className={styles.modalForm} onSubmit={handleSubmit} noValidate>
           <div className={styles.formBody} style={{ padding: '16px 24px' }}>
-            <div className={styles.field} style={{ marginBottom: 14 }}>
-              <span className={styles.optionTitle} id="nouvelle-tache-call-label">
-                {t(lang, 'Appel de service *', 'Service call *')}
-              </span>
-              <div className={styles.suggestWrap} ref={wrapRef}>
-                <input
-                  type="text"
-                  className={styles.input}
-                  role="combobox"
-                  aria-expanded={callOpen}
-                  aria-controls="nouvelle-tache-suggestions"
-                  aria-autocomplete="list"
-                  aria-labelledby="nouvelle-tache-call-label"
-                  value={inputValue}
-                  disabled={busy}
-                  placeholder={t(lang, 'Rechercher ou choisir un appel…', 'Search or pick a call…')}
-                  onChange={(e) => {
-                    setCallQuery(e.target.value);
-                    setSelected(null);
-                    setCallOpen(true);
-                  }}
-                  onFocus={() => {
-                    setCallOpen(true);
-                    if (selected) setCallQuery('');
-                  }}
-                  data-testid="nouvelle-tache-call"
-                  autoComplete="off"
-                />
-                {selected && !callOpen && (
-                  <button
-                    type="button"
-                    className={styles.cancelBtn}
-                    style={{
-                      position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
-                      minHeight: 28, padding: '2px 8px', fontSize: 12,
+            {!locked && (
+              <div className={styles.field} style={{ marginBottom: 14 }}>
+                <span className={styles.optionTitle} id="nouvelle-tache-call-label">
+                  {t(lang, 'Appel de service *', 'Service call *')}
+                </span>
+                <div className={styles.suggestWrap} ref={wrapRef}>
+                  <input
+                    type="text"
+                    className={styles.input}
+                    role="combobox"
+                    aria-expanded={callOpen}
+                    aria-controls="nouvelle-tache-suggestions"
+                    aria-autocomplete="list"
+                    aria-labelledby="nouvelle-tache-call-label"
+                    value={inputValue}
+                    disabled={busy}
+                    placeholder={t(lang, 'Rechercher ou choisir un appel…', 'Search or pick a call…')}
+                    onChange={(e) => {
+                      setCallQuery(e.target.value);
+                      setSelected(null);
+                      setCallOpen(true);
                     }}
-                    onClick={clearCall}
-                    data-testid="nouvelle-tache-call-clear"
-                    aria-label={t(lang, 'Effacer', 'Clear')}
-                  >
-                    ×
-                  </button>
-                )}
-                {callOpen && (
-                  <ul
-                    id="nouvelle-tache-suggestions"
-                    className={styles.suggestList}
-                    role="listbox"
-                    data-testid="nouvelle-tache-suggestions"
-                  >
-                    {callsLoading && calls.length === 0 && (
-                      <li className={styles.suggestMeta} style={{ padding: '8px 10px' }}>
-                        {t(lang, 'Chargement…', 'Loading…')}
-                      </li>
-                    )}
-                    {!callsLoading && calls.length === 0 && (
-                      <li className={styles.suggestMeta} style={{ padding: '8px 10px' }}>
-                        {t(lang, 'Aucun appel éligible.', 'No eligible calls.')}
-                      </li>
-                    )}
-                    {calls.map((r) => (
-                      <li key={r.request_id} role="option" aria-selected={selected?.request_id === r.request_id}>
-                        <button
-                          type="button"
-                          className={`${styles.suggestItem}${selected?.request_id === r.request_id ? ` ${styles.suggestItemActive}` : ''}`}
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => pickCall(r)}
-                          data-testid={`nouvelle-tache-call-option-${r.request_id}`}
-                        >
-                          <strong>{r.asnu ?? `#${r.request_id}`}</strong>
-                          {' — '}
-                          {r.raw_title?.trim() || t(lang, 'Sans titre', 'Untitled')}
-                          <span className={styles.suggestMeta}>
-                            {[r.building_address, r.unit_label, statusLabel(lang, r.status)]
-                              .filter(Boolean).join(' · ')}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                    onFocus={() => {
+                      setCallOpen(true);
+                      if (selected) setCallQuery('');
+                    }}
+                    data-testid="nouvelle-tache-call"
+                    autoComplete="off"
+                  />
+                  {selected && !callOpen && (
+                    <button
+                      type="button"
+                      className={styles.cancelBtn}
+                      style={{
+                        position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                        minHeight: 28, padding: '2px 8px', fontSize: 12,
+                      }}
+                      onClick={clearCall}
+                      data-testid="nouvelle-tache-call-clear"
+                      aria-label={t(lang, 'Effacer', 'Clear')}
+                    >
+                      ×
+                    </button>
+                  )}
+                  {callOpen && (
+                    <ul
+                      id="nouvelle-tache-suggestions"
+                      className={styles.suggestList}
+                      role="listbox"
+                      data-testid="nouvelle-tache-suggestions"
+                    >
+                      {callsLoading && calls.length === 0 && (
+                        <li className={styles.suggestMeta} style={{ padding: '8px 10px' }}>
+                          {t(lang, 'Chargement…', 'Loading…')}
+                        </li>
+                      )}
+                      {!callsLoading && calls.length === 0 && (
+                        <li className={styles.suggestMeta} style={{ padding: '8px 10px' }}>
+                          {t(lang, 'Aucun appel éligible.', 'No eligible calls.')}
+                        </li>
+                      )}
+                      {calls.map((r) => (
+                        <li key={r.request_id} role="option" aria-selected={selected?.request_id === r.request_id}>
+                          <button
+                            type="button"
+                            className={`${styles.suggestItem}${selected?.request_id === r.request_id ? ` ${styles.suggestItemActive}` : ''}`}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => pickCall(r)}
+                            data-testid={`nouvelle-tache-call-option-${r.request_id}`}
+                          >
+                            <strong>{r.asnu ?? `#${r.request_id}`}</strong>
+                            {' — '}
+                            {r.raw_title?.trim() || t(lang, 'Sans titre', 'Untitled')}
+                            <span className={styles.suggestMeta}>
+                              {[r.building_address, r.unit_label, statusLabel(lang, r.status)]
+                                .filter(Boolean).join(' · ')}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             <label className={styles.field} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
               <span className={styles.optionTitle}>{t(lang, 'Travail à faire *', 'Work to do *')}</span>
@@ -361,7 +388,7 @@ export default function NewTaskModal({ open, onClose, lang = 'fr', onCreated }: 
                 <button
                   type="submit"
                   className={styles.submitBtn}
-                  disabled={busy || !selected || !description.trim()}
+                  disabled={busy || !canSubmit}
                   data-testid="nouvelle-tache-submit"
                 >
                   {busy

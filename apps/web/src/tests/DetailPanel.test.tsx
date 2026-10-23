@@ -206,7 +206,7 @@ describe('DetailPanel', () => {
     await waitFor(() => expect(screen.getByTestId('panel-success').textContent).toMatch(/Enregistré/));
   });
 
-  it('shows full suggestion cards in « Nouvelle tâche » and compact chips per task', async () => {
+  it('shows technician suggestion cards per task', async () => {
     const twoTasks = {
       ...MOCK_REQUEST,
       status: 'open',
@@ -224,10 +224,7 @@ describe('DetailPanel', () => {
       }],
     });
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />);
-    await waitFor(() => expect(screen.getByTestId('new-task-suggest')).toBeTruthy());
-    // Full cards once (right); a compact chip row on each existing task.
-    expect(screen.getAllByText('Suggestion technicien')).toHaveLength(1);
-    expect(screen.getByTestId('task-suggest-7')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('task-suggest-7')).toBeTruthy());
     expect(screen.getByTestId('task-suggest-8')).toBeTruthy();
 
     // A chip assigns that task only and shows as picked.
@@ -236,9 +233,6 @@ describe('DetailPanel', () => {
     expect((screen.getByTestId('task-assign-7') as HTMLSelectElement).value).toBe('14');
     expect((screen.getByTestId('task-assign-8') as HTMLSelectElement).value).toBe('');
     expect(chip.getAttribute('aria-pressed')).toBe('true');
-
-    await userEvent.click(screen.getByTestId('new-task-suggest-14'));
-    expect((screen.getByTestId('new-task-assign') as HTMLSelectElement).value).toBe('14');
   });
 
   it('adds a task with assignee and due date via POST /tasks', async () => {
@@ -246,12 +240,14 @@ describe('DetailPanel', () => {
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([JEAN]);
     const create = vi.spyOn(client, 'createTask').mockResolvedValue(task(8) as never);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />);
-    expect((screen.getByTestId('new-task-btn') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByTestId('new-task-name'), { target: { value: 'Remplacer le robinet' } });
-    await waitFor(() => expect(screen.getByTestId('new-task-assign').querySelectorAll('option').length).toBeGreaterThan(1));
-    await userEvent.selectOptions(screen.getByTestId('new-task-assign'), '14');
-    fireEvent.change(screen.getByTestId('new-task-due'), { target: { value: '2026-11-02' } });
     await userEvent.click(screen.getByTestId('new-task-btn'));
+    await waitFor(() => expect(screen.getByTestId('nouvelle-tache-modal')).toBeTruthy());
+    expect(screen.queryByTestId('nouvelle-tache-call')).toBeNull();
+    fireEvent.change(screen.getByTestId('nouvelle-tache-desc'), { target: { value: 'Remplacer le robinet' } });
+    await waitFor(() => expect(screen.getByTestId('nouvelle-tache-assign').querySelectorAll('option').length).toBeGreaterThan(1));
+    await userEvent.selectOptions(screen.getByTestId('nouvelle-tache-assign'), '14');
+    fireEvent.change(screen.getByTestId('nouvelle-tache-due'), { target: { value: '2026-11-02' } });
+    await userEvent.click(screen.getByTestId('nouvelle-tache-submit'));
     await justifyWith('Deuxième corps de métier requis');
     await waitFor(() => expect(create).toHaveBeenCalledWith({
       request_id: 1,
@@ -270,9 +266,11 @@ describe('DetailPanel', () => {
     const create = vi.spyOn(client, 'createTask').mockResolvedValue(task(8) as never);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as unknown as MeResponse} />);
     await userEvent.click(screen.getByTestId('task-redispatch-5'));
-    expect(screen.getByTestId('new-task-parent').textContent).toContain('Fuite toiture');
-    expect((screen.getByTestId('new-task-name') as HTMLInputElement).value).toBe('Fuite toiture');
-    await userEvent.click(screen.getByTestId('new-task-btn'));
+    const modal = await screen.findByTestId('nouvelle-tache-modal');
+    expect(within(modal).getByText('Redispatcher')).toBeTruthy();
+    expect((screen.getByTestId('nouvelle-tache-desc') as HTMLTextAreaElement).value).toBe('Fuite toiture');
+    expect(screen.queryByTestId('nouvelle-tache-call')).toBeNull();
+    await userEvent.click(screen.getByTestId('nouvelle-tache-submit'));
     await justifyWith('Couvreur requis pour la toiture');
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
       request_id: 1, description: 'Fuite toiture', parent_task_id: 5,
@@ -334,7 +332,7 @@ describe('DetailPanel', () => {
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     vi.spyOn(client, 'fetchFeedback').mockRejectedValue(new ApiError('NOT_FOUND', 'no feedback'));
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
-    expect((screen.getByTestId('new-task-desc') as HTMLTextAreaElement).disabled).toBe(false);
+    expect(screen.getByTestId('new-task-btn')).toBeTruthy();
     expect((screen.getByTestId('proposal-desc-9') as HTMLTextAreaElement).value).toBe('Proposé par IA');
     expect(screen.queryByTestId('proposal-accept-9')).toBeNull();
     expect(screen.getByTestId('proposal-reject-9')).toBeTruthy();
@@ -423,7 +421,7 @@ describe('DetailPanel', () => {
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
-    expect((screen.getByTestId('new-task-desc') as HTMLTextAreaElement).disabled).toBe(false);
+    expect(screen.getByTestId('new-task-btn')).toBeTruthy();
     await userEvent.click(screen.getByTestId('proposals-reject-all'));
     expect(confirm.mock.calls[0][0]).not.toMatch(/clarification/);
     confirm.mockRestore();
@@ -434,8 +432,10 @@ describe('DetailPanel', () => {
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     const create = vi.spyOn(client, 'createTask').mockResolvedValue(task(11) as never);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={COORD} />);
-    fireEvent.change(screen.getByTestId('new-task-name'), { target: { value: 'Inspection du toit' } });
     await userEvent.click(screen.getByTestId('new-task-btn'));
+    await waitFor(() => expect(screen.getByTestId('nouvelle-tache-modal')).toBeTruthy());
+    fireEvent.change(screen.getByTestId('nouvelle-tache-desc'), { target: { value: 'Inspection du toit' } });
+    await userEvent.click(screen.getByTestId('nouvelle-tache-submit'));
     await justifyWith('Le problème décrit exige une inspection');
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
       request_id: 1, description: 'Inspection du toit', parent_task_id: null,
@@ -495,7 +495,7 @@ describe('DetailPanel', () => {
     vi.spyOn(client, 'fetchEmployees').mockResolvedValue([]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
     expect((screen.getByTestId('task-assign-7') as HTMLSelectElement).disabled).toBe(true);
-    expect((screen.getByTestId('new-task-desc') as HTMLTextAreaElement).disabled).toBe(true);
+    expect(screen.queryByTestId('new-task-btn')).toBeNull();
     // Closed call: the steps list is read-only, with no « add a step » field.
     expect(screen.queryByTestId('next-steps-input')).toBeNull();
     expect(screen.queryByTestId('log-text')).toBeNull();
@@ -571,8 +571,9 @@ describe('DetailPanel', () => {
       { employee_id: 7, nom_employe: 'Pierre Ouvrier', role: 'technician' , is_en_route: false },
     ]);
     wrap(<DetailPanel requestId={1} onClose={vi.fn()} lang="fr" me={{ employee_id: 4, roles: ['coordinator'] } as any} />);
+    await userEvent.click(screen.getByTestId('new-task-btn'));
     await waitFor(() => {
-      const opt = Array.from(screen.getByTestId('new-task-assign').querySelectorAll('option'))
+      const opt = Array.from(screen.getByTestId('nouvelle-tache-assign').querySelectorAll('option'))
         .find((o) => o.textContent?.includes('Pierre Ouvrier'));
       expect(opt?.textContent).toContain('Technicien');
     });

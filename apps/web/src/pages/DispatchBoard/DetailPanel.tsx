@@ -1102,7 +1102,6 @@ export default function DetailPanel({ requestId, onClose, onSelectPeer, lang = '
                     data-testid="tab-panel-tasks"
                   >
                     <section className={`${styles.card} ${styles.actionsCard}`}>
-                      <h3 className={styles.cardTitle}>{t(lang, 'Tâches', 'Tasks')}</h3>
                       <TaskEditor
                         ref={taskEditorRef}
                         lang={lang}

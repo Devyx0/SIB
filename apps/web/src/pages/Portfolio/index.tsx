@@ -26,7 +26,7 @@ import {
 } from './occupancy';
 import TurnoverDialog, { capaciteLabel } from './TurnoverDialog';
 import UnitsListView, { unitsPath } from './UnitsList';
-import TenantsListView from './TenantsList';
+import TenantsListView, { tenantsPath } from './TenantsList';
 import { fmtDate, matches, parseDate, plural, sentenceCase } from './format';
 import type { Fact } from './shared';
 import {
@@ -180,13 +180,28 @@ function SectorsView({ lang }: { lang: Lang }) {
         globalSearch
         actions={
           <div className={styles.headerActions}>
-            <Link className={styles.btn} to={unitsPath()} data-testid="all-units-link">
-              {t(lang, 'Tous les logements', 'All units')}
-            </Link>
-            {/* TEMP — scratch link for GET /portfolio/tenants; revert with TenantsList */}
-            <Link className={styles.btn} to="/portfolio/locataires" data-testid="all-tenants-link">
-              {t(lang, 'Locataires', 'Tenants')}
-            </Link>
+            <nav className={styles.quickLinks} aria-label={t(lang, 'Parcourir le parc', 'Browse portfolio')}>
+              <Link
+                className={styles.quickLink}
+                to={unitsPath()}
+                data-testid="all-units-link"
+                aria-label={t(lang, 'Tous les logements', 'All Units')}
+                title={t(lang, 'Tous les logements', 'All Units')}
+              >
+                <HomeIcon size={16} />
+                <span className={styles.quickLinkText}>{t(lang, 'Tous les logements', 'All Units')}</span>
+              </Link>
+              <Link
+                className={styles.quickLink}
+                to={tenantsPath()}
+                data-testid="all-tenants-link"
+                aria-label={t(lang, 'Tous les locataires', 'All Tenants')}
+                title={t(lang, 'Tous les locataires', 'All Tenants')}
+              >
+                <UsersIcon size={16} />
+                <span className={styles.quickLinkText}>{t(lang, 'Tous les locataires', 'All Tenants')}</span>
+              </Link>
+            </nav>
           </div>
         }
       />
@@ -263,7 +278,18 @@ function SectorView({ lang }: { lang: Lang }) {
   const name = data ? sectorName(lang, data.territoire, data.sector_id) : '…';
   const addProject = <AddButton label={t(lang, 'Nouveau projet', 'New project')} onClick={() => setDialog('new')} testId="add-project" />;
   const viewUnits = (
-    <Link className={styles.btn} to={unitsPath({ secteur: sectorId })}>{t(lang, 'Voir les logements', 'View units')}</Link>
+    <nav className={styles.quickLinks} aria-label={t(lang, 'Parcourir le parc', 'Browse portfolio')}>
+      <Link
+        className={styles.quickLink}
+        to={unitsPath({ secteur: sectorId })}
+        data-testid="sector-view-units-link"
+        aria-label={t(lang, 'Voir les logements', 'View Units')}
+        title={t(lang, 'Voir les logements', 'View Units')}
+      >
+        <HomeIcon size={16} />
+        <span className={styles.quickLinkText}>{t(lang, 'Voir les logements', 'View Units')}</span>
+      </Link>
+    </nav>
   );
 
   return (
@@ -428,6 +454,20 @@ function ProjectView({ lang }: { lang: Lang }) {
   const addBuilding = <AddButton label={t(lang, 'Bâtiment', 'Building')} onClick={() => setDialog('new')} testId="add-building" />;
   const editProject = <EditButton lang={lang} label={t(lang, 'Modifier le projet', 'Edit project')} testId="edit-project"
                                   onClick={() => setDialog('project')} />;
+  const viewUnits = (
+    <nav className={styles.quickLinks} aria-label={t(lang, 'Parcourir le parc', 'Browse portfolio')}>
+      <Link
+        className={styles.quickLink}
+        to={unitsPath({ secteur: sectorId, projet: projectId })}
+        data-testid="project-view-units-link"
+        aria-label={t(lang, 'Voir les logements', 'View Units')}
+        title={t(lang, 'Voir les logements', 'View Units')}
+      >
+        <HomeIcon size={16} />
+        <span className={styles.quickLinkText}>{t(lang, 'Voir les logements', 'View Units')}</span>
+      </Link>
+    </nav>
+  );
 
   return (
     <>
@@ -453,10 +493,7 @@ function ProjectView({ lang }: { lang: Lang }) {
         ]}
         actions={data && (phone ? <div className={styles.headerActions}>{editProject}</div> : (
           <div className={styles.headerActions}>
-            <Link className={styles.btn} to={unitsPath({ secteur: sectorId, projet: projectId })}>
-              {t(lang, 'Voir les logements', 'View units')}
-            </Link>
-            {editProject}{addBuilding}
+            {editProject}{viewUnits}{addBuilding}
           </div>
         ))}
       />
@@ -467,13 +504,7 @@ function ProjectView({ lang }: { lang: Lang }) {
             <SearchBox value={q} onChange={setQ}
                        placeholder={t(lang, 'Rechercher un bâtiment…', 'Search buildings…')} />
           )}
-          {phone && (
-            <div className={styles.headerActions}>
-              <Link className={styles.btn} to={unitsPath({ secteur: sectorId, projet: projectId })}>
-                {t(lang, 'Voir les logements', 'View units')}
-              </Link>
-            </div>
-          )}
+          {phone && <div className={styles.headerActions}>{viewUnits}</div>}
         </div>
       )}
       {data && buildings.length === 0 && (
@@ -699,6 +730,25 @@ function BuildingInfoView({ lang }: { lang: Lang }) {
   });
   const name = data ? buildingName(lang, data) : '…';
   const infoLabel = t(lang, 'Informations', 'Information');
+  const phone = useIsPhone();
+  const editBuilding = (
+    <EditButton lang={lang} label={t(lang, 'Modifier le bâtiment', 'Edit building')} testId="edit-building"
+                onClick={() => setEditing(true)} />
+  );
+  const viewUnits = (
+    <nav className={styles.quickLinks} aria-label={t(lang, 'Parcourir le parc', 'Browse portfolio')}>
+      <Link
+        className={styles.quickLink}
+        to={portfolioPath.building(buildingId)}
+        data-testid="building-units-link"
+        aria-label={t(lang, 'Voir les logements', 'View Units')}
+        title={t(lang, 'Voir les logements', 'View Units')}
+      >
+        <HomeIcon size={16} />
+        <span className={styles.quickLinkText}>{t(lang, 'Voir les logements', 'View Units')}</span>
+      </Link>
+    </nav>
+  );
 
   return (
     <>
@@ -715,16 +765,18 @@ function BuildingInfoView({ lang }: { lang: Lang }) {
         title={name}
         subtitle={data && buildingPlace(data)}
         facts={data && buildingFacts(data, lang)}
+        actionsBelow={phone}
         actions={data && (
           <div className={styles.headerActions}>
-            <Link className={styles.btn} to={portfolioPath.building(buildingId)} data-testid="building-units-link">
-              {t(lang, 'Voir les logements', 'View units')}
-            </Link>
-            <EditButton lang={lang} label={t(lang, 'Modifier le bâtiment', 'Edit building')} testId="edit-building"
-                        onClick={() => setEditing(true)} />
+            {phone ? editBuilding : <>{viewUnits}{editBuilding}</>}
           </div>
         )}
       />
+      {phone && data && (
+        <div className={styles.unitTools}>
+          <div className={styles.headerActions}>{viewUnits}</div>
+        </div>
+      )}
       <LevelState isLoading={isLoading} error={error} lang={lang} onRetry={refetch} rows={3} />
       {data && <BuildingInfo building={data} lang={lang} />}
       {editing && (
@@ -1110,7 +1162,6 @@ export default function Portfolio({ lang = 'fr' }: { lang?: Lang }) {
       <Routes>
         <Route index element={<SectorsView lang={lang} />} />
         <Route path="logements" element={<UnitsListView lang={lang} />} />
-        {/* TEMP — revert with TenantsList.tsx */}
         <Route path="locataires" element={<TenantsListView lang={lang} />} />
         <Route path="secteurs/:sectorId" element={<SectorView lang={lang} />} />
         <Route path="secteurs/:sectorId/projets/:projectId" element={<ProjectView lang={lang} />} />

@@ -127,6 +127,10 @@ export function SwapIcon({ size = 16 }: P) {
   return <svg {...base(size)}><path d="M4 7h10l-2.5-2.5M16 13H6l2.5 2.5" /></svg>;
 }
 
+export function FilterIcon({ size = 16 }: P) {
+  return <svg {...base(size)}><path d="M3.5 5h13l-4.5 5.5V15l-4 2v-6.5z" /></svg>;
+}
+
 export function UserMinusIcon({ size = 16 }: P) {
   return (
     <svg {...base(size)}>

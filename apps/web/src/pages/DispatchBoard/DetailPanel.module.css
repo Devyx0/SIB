@@ -433,7 +433,15 @@
   color: var(--navy-700);
 }
 
-/* History card hosts the shared visit / log / decision sections. */
+/* History card hosts the shared visit / log / decision sections.
+   Entries are already soft cards — keep the shell quiet. */
+.historyCard {
+  padding: 8px 10px 12px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
 .historyCard > section:first-of-type {
   margin-top: 0;
   padding-top: 0;
@@ -509,10 +517,155 @@
   gap: 12px;
 }
 
-/* Tasks: cards in a row share one height, so the existing task and
-   « Nouvelle tâche » line up top and bottom. */
+/* Tasks tab: title + CTA on one row, then task rows / proposals. */
 .tasksGrid {
-  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tasksToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin: 0 0 2px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.tasksToolbar .cardTitle {
+  margin: 0;
+}
+
+.newTaskBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 6px 14px 6px 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  background: var(--navy-800);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.12);
+  transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.1s ease;
+}
+
+.newTaskBtn:hover:not(:disabled) {
+  background: var(--navy-900);
+  box-shadow: 0 2px 6px rgb(15 23 42 / 0.16);
+}
+
+.newTaskBtn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.1);
+}
+
+.newTaskBtn:focus-visible {
+  outline: 2px solid var(--navy-400);
+  outline-offset: 2px;
+}
+
+.newTaskBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+@media (max-width: 479px) {
+  .tasksToolbar {
+    align-items: stretch;
+  }
+
+  .newTaskBtn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+.taskRow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--r-md);
+}
+
+.taskRowHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 12px;
+}
+
+.taskRowTitle {
+  flex: 1 1 12rem;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.taskRowStatus {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-neutral-600);
+}
+
+.taskRowActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.taskRowFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 8px 12px;
+  align-items: end;
+}
+
+.taskField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.taskFieldLabel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+.taskField .editInput {
+  width: 100%;
+}
+
+@media (max-width: 879px) {
+  .taskRowFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .taskRowActions {
+    margin-left: 0;
+    width: 100%;
+  }
 }
 
 /* Free-text fields get two tiles' width when there is room. */
@@ -667,21 +820,35 @@
   font: inherit;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px 12px;
+  gap: 3px;
+  padding: 10px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--r-md);
-  background: var(--color-bg);
+  background: var(--color-surface);
   cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
 }
 
 .suggestBtn:hover:not(:disabled) {
-  border-color: var(--navy-800);
+  border-color: var(--navy-300);
+  background: var(--navy-50);
+}
+
+.suggestBtn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
 .suggestBtn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.suggestBtnOn,
+.suggestBtnOn:hover:not(:disabled) {
+  border-color: var(--navy-800);
+  background: var(--navy-50);
+  box-shadow: inset 3px 0 0 var(--navy-800);
 }
 
 .suggestName {
@@ -692,11 +859,14 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
 .suggestWhy {
-  font-size: 12px;
+  font-size: 12.5px;
+  line-height: 1.35;
   color: var(--color-neutral-700);
+  padding-left: 30px; /* align under name beside avatar */
 }
 
 .suggestEnRoute {
@@ -708,89 +878,44 @@
   color: #92400e;
 }
 
-/* Existing tasks: suggestions as one line of chips (initials + first
-   name; full name and the reason on hover / for screen readers). */
+/* Under a task row: same full-width cards, tighter label. */
 .suggestCompact {
-  grid-column: 1 / -1;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
   gap: 6px;
+  margin-top: 2px;
+}
+
+.editField .suggestCompact {
+  grid-column: 1 / -1;
 }
 
 .suggestCompactLabel {
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--color-neutral-600);
 }
 
-.suggestChip {
-  display: inline-flex;
-  align-items: center;
+.suggestCompact .suggestList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  min-height: 30px;
-  padding: 2px 10px 2px 3px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--navy-900);
-  cursor: pointer;
-  transition: border-color var(--dur) var(--ease-out), background var(--dur) var(--ease-out);
-}
-
-.suggestChip:hover:not(:disabled) {
-  border-color: var(--navy-300);
-  background: var(--navy-50);
-}
-
-.suggestChip:focus-visible {
-  outline: none;
-  box-shadow: var(--ring);
-}
-
-.suggestChip:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.suggestChipInit {
-  display: inline-grid;
-  place-items: center;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--navy-100);
-  color: var(--navy-800);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.suggestChipOn,
-.suggestChipOn:hover:not(:disabled) {
-  border-color: var(--navy-800);
-  background: var(--navy-800);
-  color: #fff;
-}
-
-.suggestChipOn .suggestChipInit {
-  background: rgb(255 255 255 / 0.2);
-  color: #fff;
-}
-
-/* « En route » shown as a small amber dot; spelled out in the tooltip. */
-.suggestChipDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--color-warning);
 }
 
 @media (max-width: 639px) {
-  .suggestChip { min-height: 38px; }
+  .suggestBtn {
+    min-height: 44px;
+    padding: 12px 14px;
+  }
+
+  .suggestWhy {
+    padding-left: 0;
+  }
 }
 
 .applyBtn {
@@ -1019,22 +1144,34 @@
   }
 }
 
-/* Phone: full-screen sheet. */
+/* Phone: full-viewport sheet, inset for notch / Dynamic Island / home indicator. */
 @media (max-width: 639px) {
   .frame {
     padding: 0;
     align-items: stretch;
+    height: 100%;
+    height: 100dvh;
   }
 
-  .panel {
+  .panel,
+  .panelTall {
+    width: 100%;
     max-width: 100%;
-    max-height: none;
     height: 100%;
+    height: 100dvh;
+    max-height: none;
+    min-height: 100%;
+    min-height: 100dvh;
     border-radius: 0;
   }
 
+  /* Header background extends under the notch; content clears it. */
   .header {
-    padding: 14px 16px 12px;
+    padding:
+      max(14px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      12px
+      max(16px, env(safe-area-inset-left));
   }
 
   .title {
@@ -1042,21 +1179,49 @@
   }
 
   .body {
-    padding: 14px 12px 24px;
+    padding:
+      14px
+      max(12px, env(safe-area-inset-right))
+      24px
+      max(12px, env(safe-area-inset-left));
   }
 
   .card {
     padding: 14px;
   }
 
+  /* Tabs scroll sideways instead of wrapping into a messy second row. */
+  .tabList {
+    flex-wrap: nowrap;
+    gap: 0;
+    padding: 0 max(8px, env(safe-area-inset-left)) 0 max(8px, env(safe-area-inset-right));
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .tabList::-webkit-scrollbar { display: none; }
+
+  .tab {
+    flex: none;
+    padding: 12px 12px;
+    font-size: 13px;
+  }
+
+  .historyCard {
+    padding: 4px 2px 8px;
+  }
+
   .compareCols {
     grid-template-columns: 1fr;
   }
-}
 
-@media (max-width: 639px) {
   .saveBar {
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    padding:
+      10px
+      max(12px, env(safe-area-inset-right))
+      calc(10px + env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
   }
 }
 
@@ -1340,16 +1505,25 @@
   height: min(90vh, 90dvh);
 }
 
+@media (max-width: 639px) {
+  .panelTall {
+    height: 100dvh;
+    max-height: none;
+    min-height: 100dvh;
+  }
+}
+
 /* Task rows in the call popup: name, status, then one line of description. */
-.taskRowName { font-weight: 700; }
+.taskRowName {
+  font-weight: 700;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
 
 .taskRowDetails {
-  display: block;
-  margin-top: 2px;
+  flex: 1 1 100%;
   font-size: 12.5px;
   font-weight: 400;
   color: var(--color-neutral-600);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
